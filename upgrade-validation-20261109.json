@@ -1,0 +1,86 @@
+{
+  "completed_at_utc": "2026-11-09T03:04:17.278725+00:00",
+  "engine_before": "0.1.45.3",
+  "engine_after": "0.1.45.7",
+  "source_commit": "8b4c09bd3d9213b2d47880826c6e818c3140664d",
+  "cuda_toolkit": "12.9",
+  "cuda_architectures": [
+    70
+  ],
+  "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+  "model_files_unchanged": 58,
+  "launcher_unchanged": true,
+  "python_api_layer_unchanged": true,
+  "protected_configuration_unchanged": true,
+  "host": "0.0.0.0",
+  "port": 8080,
+  "api_key_preserved": true,
+  "parallel": 2,
+  "max_context": 262144,
+  "internal_tuning": {
+    "layer_split": "11,24,36",
+    "resident_experts": true
+  },
+  "expert_host_ram_gib": {
+    "before": 55.43,
+    "after": 24.94
+  },
+  "checks": {
+    "cpu_tests": 4,
+    "gpu_tests": 8,
+    "real_api_checks": 10,
+    "rollback_rehearsal": true,
+    "long_context_and_vision": [
+      "long_context_needle_over_60k",
+      "existing_vision_encoder_via_openai_api"
+    ]
+  },
+  "benchmarks": [
+    {
+      "prompt_tokens": 2105,
+      "repeats_per_arm": 3,
+      "prompt_per_second": {
+        "baseline_median": 399.6,
+        "candidate_median": 717.4,
+        "change_percent": 79.53
+      },
+      "predicted_per_second": {
+        "baseline_median": 76.8,
+        "candidate_median": 95.5,
+        "change_percent": 24.35
+      },
+      "wall_seconds": {
+        "baseline_median": 8.701,
+        "candidate_median": 5.743
+      }
+    },
+    {
+      "prompt_tokens": 8576,
+      "repeats_per_arm": 3,
+      "prompt_per_second": {
+        "baseline_median": 930.6,
+        "candidate_median": 1110.4,
+        "change_percent": 19.32
+      },
+      "predicted_per_second": {
+        "baseline_median": 83.8,
+        "candidate_median": 97.9,
+        "change_percent": 16.83
+      },
+      "wall_seconds": {
+        "baseline_median": 12.366,
+        "candidate_median": 10.444
+      }
+    }
+  ],
+  "benchmark_limits": "Combined engine/placement/memory-profile update. Three sequential cold-prefix requests per size/arm, 256 output tokens, no compilation or explicit page warmup during timing; outputs and adaptive placement can differ. Startup probes chose pcie_frac 0.30 before and 0.20 after. Not a statistical or all-context performance guarantee.",
+  "server_pid": 11772,
+  "engine_pid": 11783,
+  "validation_state": "passed",
+  "evidence_directory": "/home/devilchen/.local/state/strata-upgrades/20261109-8b4c09bd/checks",
+  "rollback_script": "/home/devilchen/Strata-V100/rollback-strata-upgrade.sh",
+  "local_branch": "local/v100-x99-upgrade-20261109",
+  "original_source_base": "3ceb8b34e23daf1e10d1b0f74ed419d82b0f4d60",
+  "engine_source_fingerprint": "777dc06da4d303a1",
+  "working_tree_engine_source_matches_deployed_build": true
+}

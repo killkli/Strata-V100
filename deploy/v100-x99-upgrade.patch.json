@@ -1,0 +1,37 @@
+[
+  {
+    "op": "test",
+    "path": "/model_name",
+    "value": "qwen3.8-flash-next-unsloth-ud-iq4_xs"
+  },
+  {
+    "op": "test",
+    "path": "/gpu",
+    "value": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "op": "test",
+    "path": "/parallel",
+    "value": 2
+  },
+  {
+    "op": "test",
+    "path": "/layer_split",
+    "value": "auto"
+  },
+  {
+    "op": "replace",
+    "path": "/layer_split",
+    "value": "11,24,36"
+  },
+  {
+    "op": "add",
+    "path": "/args/-",
+    "value": "--resident-experts"
+  }
+]

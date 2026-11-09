@@ -63,6 +63,7 @@
 #include "strata/kernels/native_rope.hpp"
 #include "strata/kernels/mrope.hpp"
 #include "strata/kernels/kv_q4.hpp"
+#include "strata/kernels/kv_tq.hpp"
 #include "strata/kernels/qsa.hpp"
 #include "strata/core/native_head.hpp"
 #include "strata/core/verify.hpp"
@@ -870,6 +871,10 @@ void usage() {
                  "                       slightly lower precision (see bench/results/2026-09-27-kv-q4)\n"
                  "  --kv k8v4            hybrid: INT8 K (exact attention scores) + rotated Q4_0 V, 816 B/cell\n"
                  "                       (vs int8's 1,056); streams with --kv-resident too\n"
+                 "  --kv tq3|tq4|tq6|tq8 TurboQuant K/V: 256-value rotated blocks, Lloyd-Max codebook + FP16\n"
+                 "                       norm per head; 3/4/6/8-bit; mode 0 only (no --kv-resident). With --mtp\n"
+                 "                       the draft layer's ring is INT8 (a TurboQuant one has no host copy to\n"
+                 "                       snapshot or refill), so that layer does not carry the tq cost\n"
                  "  --kv-resident N      KV streaming: keep N cells of each QSA layer in VRAM (min 20480) and the\n"
                  "                       whole K/V in pinned RAM; the freed VRAM goes to expert slots. 0 (default):\n"
                  "                       all of it in VRAM. A context of N cells or fewer is not streamed\n"
@@ -3318,12 +3323,22 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (o.kv == "q4") o.kv = "q4_0";
-    if (o.kv != "fp16" && o.kv != "int8" && o.kv != "q4_0" && o.kv != "k8v4") {
-        std::fprintf(stderr, "strata generate: --kv must be fp16, int8, q4_0 or k8v4\n");
+    int tq_bits = 0;
+    if (o.kv == "tq3") tq_bits = 3;
+    else if (o.kv == "tq4") tq_bits = 4;
+    else if (o.kv == "tq6") tq_bits = 6;
+    else if (o.kv == "tq8") tq_bits = 8;
+    if (o.kv != "fp16" && o.kv != "int8" && o.kv != "q4_0" && o.kv != "k8v4" && tq_bits == 0) {
+        std::fprintf(stderr, "strata generate: --kv must be fp16, int8, q4_0, k8v4, tq3, tq4, tq6 or tq8\n");
         return 2;
     }
     strata::core::qsa_set_kv_int8(o.kv == "int8");
     strata::core::qsa_set_kv_q4(o.kv == "q4_0");   // PR #21: 4-bit codes after a Hadamard rotation (kv_q4.hpp)
+    strata::core::qsa_set_kv_tq(tq_bits);
+    if (tq_bits > 0 && o.kv_resident > 0) {
+        std::fprintf(stderr, "strata generate: --kv-resident is not supported with --kv tq3|tq4|tq6|tq8\n");
+        return 2;
+    }
     // STRATA_KV_ROT=1: INT8 K/V through the Hadamard rotation --kv q4_0 already uses. Opt-in: first-token KL to
     // fp16 K/V improved on an NVFP4 pack (0.0066 -> 0.0051) but not on IQ2_XS (0.0022 -> 0.0054)
     const char* kv_rot = std::getenv("STRATA_KV_ROT");
@@ -3378,24 +3393,31 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata generate: --native %s: %s\n", o.native_preset.c_str(), e.what());
             return 2;
         }
-        if (o.no_ple || o.ple_gguf.empty()) {
+        // Only PLE needs a table.  --no-ple is the documented ablation, so it must not demand a shard it will not
+        // read: the words said "no shard holds per_layer_token_embd.weight" while the flag, not the model, was the
+        // reason (the check below keeps --ple-gguf and --no-ple mutually exclusive).
+        if (!o.no_ple && o.ple_gguf.empty()) {
             std::fprintf(stderr, "strata generate: --native requires --ple-gguf (the PLE key is native too), and no "
-                                 "shard of the model holds per_layer_token_embd.weight\n");
+                                 "shard of the model holds per_layer_token_embd.weight; --no-ple is the ablation\n");
             return 2;
         }
         o.stream_token = true;
         o.gr_native_mmvf = true;
         o.native_bf16 = o.native_bf16_extra = true;
-        o.native_ple_key = o.native_moe_combine = o.native_gdn = o.native_router = true;
-        o.native_qsa = o.native_qsa_indexer = o.native_rope = o.native_ple_postops = true;
+        o.native_moe_combine = o.native_gdn = o.native_router = true;
+        o.native_qsa = o.native_qsa_indexer = o.native_rope = true;
+        // The PLE key and its post-ops are part of the PLE layer, so --no-ple ablates them with the table; left on,
+        // they would be refused below ("--native-ple-postops requires PLE enabled") and the ablation could never run.
+        o.native_ple_key = o.native_ple_postops = !o.no_ple;
         if (o.native_head_gguf.empty()) o.native_head_gguf = o.native_preset;
         if (o.native_dense_gguf.empty()) {
             // every shard of the model (<name>-0000N-of-0000M.gguf beside --native), then the PLE shard: a split
             // may put any layer in any shard (Swift's GGUFs: layers 13-47 in shard 2, the PLE table in shard 1)
             o.native_dense_gguf = o.native_shards;
-            // a PLE-only table (tools/ple_fp8_pack.py: architecture strata-ple) holds no projections
-            bool ple_only = false;
-            try {
+            // a PLE-only table (tools/ple_fp8_pack.py: architecture strata-ple) holds no projections, and --no-ple
+            // leaves the path empty: neither belongs in the dense list (an empty entry fails to open by name)
+            bool ple_only = o.ple_gguf.empty();
+            if (!ple_only) try {
                 strata::GgufFile pg(o.ple_gguf);
                 if (const strata::MetaValue* v = pg.get("general.architecture")) ple_only = v->s == "strata-ple";
             } catch (const std::exception&) {}
@@ -3929,6 +3951,10 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "strata generate: %s\n", err.c_str());
             return 1;
         }
+        // --no-ple reads no PLE key at all, so its row is skipped as if it were served natively: a native pack holds
+        // that row as shape only (dst_bytes 0), and the loader refuses such a row it was not told to skip.  Placed
+        // after keep_unquantized_ple_key so a --compat-bf16 pack's arena copy does not undo it.
+        if (o.no_ple) skip.insert("blk.1.ple_key.weight");
         if (native_pack) skip.insert("token_embd.weight");
         // STRATA_HC_Q8=1 (single GPU): the layers' hyper-connection down / up projections live only as Q8_0 (NativeDense
         // quantizes them from the pack file), so their bf16 copy is not loaded
@@ -5352,6 +5378,29 @@ int main(int argc, char** argv) {
                      last ? " and the head" : "", (double) fb / 1073741824.0);
     }
 
+    // Check every speculative draft source, including suffix/oracle drafts without an MTP head.
+    // Use the adjusted draft window, not the pipeline buffer's capacity.
+    if (const char* ecap_env = std::getenv("STRATA_VERIFY_ECAP"); ecap_env && o.spec >= 2) {
+        const int ecap_cfg = std::atoi(ecap_env), k_cfg = (int) ss.k, rows = o.spec - 1;
+        if (ecap_cfg > k_cfg) {
+            const int kept = ecap_cfg - k_cfg;
+            if (kept < rows) {
+                std::fprintf(stderr, "strata generate: STRATA_VERIFY_ECAP=%d cannot serve a %d-token window: it "
+                                     "keeps %d of the tail's %d picks, under one expert for each of the %d draft "
+                                     "rows, and a draft row computed from a fraction of its experts changes the "
+                                     "output far beyond a low-weight flip. Raise the cap to at least %d (one "
+                                     "expert per draft row), or lower --spec.\n",
+                             ecap_cfg, o.spec, kept, rows * k_cfg, rows, k_cfg + rows);
+                return 1;
+            }
+            if (kept < 2 * rows)
+                std::fprintf(stderr, "strata generate: STRATA_VERIFY_ECAP=%d over a %d-token window keeps %d of "
+                                     "the tail's %d picks (%.2f per draft row, under 2); choose N from the "
+                                     "workload's measured avg T - the option changes the output where those rows "
+                                     "matter\n", ecap_cfg, o.spec, kept, rows * k_cfg, double(kept) / double(rows));
+        }
+    }
+
     // Load the draft before batch slots and before the host arena is registered with both CUDA contexts.
     // Slot admission must leave room for the draft on the last stage; WDDM also requires the early upload.
     strata::core::MtpDrafter mtp;
@@ -6187,6 +6236,9 @@ int main(int argc, char** argv) {
     // runtime's loans, so the plan and the layout cannot disagree.
     std::vector<int64_t> sized_slots;
     strata::prefill::VramPlan plan;   // outlives the block: the post-touch correction holds the cache to its figure
+    // STRATA_SPLIT_OWN_PRIMARY: the chunk the split's first card keeps its own prompt buffers for (0 = borrow).
+    int64_t split_primary_own_chunk = 0;
+    int64_t split_primary_own_headroom = 0;   // VRAM kept free beside those buffers (STRATA_SPLIT_OWN_HEADROOM_MIB)
     strata::prefill::EffectivePrefillPlan effective_prefill;   // what the FINAL cache actually validated
     bool posttouch_validated = false;
     // the chunk/loan policy's knobs and costs, built once for the startup plan's post-touch correction and the
@@ -6224,6 +6276,45 @@ int main(int argc, char** argv) {
                 mtp_bind += (int64_t) d->bind_bytes(native_head.row_bytes(), n_vocab);
         const int64_t session_b =
             (int64_t) strata::core::session_bytes(g, o.max_context, K, 0, multi_gpu ? split_at[0] : -1);
+        // ---- STRATA_SPLIT_OWN_PRIMARY: A SPLIT'S FIRST CARD KEEPS ITS OWN PROMPT BUFFERS.  Its cache is capped at
+        // its own pair count, so the VRAM that count leaves unused either funds the prompt buffers or is handed back
+        // through a loan that evicts those experts and re-reads them over that card's link on every chunk, then
+        // refills them.  Own them when the cache loses fewer bytes that way than a loan of the same chunk takes.
+        // Opt-in: it changes which experts a full card keeps resident.
+        static const bool own_primary_on = [] {
+            const char* v = std::getenv("STRATA_SPLIT_OWN_PRIMARY");
+            return v != nullptr && v[0] == '1';
+        }();
+        if (own_primary_on && multi_gpu && !o.no_prefill_borrow && !profile.empty()) {
+            const int64_t chunk = o.prefill_auto ? auto_ceiling : o.prefill_chunk;
+            const uint64_t need = strata::prefill::Prefill::bytes_needed(g, ss, chunk, -1) +
+                                  strata::prefill::kOwnedPageMarginBytes;
+            // STRATA_SPLIT_OWN_HEADROOM_MIB: VRAM kept free on that card beside its own buffers, for a lazily loaded
+            // sibling (--vision's projector and scratch) or a workspace.  0 (the default): the measured layout.
+            static const int64_t own_headroom = [] {
+                const char* v = std::getenv("STRATA_SPLIT_OWN_HEADROOM_MIB");
+                const long long mib = v != nullptr ? std::atoll(v) : 0;
+                return (int64_t) std::max<long long>(0, mib) << 20;
+            }();
+            const uint64_t mandatory = ((uint64_t) o.vram_reserve_mib << 20) + (uint64_t) pipe_first +
+                                       (uint64_t) own_headroom;
+            uint64_t pairs = 0;
+            const auto& lay = strata::kernels::cpu::expert_layout();
+            for (const auto& pr : profile)
+                pairs += (uint64_t) strata::core::ExpertCache::slot_stride((int64_t) lay.blob_bytes(pr.first));
+            const uint64_t avail = free_b > mandatory ? free_b - mandatory : 0;
+            const uint64_t cache_now = std::min(pairs, avail);
+            const uint64_t cache_own = std::min(pairs, avail > need ? avail - need : 0);
+            const uint64_t loss = cache_now - cache_own;
+            if (chunk > 0 && free_b >= mandatory + need && loss < need) {
+                split_primary_own_chunk = chunk;
+                split_primary_own_headroom = own_headroom;
+                std::fprintf(stderr, "strata generate: split: CUDA0 keeps its own prompt buffers for a %lld-token "
+                                     "chunk (%.2f GiB; its cache gives up %.2f GiB of %.2f, a loan would take %.2f)\n",
+                             (long long) chunk, (double) need / 1073741824.0, (double) loss / 1073741824.0,
+                             (double) pairs / 1073741824.0, (double) need / 1073741824.0);
+            }
+        }
         strata::prefill::StartupVramInput in;
         in.free_bytes = free_b;
         in.user_reserve_bytes = (uint64_t) o.vram_reserve_mib << 20;
@@ -6242,13 +6333,15 @@ int main(int argc, char** argv) {
         in.prefill_borrow = prefill_borrow_available;
         in.prefill_auto = o.prefill_auto;
         in.prefill_chunk = o.prefill_chunk;
+        in.primary_own_chunk = split_primary_own_chunk;
         in.spec_needs_cache = o.spec > 0;
         // the hit-path scratch, the verify windows and the decode graphs stay funded by the reserve by design
         // (--vram-reserve-mib's documented job, #199): the planner does not price them individually, and the
         // post-touch correction keeps an owned prefill from consuming their room.
         // A layer split books its per-stage windows itself (stage_room's kWindowMib); --pipeline-windows' own
         // second verifier and GDN snapshots (pipe_first) are booked here, beside the reserve.
-        in.runtime_reserve_bytes = (uint64_t) pipe_first;
+        in.runtime_reserve_bytes = (uint64_t) pipe_first +
+                                   (uint64_t) (split_primary_own_chunk > 0 ? split_primary_own_headroom : 0);
         in.lend.min_keep_slots = 128;
         in.lend.lend_pct = kAutoLendPct;
         in.lend.auto_ceiling = auto_ceiling;
@@ -8367,7 +8460,7 @@ int main(int argc, char** argv) {
     };
     if (o.resident_cpu_experts) {
         int64_t lend_from = -1;
-        if (o.prefill_chunk > 0 && !o.no_prefill_borrow && d_res != nullptr && xcache.slots() > 0) {
+        if (split_primary_own_chunk == 0 && o.prefill_chunk > 0 && !o.no_prefill_borrow && d_res != nullptr && xcache.slots() > 0) {
             int64_t chunk = o.prefill_chunk;
             const int64_t k = plan_lend(chunk);
             if (k > 0) lend_from = xcache.slots() - k;
@@ -8419,6 +8512,7 @@ int main(int argc, char** argv) {
                 const int64_t le = i == 0 ? split_at[0] : stages[i - 1]->le;
                 if (xc.slots() <= 0 || le <= lb) continue;
                 const uint64_t need = strata::prefill::Prefill::bytes_needed(g, ses, bound);
+                if (i == 0 && split_primary_own_chunk > 0) continue;   // its own buffers: nothing of this cache is lent
                 if (own_ok) {   // the card funds its buffers at any chunk the scan can pick: nothing is lent
                     const strata::core::OnDevice on(dev);
                     size_t fb = 0, tb = 0;
@@ -8763,6 +8857,7 @@ int main(int argc, char** argv) {
             // explicit --prefill is the operator's number, and a loan of it only has to fit.  With one participant
             // (no split) this reduces to plan_lend exactly, so the single-GPU loan is unchanged from main.
             auto fits_one = [&](const PfPart& p, int64_t c, bool cap) -> bool {
+                if (split_primary_own_chunk > 0 && &p == &pf_parts[0]) return true;   // it owns its buffers: no loan
                 const int64_t k = part_slots(p, c);
                 if (k <= 0 || k + 128 > p.cache->slots()) return false;
                 return !(cap && k * 100 > kAutoLendPct * p.cache->slots());
@@ -8793,6 +8888,7 @@ int main(int argc, char** argv) {
                 int64_t room = cap;
                 for (const PfPart& p : pf_parts) {
                     if (only != nullptr && &p != only) continue;
+                    if (split_primary_own_chunk > 0 && &p == &pf_parts[0]) continue;   // its ring is in its own buffers
                     // clamped at 0: a cache under 128 slots has a negative lend budget, and `slots - budget` is
                     // then `slots`, which is off_[slots] - the end of the prefix sum, so that cache lends 0 bytes
                     // rather than reading one entry past its offsets
@@ -8870,6 +8966,7 @@ int main(int argc, char** argv) {
                 uint64_t gc_bytes = 0;
                 int64_t gc_slots = 0;
                 for (const PfPart& p : pf_parts) {
+                    if (split_primary_own_chunk > 0 && &p == &pf_parts[0]) continue;
                     gc_bytes += (uint64_t) std::max<int64_t>(0, (int64_t) p.cache->bytes());
                     gc_slots += p.cache->slots();
                 }
@@ -8879,6 +8976,7 @@ int main(int argc, char** argv) {
                         bytes = 0;
                         slots = 0;
                         for (const PfPart& p : pf_parts) {
+                            if (split_primary_own_chunk > 0 && &p == &pf_parts[0]) continue;
                             const int64_t k = part_slots(p, c);
                             if (k <= 0) continue;
                             slots += k;
@@ -8955,7 +9053,10 @@ int main(int argc, char** argv) {
                         size_t fb = 0, tb = 0;
                         if (cudaMemGetInfo(&fb, &tb) != cudaSuccess) { (void) cudaGetLastError(); continue; }
                         const uint64_t need = strata::prefill::Prefill::bytes_needed(g, *p.ses, chunk, -1, srcp != nullptr);
-                        if ((uint64_t) fb >= need + (3ull << 29)) {
+                        const uint64_t headroom = (split_primary_own_chunk > 0 && &p == &pf_parts[0])
+                                                      ? (uint64_t) strata::prefill::kOwnedPageMarginBytes
+                                                      : (3ull << 29);
+                        if ((uint64_t) fb >= need + headroom) {
                             std::fprintf(stderr, "strata serve:   CUDA%d keeps its own prompt buffers (%.2f GiB of "
                                                  "%.2f GiB free): no loan\n", p.dev < 0 ? 0 : p.dev,
                                          (double) need / 1073741824.0, (double) fb / 1073741824.0);
@@ -15019,6 +15120,13 @@ int main(int argc, char** argv) {
             // rounded up to 256), laid out in the last of the slots it may borrow - per participant, out of that
             // participant's own cache, and marking only that participant's own layers
             int64_t seg_lend = 0;   // the loan the last lend left (the largest participant's chunk; 0: none)
+            // Opt-in: price a fresh single-chunk loan at its actual token count. Rounding across the
+            // staged/streamed threshold otherwise borrows a larger ring that the read never uses.
+            // Expert placement can change; unset preserves the rounded layout.
+            static const bool loan_exact = [] {
+                const char* v = std::getenv("STRATA_PREFILL_LOAN_EXACT");
+                return v != nullptr && std::atoi(v) != 0;
+            }();
             auto lend = [&](int64_t tokens, std::string& e, int64_t exact) -> bool {
                 seg_lend = 0;
                 if (pf_parts.empty()) return true;                     // its own buffers: nothing to lend
@@ -15031,7 +15139,12 @@ int main(int argc, char** argv) {
                                        : split_small > 0 && tokens <= split_small_max ? std::min(want_full, split_small)
                                                                                      : want_full;
                 // `exact`: a planned segment read on - the loan it was read with (what is left would size another)
-                const int64_t want = exact > 0 ? std::min(exact, o.prefill_chunk) : want_seg;
+                int64_t want = exact > 0 ? std::min(exact, o.prefill_chunk) : want_seg;
+                const int64_t want_rounded = want;   // what the grid asked for (the trace of an exact loan)
+                // Continuing plans and fixed head-alias layouts retain their original capacity.
+                // Only a segment that fits entirely inside its chunk can use a smaller exact loan.
+                const bool want_exact = loan_exact && exact <= 0 && !o.prefill_head_alias && tokens > 0 && tokens < want;
+                if (want_exact) want = tokens;
                 if (want <= 0) {
                     e = "prefill: cannot lend buffers for an empty request segment";
                     return false;
@@ -15110,6 +15223,10 @@ int main(int argc, char** argv) {
                                  (long long) want,
                                  pf_parts.empty() ? -1 : (int) pf_parts[0].first_now, (long long) n_lent,
                                  std::chrono::duration<double, std::milli>(Clock::now() - t_ln).count());
+                    if (want_exact)   // STRATA_PREFILL_LOAN_EXACT: the grid's chunk did not size this loan
+                        std::fprintf(stderr, "strata trace: request loan: STRATA_PREFILL_LOAN_EXACT: a segment of %lld "
+                                             "tokens is laid out for its own read (the chunk rounds to %lld)\n",
+                                     (long long) want, (long long) want_rounded);
                     std::fflush(stderr);
                 }
                 return true;
@@ -17377,7 +17494,12 @@ int main(int argc, char** argv) {
                 auto kv_arrays = [&](const strata::core::QsaState& st) {
                     const bool h = st.kv_mode != 0;
                     std::vector<std::pair<const void*, int64_t>> a;
-                    if (st.kv_q4) {
+                    if (st.kv_tq) {
+                        // TurboQuant is resident-only with no host copy (layer.cpp), so the VRAM arrays are the
+                        // authoritative ones at every mode.  Per-head bytes, like the other quantized arms.
+                        const int64_t tqb = (int64_t) strata::kernels::kv_tq_bytes_per_head(st.kv_tq_bits, (int) qs.head_dim);
+                        a = {{st.k_tq, tqb}, {st.v_tq, tqb}};
+                    } else if (st.kv_q4) {
                         const int64_t q4b = (int64_t) strata::kernels::kv_q4_bytes_per_head((int) qs.head_dim);
                         a = {{h ? st.host.k_q4 : st.k_q4, q4b}, {h ? st.host.v_q4 : st.v_q4, q4b}};
                     } else if (st.kv_hybrid) {

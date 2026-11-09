@@ -7,7 +7,7 @@
 # CUDA builds require compute capability 7.0 or newer.  Optional kernels with newer ISA requirements are
 # selected below so a binary never contains instructions its target GPU cannot execute.
 cmake_minimum_required(VERSION 3.24)
-project(strata VERSION 0.1.45.3 LANGUAGES CXX)
+project(strata VERSION 0.1.45.7 LANGUAGES CXX)
 # EXPERIMENTAL: the Intel Arc engine, the SYCL port in sycl/ (PR #423; icpx + oneMKL, docs/INTEL_ARC.md). It is its
 # own project that takes the unported sources from src/; with this on, nothing below is configured.
 option(STRATA_ENABLE_SYCL "EXPERIMENTAL: build the Intel Arc (SYCL) engine from sycl/ - docs/INTEL_ARC.md" OFF)
@@ -405,6 +405,7 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
                           src/kernels/cuda/kv_q8.cu
                           src/kernels/cuda/kv_stream.cu
                           src/kernels/cuda/kv_q4.cu
+                          src/kernels/cuda/kv_tq.cu
                           src/kernels/cuda/fused_gr.cu
                           src/kernels/cuda/cvec.cu
                           src/kernels/cuda/qsa_decode_attn.cu
@@ -743,9 +744,12 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
     target_link_libraries(strata_prefill PRIVATE roc::rocblas)
   endif()
 
+  # Built for every GPU backend (it is the only prefill parity target outside the test gate), so it takes the
+  # backend-neutral runtime/include variables: naming CUDA::cudart here made a HIP configure fail outright (CMP0028)
+  # before any object was built, even with the tests off.
   add_executable(prefill_gemm_parity tests/prefill_gemm_parity.cpp)
-  target_include_directories(prefill_gemm_parity PRIVATE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
-  target_link_libraries(prefill_gemm_parity PRIVATE strata_prefill CUDA::cudart)
+  target_include_directories(prefill_gemm_parity PRIVATE ${_strata_gpu_include_directories})
+  target_link_libraries(prefill_gemm_parity PRIVATE strata_prefill ${_strata_gpu_runtime_target})
   add_test(NAME prefill_gemm_parity COMMAND prefill_gemm_parity)
 
   if(STRATA_BUILD_TESTS AND STRATA_ENABLE_CUDA)
@@ -1005,6 +1009,12 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_include_directories(iq_multi_parity PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(iq_multi_parity PRIVATE strata_kernels ${_strata_gpu_runtime_target})
   add_test(NAME iq_multi_parity COMMAND iq_multi_parity)
+  # the Gyro trellis decode kernels (TQ2_T / TQK6 / TQK7 / TQP5-7) on synthetic blocks: decode-once vs per-column bitwise,
+  # output checksums to compare two builds byte for byte, --bench for timings (GPU, no model)
+  add_executable(tq_pascal_bench src/kernels/tq_pascal_bench.cpp)
+  target_include_directories(tq_pascal_bench PRIVATE ${_strata_gpu_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml)
+  target_link_libraries(tq_pascal_bench PRIVATE strata_kernels ${_strata_gpu_runtime_target})
+  add_test(NAME tq_pascal_bench COMMAND tq_pascal_bench)
   set_tests_properties(iq_multi_parity PROPERTIES ENVIRONMENT "STRATA_KQ_SPLIT=1")   # the Q4_K / Q5_K / Q8_0 Split path against the old kernels
   # the same Split path on the other routes it can meet: the generic multi kernels (no V2K) and the fused gate/up + SwiGLU kernel, and the sub-16-row
   # gate/up route switched off (a K-quant row has 160 dots, not the 80 the sub-16 rows assume: STRATA_KQ_SPLIT=1 must stay bitwise on all of them)
@@ -1100,7 +1110,9 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   # STRATA_ROUTE_RESIDENT's swap, serial vs warp: the bench holds the pre-port serial kernel (so it is compiled as
   # CUDA, the one device-code file among the .cpp benches) and times the two forms on the same input in one run.
   # The chain modes above call the plain top-10 on a fully resident table, so they never reach the swap; this does.
-  if(STRATA_ENABLE_CUDA)
+  # Not in the gfx906 HIP build: it turns STRATA_ENABLE_CUDA on to take the CUDA-shaped branch but enables the HIP
+  # language only, and a source forced to LANGUAGE CUDA fails generation there ("CUDA_ARCHITECTURES is empty").
+  if(STRATA_ENABLE_CUDA AND NOT STRATA_HIP_GFX906)
     add_executable(router_chain_bench src/kernels/router_chain_bench.cpp)
     set_source_files_properties(src/kernels/router_chain_bench.cpp PROPERTIES LANGUAGE CUDA)
     target_include_directories(router_chain_bench PRIVATE ${_strata_gpu_include_directories})
@@ -1172,6 +1184,13 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_include_directories(route_window_parity PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(route_window_parity PRIVATE strata_kernels ${_strata_gpu_runtime_target})
   add_test(NAME route_window_parity COMMAND route_window_parity)
+
+  # STRATA_VERIFY_ECAP's redirect: token 0 untouched, kept entries unchanged, dropped entries at weight 0 on a
+  # kept expert, and the same input twice gives the same output (GPU, synthetic, no model)
+  add_executable(ecap_parity src/kernels/ecap_parity.cpp)
+  target_include_directories(ecap_parity PRIVATE ${_strata_gpu_include_directories})
+  target_link_libraries(ecap_parity PRIVATE strata_kernels ${_strata_gpu_runtime_target})
+  add_test(NAME ecap_parity COMMAND ecap_parity)
 
   # STRATA_ROUTE_RESIDENT's swap: the warp-per-token kernel against a scalar reference of the same semantics,
   # bitwise on the ids, the weights and the four counters (GPU, synthetic, no model)
@@ -1316,6 +1335,15 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_include_directories(kv_q4_parity PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(kv_q4_parity PRIVATE strata_kernels ${_strata_gpu_runtime_target})
   add_test(NAME kv_q4_parity COMMAND kv_q4_parity)
+  # TurboQuant KV (--kv tq3|tq4|tq6|tq8): the block layout (dimension-ordered 8-value index groups) against a host
+  # Lloyd-Max oracle, the paged append/gather roundtrip, the prompt append against the per-cell appends, and the
+  # attention readers on TurboQuant pools against FP16 pools of the same values (GPU, synthetic, no model).
+  add_executable(kv_tq_parity src/kernels/kv_tq_parity.cpp)
+  target_include_directories(kv_tq_parity PRIVATE ${_strata_gpu_include_directories})
+  target_link_libraries(kv_tq_parity PRIVATE strata_kernels ${_strata_gpu_runtime_target})
+  add_test(NAME kv_tq_parity COMMAND kv_tq_parity)
+  # main() exits 77 when there is no device: ctest must report a skip, not a failure (the tree's GPU-test rule)
+  set_tests_properties(kv_tq_parity PROPERTIES SKIP_RETURN_CODE 77)
   # the verify window's one-launch forms (hyper-connection write, PLE post-ops with the commit's
   # history snapshots) vs the per-token launches they replace, bitwise (GPU, synthetic, no model)
   add_executable(verify_batch_parity src/kernels/verify_batch_parity.cpp)
@@ -1484,6 +1512,10 @@ endif()
 add_library(strata_kernels_cpu STATIC src/kernels/cpu/expert.cpp src/kernels/cpu/pool.cpp
             src/kernels/cpu/expert_layout.cpp src/kernels/cpu/q2_avx2.cpp src/kernels/cpu/hadamard.cpp)
 target_include_directories(strata_kernels_cpu PUBLIC include)
+# PR #4625: honor zero spin only on the Linux CPU/CUDA builds measured upstream.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT STRATA_ENABLE_HIP AND NOT STRATA_HIP_GFX906)
+  target_compile_definitions(strata_kernels_cpu PRIVATE STRATA_POOL_SPIN_ZERO=1)
+endif()
 # Plan v0.3 P6: only the kernel files get the AVX-512 / AVX2 flags; the pool and the probe run on any x86-64,
 # and the engine picks the kernels at run time (cpu_avx512_ok).
 if(MSVC)
@@ -1698,6 +1730,11 @@ if(STRATA_NATIVE_EXPERTS)
   # tree leaves them to the FP16 prompt path
   if(STRATA_GGML_DIR AND EXISTS "${STRATA_GGML_DIR}/ggml/src/ggml-cuda/template-instances/mmq-instance-tqk6.cu")
     list(APPEND _strata_mmq_types tq2_t tqk6 tqk7)
+    # Gyro-L's pair trellis (types 147-149): the same fork's ggml has their MMQ instances
+    if(EXISTS "${STRATA_GGML_DIR}/ggml/src/ggml-cuda/template-instances/mmq-instance-tqp5.cu")
+      list(APPEND _strata_mmq_types tqp5 tqp6 tqp7)
+      set(_strata_mmq_tqp ON)   # moe_mmq.cu names GGML_TYPE_TQP5-7 only where the ggml has them (STRATA_MMQ_TQP)
+    endif()
     set(_strata_mmq_tq ON)
   elseif(STRATA_MMQ_TQ_OVERLAY AND (STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP))
     # an upstream llama.cpp: the trellis MMQ instances come from an overlay of the pinned ggml-cuda headers written at
@@ -1714,6 +1751,7 @@ if(STRATA_NATIVE_EXPERTS)
       configure_file(third_party/ggml/ggml-common-tq.h "${_strata_tq_overlay_dir}/ggml-common-tq.h" COPYONLY)
       configure_file(src/kernels/cuda/tq_lut_i8.cuh "${_strata_tq_overlay_dir}/tq_lut_i8.cuh" COPYONLY)
       set(_strata_mmq_tq ON)
+      set(_strata_mmq_tqp ON)   # the overlay adds the pair-trellis enumerators and instances
       set(_strata_mmq_tq_overlay ON)
       message(STATUS "trellis MMQ (Gyro prompts): overlay on the pinned ggml-cuda in ${_strata_tq_overlay_dir}")
       if(STRATA_BUILD_TESTS)
@@ -1763,7 +1801,7 @@ if(STRATA_NATIVE_EXPERTS)
       target_sources(strata_mmq PRIVATE ${_strata_mmq}/template-instances/mmq-instance-${_t}.cu)
     endforeach()
     if(_strata_mmq_tq_overlay)
-      foreach(_t tq2_t tqk6 tqk7)
+      foreach(_t tq2_t tqk6 tqk7 tqp5 tqp6 tqp7)
         target_sources(strata_mmq PRIVATE ${_strata_tq_overlay_dir}/template-instances/mmq-instance-${_t}.cu)
       endforeach()
       # first on the include path: the patched mmq.cuh / ggml.h shadow the pinned ones for this target only
@@ -1875,6 +1913,9 @@ if(STRATA_NATIVE_EXPERTS)
     if(_strata_mmq_tq)
       target_compile_definitions(strata_mmq PRIVATE STRATA_MMQ_TQ=1)
     endif()
+    if(_strata_mmq_tqp)
+      target_compile_definitions(strata_mmq PRIVATE STRATA_MMQ_TQP=1)
+    endif()
     target_link_libraries(strata_prefill PUBLIC strata_mmq)
     # Volta native Q2_0 experts use WMMA FP16 products with FP32 accumulation.
     # Runtime device/format checks retain the existing path on unsupported targets.
@@ -1958,7 +1999,7 @@ if(STRATA_NATIVE_EXPERTS)
       list(APPEND _strata_mmq_sources "${_strata_mmq}/template-instances/mmq-instance-${_t}.cu")
     endforeach()
     if(_strata_mmq_tq_overlay)
-      foreach(_t tq2_t tqk6 tqk7)
+      foreach(_t tq2_t tqk6 tqk7 tqp5 tqp6 tqp7)
         list(APPEND _strata_mmq_sources "${_strata_tq_overlay_dir}/template-instances/mmq-instance-${_t}.cu")
       endforeach()
     endif()
@@ -1982,6 +2023,9 @@ if(STRATA_NATIVE_EXPERTS)
     endif()
     if(_strata_mmq_tq)
       target_compile_definitions(strata_mmq PRIVATE STRATA_MMQ_TQ=1)
+    endif()
+    if(_strata_mmq_tqp)
+      target_compile_definitions(strata_mmq PRIVATE STRATA_MMQ_TQP=1)
     endif()
     target_link_libraries(strata_mmq PUBLIC ggml-base hip::host roc::hipblas)
     target_link_libraries(strata_prefill PUBLIC strata_mmq)
@@ -2060,7 +2104,11 @@ if(STRATA_NATIVE_EXPERTS)
       # APR: the trellis expert types and the Hadamard activation rotation, when ggml comes from the agention fork
       # (the only tree with these types; marked by its ggml-cuda/tq.cuh)
       if(STRATA_GGML_DIR AND EXISTS "${STRATA_GGML_DIR}/ggml/src/ggml-cuda/tq.cuh")
-        foreach(_pair tqk6/tqk7 tq2_t/tq2_t)
+        set(_strata_tq_pairs tqk6/tqk7 tq2_t/tq2_t)
+        if(EXISTS "${STRATA_GGML_DIR}/ggml/src/ggml-cuda/template-instances/mmq-instance-tqp5.cu")   # Gyro-L's pair trellis
+          list(APPEND _strata_tq_pairs tqp5/tqp5 tqp6/tqp6 tqp7/tqp7)
+        endif()
+        foreach(_pair ${_strata_tq_pairs})
           string(REPLACE "/" "_" _name "${_pair}")
           add_test(NAME native_expert_parity_${_name} COMMAND native_expert_parity --synthetic ${_pair})
           add_test(NAME native_expert_parity_hadamard_${_name} COMMAND native_expert_parity --synthetic-hadamard ${_pair})
@@ -2134,6 +2182,13 @@ if(STRATA_BUILD_TESTS)
     add_test(NAME tq_cpu_parity COMMAND tq_cpu_parity)
     add_test(NAME tq_cpu_parity_avx2 COMMAND ${CMAKE_COMMAND} -E env STRATA_FORCE_AVX2=1 $<TARGET_FILE:tq_cpu_parity>)
     set_tests_properties(tq_cpu_parity tq_cpu_parity_avx2 PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+    # Gyro-L's pair trellis (types 147-149) and the older trellis rows on synthetic blocks, no ggml and no model: the scalar
+    # kernel against a bit-by-bit reference, every ISA bit for bit equal to scalar, the type predicates unchanged
+    add_executable(tqp_cpu_test src/kernels/cpu/tqp_cpu_test.cpp)
+    target_link_libraries(tqp_cpu_test PRIVATE strata_kernels_cpu)
+    add_test(NAME tqp_cpu_test COMMAND tqp_cpu_test)
+    add_test(NAME tqp_cpu_test_avx2 COMMAND ${CMAKE_COMMAND} -E env STRATA_FORCE_AVX2=1 $<TARGET_FILE:tqp_cpu_test>)
+    set_tests_properties(tqp_cpu_test tqp_cpu_test_avx2 PROPERTIES TIMEOUT 120)
   endif()
 
   add_executable(expert_parity src/kernels/cpu/expert_parity.cpp)
@@ -2219,6 +2274,7 @@ if(STRATA_HIP_GFX906)
     file(GLOB _strata_mmq_cu ${_strata_mmq}/*.cu ${_strata_mmq}/template-instances/*.cu)
     list(APPEND _strata_cu ${_strata_mmq_cu})
     target_compile_definitions(strata_mmq PRIVATE GGML_USE_HIP)
+
   endif()
   set_source_files_properties(${_strata_cu} PROPERTIES LANGUAGE HIP)
 endif()

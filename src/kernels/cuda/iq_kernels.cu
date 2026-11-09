@@ -433,13 +433,18 @@ __device__ __forceinline__ float vec_dot_q5_K_q8_1(const void* __restrict__ vbq,
 // of the ORIGINAL activations.  That is ggml-cpu's convention (its q8_1 `s` is d * sum(q)) and the one the K-quant
 // mins above use; the scaled and the min term then see the same activation (eddoursul/Strata measured 1.1-1.2%
 // against 1.9% relative error per expert).  Result: sumi * (d5 * d8) + sumu * (m5 * d8).
-// Q5_0: llama.cpp's integer chain verbatim (vecdotq.cuh vec_dot_q5_0_q8_1_impl) -- symmetric (one delta, no
-// learned min), so unlike Q5_1 there is no min-term rounding choice to make: the constant -16 per-weight offset
-// is accounted for via the q8_1 block's `ds.y` (sum of the ORIGINAL activations), exactly as upstream.
+// Q5_0: llama.cpp's integer chain (vecdotq.cuh vec_dot_q5_0_q8_1_impl), but the constant -16 per-weight offset multiplies
+// the sum of the QUANTIZED activations (dp4a with 0x01010101, times d8), like the Q5_1 and Q4_0 paths and ggml-cpu's q8_0
+// dot, instead of the q8_1 block's `ds.y` (the sum of the ORIGINAL activations, upstream CUDA).  Unsloth's v3.1 sets put
+// Q5_0 downs in 1 to 33 layers (#95), and the original sum does not see the activations' rounding, which the experts'
+// SwiGLU outputs (not zero-mean) make large: measured on the V100 pair with native_expert_parity --synthetic (IQ2_XXS,
+// IQ2_S, IQ2_XS, IQ3_XXS and IQ4_XS gate/up), the whole-expert error against a float reference was 2.40e-2 .. 3.18e-2
+// with the old form and 1.25e-2 .. 1.30e-2 now, the range of the other down formats there (IQ4_NL/Q2_0: 1.29e-2 ..
+// 1.31e-2).  Result: d5 * d8 * (sumi - 16 * sumu).
 __device__ __forceinline__ float vec_dot_q5_0_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
                                                    const int& kbx, const int& iqs) {
     const block_q5_0* bq5_0 = (const block_q5_0*) vbq + kbx;
-    int sumi = 0;
+    int sumi = 0, sumu = 0;
 #pragma unroll
     for (int i = 0; i < VDR_Q5_0; ++i) {
         const int vl = get_int_b2(bq5_0->qs, iqs + i);
@@ -457,11 +462,11 @@ __device__ __forceinline__ float vec_dot_q5_0_q8_1(const void* __restrict__ vbq,
         vi1 |= (vh << 2) & 0x00100000;
         vi1 |= (vh << 9) & 0x10000000;
         sumi = ggml_cuda_dp4a(vi1, u1, sumi);
+        sumu = ggml_cuda_dp4a(0x01010101, u1, ggml_cuda_dp4a(0x01010101, u0, sumu));
     }
     const float d5 = __half2float(bq5_0->d);
     const float d8 = __low2float(bq8_1->ds);
-    const float s8 = __high2float(bq8_1->ds);
-    return d5 * (sumi * d8 - (16.0f * VDR_Q5_0 / QI5_0) * s8);
+    return d5 * d8 * (float) (sumi - 16 * sumu);
 }
 // Q4_0 (plain llama-quantize Q4_0 files, e.g. bartowski's: gate/up and most down projections): the codes are centred
 // (q - 8 as signed bytes) before the dot, the exact integer form ggml-cpu's q4_0 x q8_0 dot uses, rather than
@@ -617,6 +622,10 @@ template<int TY> struct TqInfo;
 template<> struct TqInfo<144> { using block_t = block_tq2_t; };   // byte-aligned, no K
 template<> struct TqInfo<145> { using block_t = block_tqk6; static constexpr int K = 6; };
 template<> struct TqInfo<146> { using block_t = block_tqk7; static constexpr int K = 7; };
+// Gyro-L: pair trellis (64 steps x K bits, 2 weights per step), the TQ2_T codebook's first pair
+template<> struct TqInfo<147> { using block_t = block_tqp5; static constexpr int K = 5; };
+template<> struct TqInfo<148> { using block_t = block_tqp6; static constexpr int K = 6; };
+template<> struct TqInfo<149> { using block_t = block_tqp7; static constexpr int K = 7; };
 __device__ __forceinline__ float tq_h2f(uint32_t bits) { return __half2float(__ushort_as_half((unsigned short) bits)); }
 // the four unscaled weights of the step with state s: (a.x, a.y, b.x, b.y)
 __device__ __forceinline__ void tq_step(uint32_t s, float2& a, float2& b) {
@@ -672,8 +681,11 @@ __device__ __forceinline__ void tq_states4(const uint8_t* qs, int l, uint32_t s[
 // sum|gpu - ref| / sum|ref| < 3e-2 (the bound every expert type's CPU and GPU paths get there); the prompt path's
 // fp16 dequantizers against to_float at < 1e-6, their fp16 output equal to the fp16 of the float one.
 struct TqLane { int q[4]; float d; };
-template<int TY>
-__device__ __forceinline__ TqLane tq_load(const void* __restrict__ vbq, int kbx, int iqs) {
+// STAGE: the codebook is read from the block's shared-memory copy (s_lut, stage_iq_grid) instead of the global table: a
+// warp's 32 random 2-byte lookups touch ~20 sectors of the global table's L1 lines but only a few shared banks.
+// The same values either way.
+template<int TY, bool STAGE = false>
+__device__ __forceinline__ TqLane tq_load(const void* __restrict__ vbq, int kbx, int iqs, const uint32_t* __restrict__ s_lut = nullptr) {
     const auto* b = (const typename TqInfo<TY>::block_t*) vbq + kbx;
     uint32_t s[4];
     tq_states4<TY>(b->qs, iqs / 4, s);
@@ -681,7 +693,12 @@ __device__ __forceinline__ TqLane tq_load(const void* __restrict__ vbq, int kbx,
 #pragma unroll
     for (int i = 0; i < 4; ++i) {
         const uint32_t x = (s[i] & TQ_STATE_MASK) * 0x9e3779b1u;
-        r.q[i] = (int) ((uint32_t) tq_lut_i8[x >> 21] | ((uint32_t) tq_lut_i8[(x >> 10) & 2047u] << 16));
+        if constexpr (STAGE) {
+            const uint16_t* lut = (const uint16_t*) s_lut;
+            r.q[i] = (int) ((uint32_t) lut[x >> 21] | ((uint32_t) lut[(x >> 10) & 2047u] << 16));
+        } else {
+            r.q[i] = (int) ((uint32_t) tq_lut_i8[x >> 21] | ((uint32_t) tq_lut_i8[(x >> 10) & 2047u] << 16));
+        }
     }
     r.d = tq_h2f(b->d);
     return r;
@@ -699,6 +716,71 @@ template<int TY>
 __device__ __forceinline__ float vec_dot_tq_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
                                                  const int& kbx, const int& iqs) {
     return tq_apply(tq_load<TY>(vbq, kbx, iqs), bq8_1, iqs);
+}
+
+// ---- TQP (Gyro-L): 64 trellis steps of 2 weights; a lane is 8 steps (16 values).
+// State of step t: the 16 stream bits from bit (63 - t)*K, LSB-first, circular over 64*K bits
+// (tqp_state in the fork's ggml-common.h). The step's 2 weights are tq2t_lut_f16[2*hyb(2*s)+j],
+// i.e. the FIRST pair of TQ2_T state s = tq_lut_i8[x >> 21] (tq_lut_i8 holds the pair as two int8).
+// A lane's 8 states are the 16-bit fields at bit i*K of the bit stream starting at its 8th-to-last
+// step, so the whole lane needs K + 2 bytes (7, 8 or 9 for K = 5, 6, 7): one byte-built 64-bit
+// window plus one byte for K = 7's first state (which ends at bit 65), then eight shifts.  That is
+// 7-9 loads per lane instead of 24.  The bytes are loaded (not one u64) because a block's qs array
+// is only 2-byte aligned (block strides are 42/50/58 bytes).
+template<int TY>
+__device__ __forceinline__ void tqp_states8(const uint8_t* __restrict__ qs, int lane, uint32_t s[8]) {
+    constexpr int K = TqInfo<TY>::K, NB = 8 * K, NW = K + 2 < 8 ? K + 2 : 8;
+    const int pidx = (7 - lane) * K;          // the lane's first byte, always < NB
+    uint64_t w = 0;                           // bits pidx*8 .. pidx*8+63
+#pragma unroll
+    for (int j = 0; j < NW; ++j) {
+        const int idx0 = pidx + j;
+        w |= (uint64_t) qs[idx0 < NB ? idx0 : idx0 - NB] << (8 * j);
+    }
+    const int i8 = pidx + 8;
+    const uint32_t hi = K == 7 ? (uint32_t) qs[i8 < NB ? i8 : i8 - NB] : 0u;   // the 65th bit
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        const int sh = (7 - i) * K;                               // 0 .. 7K (<= 49)
+        const uint32_t lo = (uint32_t) (w >> sh);
+        const uint32_t top = sh > 48 ? (uint32_t) (hi << (64 - sh)) : 0u;
+        s[i] = (lo | top) & 0xFFFFu;
+    }
+}
+// The per-state form: 3 byte loads and a shift, no window.  Used by dq_tqp (the f16 expert uploads), which
+// benches faster with it than with the window (the window's register pressure costs the copy kernels).
+template<int TY>
+__device__ __forceinline__ void tqp_states8_cheap(const uint8_t* __restrict__ qs, int lane, uint32_t s[8]) {
+    constexpr int K = TqInfo<TY>::K, NB = 8 * K;
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        const uint32_t off = (uint32_t) (63 - (8 * lane + i)) * (uint32_t) K;
+        const uint32_t i0 = off >> 3;
+        const uint32_t i1 = i0 + 1 < (uint32_t) NB ? i0 + 1 : 0;
+        const uint32_t i2 = i1 + 1 < (uint32_t) NB ? i1 + 1 : 0;
+        const uint32_t w = (uint32_t) qs[i0] | ((uint32_t) qs[i1] << 8) | ((uint32_t) qs[i2] << 16);
+        s[i] = (w >> (off & 7)) & 0xFFFFu;
+    }
+}
+template<int TY>
+__device__ __forceinline__ TqLane tq_load_tqp(const void* __restrict__ vbq, int kbx, int iqs) {
+    const auto* b = (const typename TqInfo<TY>::block_t*) vbq + kbx;
+    uint32_t s[8];
+    tqp_states8<TY>(b->qs, iqs / 4, s);
+    TqLane r;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {   // two steps (2+2 weights) per int
+        const uint32_t x0 = (s[2 * i] & TQ_STATE_MASK) * 0x9e3779b1u;
+        const uint32_t x1 = (s[2 * i + 1] & TQ_STATE_MASK) * 0x9e3779b1u;
+        r.q[i] = (int) ((uint32_t) tq_lut_i8[x0 >> 21] | ((uint32_t) tq_lut_i8[x1 >> 21] << 16));
+    }
+    r.d = tq_h2f(b->d);
+    return r;
+}
+template<int TY>
+__device__ __forceinline__ float vec_dot_tqp_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
+                                                  const int& kbx, const int& iqs) {
+    return tq_apply(tq_load_tqp<TY>(vbq, kbx, iqs), bq8_1, iqs);
 }
 
 // ---------------------------------------------------------------- the formats
@@ -745,21 +827,28 @@ template<> struct Fmt<145> { static constexpr int qk = 128, ipb = 8, step = 4;
     __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_tq_q8_1<145>(v, y, kbx, iqs); } };
 template<> struct Fmt<146> { static constexpr int qk = 128, ipb = 8, step = 4;
     __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_tq_q8_1<146>(v, y, kbx, iqs); } };
+// Gyro-L pair trellis: 8 lanes of 8 steps (16 values) per 128-value block
+#define STRATA_TQP_FMT(T) template<> struct Fmt<T> { static constexpr int qk = 128, ipb = 8, step = 4; \
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_tqp_q8_1<T>(v, y, kbx, iqs); } };
+STRATA_TQP_FMT(147)
+STRATA_TQP_FMT(148)
+STRATA_TQP_FMT(149)
+#undef STRATA_TQP_FMT
 
 // The formats of each role, one list each so a type cannot be in one switch and missing from another.  Every
 // entry is a kernel template for each CUDA architecture of the build, hence two lists rather than one.
 #ifdef STRATA_Q6K_EXPERTS   // opt-in build (-DSTRATA_Q6K_EXPERTS=ON): one more instance per kernel, loaded at start
-#define STRATA_GU_FMTS(X) X(16) X(17) X(18) X(21) X(22) X(23) X(29) X(42) X(12) X(13) X(14) X(6) X(2) X(3) X(8) X(40) X(144) X(145)
+#define STRATA_GU_FMTS(X) X(16) X(17) X(18) X(21) X(22) X(23) X(29) X(42) X(12) X(13) X(14) X(6) X(2) X(3) X(8) X(40) X(144) X(145) X(147) X(148) X(149)
 #else
-#define STRATA_GU_FMTS(X) X(16) X(17) X(18) X(21) X(22) X(23) X(29) X(42) X(12) X(13) X(6) X(2) X(3) X(8) X(40) X(144) X(145)
+#define STRATA_GU_FMTS(X) X(16) X(17) X(18) X(21) X(22) X(23) X(29) X(42) X(12) X(13) X(6) X(2) X(3) X(8) X(40) X(144) X(145) X(147) X(148) X(149)
 #endif
 // Q5_K / Q6_K downs: Qwen3.6-35B-A3B (FF 512, whole 256-blocks per row); Flash-Next's FF 640 never selects them
 #ifdef STRATA_Q6K_EXPERTS
-#define STRATA_D_FMTS(X) X(20) X(23) X(42) X(7) X(6) X(2) X(3) X(8) X(13) X(14) X(40) X(144) X(146)
+#define STRATA_D_FMTS(X) X(20) X(23) X(42) X(7) X(6) X(2) X(3) X(8) X(13) X(14) X(40) X(144) X(146) X(147) X(148) X(149)
 #else
-#define STRATA_D_FMTS(X) X(20) X(23) X(42) X(7) X(6) X(2) X(3) X(8) X(13) X(40) X(144) X(146)
+#define STRATA_D_FMTS(X) X(20) X(23) X(42) X(7) X(6) X(2) X(3) X(8) X(13) X(40) X(144) X(146) X(147) X(148) X(149)
 #endif
-#define STRATA_MMVQ_FMTS(X) X(16) X(17) X(18) X(20) X(21) X(22) X(23) X(29) X(42) X(12) X(13) X(7) X(6) X(2) X(3) X(8) X(40) X(144) X(145) X(146)
+#define STRATA_MMVQ_FMTS(X) X(16) X(17) X(18) X(20) X(21) X(22) X(23) X(29) X(42) X(12) X(13) X(7) X(6) X(2) X(3) X(8) X(40) X(144) X(145) X(146) X(147) X(148) X(149)
 template<> struct Fmt<40> { static constexpr int qk = 64, ipb = 2, step = 4;     // NVFP4: 2 calls of 32 values
     __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_nvfp4_q8_1(v, y, kbx, iqs); } };
 
@@ -814,7 +903,8 @@ template<int TY> inline constexpr bool kSplit = false;
 template<int TY> inline constexpr bool kq_type = (TY == 12 || TY == 13 || TY == 8);   // not Q5_1: its Split apply is not bitwise the old dot (FMA contraction), see notes-151-amd
 inline bool g_kq_split = [] { const char* v = std::getenv("STRATA_KQ_SPLIT"); return v != nullptr && v[0] == '1'; }();
 template<int TY> inline bool split_off() { return kq_type<TY> && !g_kq_split; }
-template<int TY> inline constexpr bool kStageIqGrid = (TY == 16 || TY == 17 || TY == 18 || TY == 21 || TY == 22 || TY == 29);
+template<int TY> inline constexpr bool kStageIqGrid = (TY == 16 || TY == 17 || TY == 18 || TY == 21 || TY == 22 || TY == 29 ||
+                                                       TY == 144 || TY == 145 || TY == 146);   // 144-146: the trellis codebook
 
 template<> inline constexpr bool kSplit<16> = true;
 template<> struct Split<16> {   // IQ2_XXS
@@ -1364,15 +1454,32 @@ template<> inline constexpr bool kSplit<145> = true;
 template<> inline constexpr bool kSplit<146> = true;
 template<int TY> struct SplitTq {
     using W = TqLane;
-    template<bool STAGE_GRID = false>   // (no grid table to stage: the codebook is read where it is)
-    __device__ static W load(const void* __restrict__ vbq, int kbx, int iqs, const uint32_t* __restrict__ = nullptr) {
-        return tq_load<TY>(vbq, kbx, iqs);
+    template<bool STAGE_GRID = false>   // STAGE_GRID: the codebook comes from the shared copy stage_iq_grid made
+    __device__ static W load(const void* __restrict__ vbq, int kbx, int iqs, const uint32_t* __restrict__ s_lut = nullptr) {
+        return tq_load<TY, STAGE_GRID>(vbq, kbx, iqs, s_lut);
     }
     __device__ static float apply(const W& r, const block_q8_1* __restrict__ bq8_1, int iqs) { return tq_apply(r, bq8_1, iqs); }
 };
 template<> struct Split<144> : SplitTq<144> {};
 template<> struct Split<145> : SplitTq<145> {};
 template<> struct Split<146> : SplitTq<146> {};
+// Gyro-L TQP (147-149): the pair layout needs tq_load_tqp, not tq_load, so its split is its own trait.
+// Until this existed the launchers took the per-entry mmvq/native kernels for TQP, and row_dot_multi's
+// callers re-decoded the lane once per activation.
+template<int TY> struct SplitTqp {
+    using W = TqLane;
+    template<bool STAGE_GRID = false>   // (no grid table to stage: the codebook is read where it is)
+    __device__ static W load(const void* __restrict__ vbq, int kbx, int iqs, const uint32_t* __restrict__ = nullptr) {
+        return tq_load_tqp<TY>(vbq, kbx, iqs);
+    }
+    __device__ static float apply(const W& r, const block_q8_1* __restrict__ bq8_1, int iqs) { return tq_apply(r, bq8_1, iqs); }
+};
+template<> inline constexpr bool kSplit<147> = true;
+template<> inline constexpr bool kSplit<148> = true;
+template<> inline constexpr bool kSplit<149> = true;
+template<> struct Split<147> : SplitTqp<147> {};
+template<> struct Split<148> : SplitTqp<148> {};
+template<> struct Split<149> : SplitTqp<149> {};
 
 // One row against the n <= NC activations x + off[0..n) (n >= 1, warp-uniform; offsets in q8_1 blocks, 32-bit to
 // spare registers), the whole warp.  Per activation this is row_dot: the same calls k, lane-strided the same way,
@@ -1398,23 +1505,29 @@ __device__ __forceinline__ void row_dot_multi(const uint8_t* row, const block_q8
 
 // 8-lane sub-warp row dot for K = nb * ipb == 40 (TD == 20, IQ4_NL with n_ff == 640):
 // 4 rows per warp (32 rows per 256-thread block), 100% active lanes, bitwise identical addition tree to row_dot_multi.
-template<int TY, int NC, bool EXACT_N = false>
+// the weight part of lane (kbx, iqs): through the staged codebook (STAGE) or in place
+template<typename S, bool STAGE>
+__device__ __forceinline__ typename S::W split_load_st(const uint8_t* row, int kbx, int iqs, const uint32_t* __restrict__ s_grid) {
+    if constexpr (STAGE) return S::template load<true>(row, kbx, iqs, s_grid);
+    else return S::load(row, kbx, iqs);
+}
+template<int TY, int NC, bool EXACT_N = false, bool STAGE_GRID = false>
 __device__ __forceinline__ void row_dot_40_sub8(const uint8_t* row, const block_q8_1* x, const int (&off)[NC], int n,
-                                                int t, float (&s)[NC]) {
+                                                int t, float (&s)[NC], const uint32_t* __restrict__ s_grid = nullptr) {
     using F = Fmt<TY>;
     using S = Split<TY>;
 #pragma unroll
     for (int c = 0; c < NC; ++c) s[c] = 0.0f;
     for (int k = t; k < 40; k += 32) {
         const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
-        const typename S::W w = S::load(row, kbx, iqs);
+        const typename S::W w = split_load_st<S, STAGE_GRID>(row, kbx, iqs, s_grid);
 #pragma unroll
         for (int c = 0; c < NC; ++c)
             if (EXACT_N || c < n) s[c] += S::apply(w, x + off[c] + kbx * (F::qk / 32), iqs);
     }
     {
         const int k = t + 16, kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
-        const typename S::W w = S::load(row, kbx, iqs);
+        const typename S::W w = split_load_st<S, STAGE_GRID>(row, kbx, iqs, s_grid);
 #pragma unroll
         for (int c = 0; c < NC; ++c) {
             if (EXACT_N || c < n) {
@@ -1429,14 +1542,14 @@ __device__ __forceinline__ void row_dot_40_sub8(const uint8_t* row, const block_
     for (int c = 0; c < NC; ++c) s8[c] = 0.0f;
     {
         const int k = t + 8, kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
-        const typename S::W w = S::load(row, kbx, iqs);
+        const typename S::W w = split_load_st<S, STAGE_GRID>(row, kbx, iqs, s_grid);
 #pragma unroll
         for (int c = 0; c < NC; ++c)
             if (EXACT_N || c < n) s8[c] += S::apply(w, x + off[c] + kbx * (F::qk / 32), iqs);
     }
     {
         const int k = t + 24, kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
-        const typename S::W w = S::load(row, kbx, iqs);
+        const typename S::W w = split_load_st<S, STAGE_GRID>(row, kbx, iqs, s_grid);
 #pragma unroll
         for (int c = 0; c < NC; ++c) {
             if (EXACT_N || c < n) {
@@ -1574,6 +1687,43 @@ __device__ __forceinline__ void row_dot_80_sub16(const uint8_t* row, const block
     }
 }
 
+// 8-lane sub-warp row dot for K = nb * ipb == 160 (the APR trellis gate/up types at n_embd 2560): 4 rows per warp (32 per
+// 256-thread block).  Bitwise row_dot_multi's tree: its lane L sums the calls k = L, L + 32, ... L + 128 in that order, then
+// warp_sum adds lane + 16, then + 8, then 4, 2, 1.  Here lane t of 8 keeps the four sums of the lanes t, t + 8, t + 16 and
+// t + 24 (v = 0..3) and adds them (v0 + v2) + (v1 + v3), which is what the first two steps give; 3 steps follow.  A trellis
+// block is 8 lanes, so lane t always takes lane t of block v + 4 j: its bit offsets are the same for all 20 calls.
+template<int TY, int NC, bool EXACT_N = false, bool STAGE_GRID = false>
+__device__ __forceinline__ void row_dot_160_sub8(const uint8_t* row, const block_q8_1* x, const int (&off)[NC], int n,
+                                                 int t, float (&s)[NC], const uint32_t* __restrict__ s_grid = nullptr) {
+    using F = Fmt<TY>;
+    using S = Split<TY>;
+    static_assert(F::ipb == 8 && F::step == 4, "one trellis block is 8 lanes of 4 steps");
+    float p[4][NC];
+#pragma unroll
+    for (int v = 0; v < 4; ++v)
+#pragma unroll
+        for (int c = 0; c < NC; ++c) p[v][c] = 0.0f;
+#pragma unroll
+    for (int j = 0; j < 5; ++j) {
+#pragma unroll
+        for (int v = 0; v < 4; ++v) {
+            const int kbx = v + 4 * j, iqs = F::step * t;
+            const typename S::W w = split_load_st<S, STAGE_GRID>(row, kbx, iqs, s_grid);
+#pragma unroll
+            for (int c = 0; c < NC; ++c)
+                if (EXACT_N || c < n) p[v][c] += S::apply(w, x + off[c] + kbx * (F::qk / 32), iqs);
+        }
+    }
+#pragma unroll
+    for (int c = 0; c < NC; ++c) {
+        if (EXACT_N || c < n) {
+            s[c] = __fadd_rn(__fadd_rn(p[0][c], p[2][c]), __fadd_rn(p[1][c], p[3][c]));
+#pragma unroll
+            for (int o = 4; o > 0; o >>= 1) s[c] += __shfl_xor_sync(0xffffffffu, s[c], o);
+        }
+    }
+}
+
 // 147-verify: row_dot_80_sub16 for two rows (a gate row and its up row) at once, both rows' weight loads of a step issued
 // before either is applied; each row's sums are row_dot_80_sub16's, in its order (the same bits).
 template<int TY, int NC, bool EXACT_N = false, bool STAGE_GRID = false>
@@ -1681,6 +1831,12 @@ __device__ __forceinline__ const uint32_t* stage_iq_grid(uint32_t* s_buf, int ti
         for (int i = tid; i < 1024; i += nthreads) dst[i] = src[i];
         __syncthreads();
         return s_buf;
+    } else if constexpr (TY == 144 || TY == 145 || TY == 146) {
+        // the int8 trellis codebook: 2048 two-byte entries = 1024 words
+        const uint32_t* src = (const uint32_t*) tq_lut_i8;
+        for (int i = tid; i < 1024; i += nthreads) s_buf[i] = src[i];
+        __syncthreads();
+        return s_buf;
     } else if constexpr (TY == 18) {
         // 256 codebook words, then two 128-word tables of the per-byte sign masks (signs 0-3, signs 4-7).  A
         // mask depends only on the 7 bits it is unpacked from, and iq3xxs_grid's bytes are all >= 4, so the
@@ -1707,7 +1863,7 @@ __device__ __forceinline__ const uint32_t* stage_iq_grid(uint32_t* s_buf, int ti
 
 template<int TY, bool STAGE_GRID = kStageIqGrid<TY>>
 struct IqGridWords {
-    static constexpr int value = !STAGE_GRID ? 4 : (TY == 22 || TY == 29) ? 2048 : (TY == 17 || TY == 21) ? 1024 : (TY == 16 || TY == 18) ? 512 : 4;
+    static constexpr int value = !STAGE_GRID ? 4 : (TY == 22 || TY == 29) ? 2048 : (TY == 17 || TY == 21 || TY == 144 || TY == 145 || TY == 146) ? 1024 : (TY == 16 || TY == 18) ? 512 : 4;
 };
 
 // mmvq_kernel with the columns taken NC at a time.  After warp_sum every lane holds the same sum, so lane c stores
@@ -1813,7 +1969,47 @@ __global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned lon
     STRATA_SHARED_ALIGN16_U32(s_grid_buf, IqGridWords<TG, STAGE_GRID>::value);
     const uint32_t* s_grid = stage_iq_grid<TG, STAGE_GRID>(s_grid_buf, threadIdx.x, 256);
     const int nb = (int) (L.n_embd / Fmt<TG>::qk), xb = (int) (L.n_embd / 32);
-    if constexpr (SUB16) {
+    if constexpr (SUB16 && (TG == 144 || TG == 145)) {
+        if (nb * Fmt<TG>::ipb == 160) {   // the trellis rows: 160 dots at n_embd 2560, 8 lanes a row
+            const int subwarp = threadIdx.x >> 3, t = threadIdx.x & 7;
+            const int row = blockIdx.x * 32 + subwarp;            // 0 .. 2*n_ff
+            if (row >= 2 * L.n_ff) return;
+            const bool is_up = row >= L.n_ff;
+            const int r = is_up ? row - (int) L.n_ff : row;
+            const size_t w_off = (is_up ? L.up_off : 0) + (size_t) r * L.gu_row;
+            float* dst = is_up ? up : gate;
+            for (int g = blockIdx.y; g < ng; g += gridDim.y) {
+                const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
+                const float sc = L.tail_off ? ((const float*) (grp_ptr[g] + L.tail_off))[is_up ? 1 : 0] : 1.0f;
+                const int e0 = grp_start[g], e1 = grp_start[g + 1];
+                for (int e = e0; e < e1; e += GRP_NC) {
+                    const int n = min(GRP_NC, e1 - e);
+                    if (n == 1) {
+                        const int off1[1] = { ent_tok[e] * 80 };
+                        float s1[1];
+                        row_dot_160_sub8<TG, 1, true, STAGE_GRID>(wr, xq, off1, 1, t, s1, s_grid);
+                        if (t == 0) dst[(size_t) e * L.n_ff + r] = s1[0] * sc;
+                    } else if (n == 2) {
+                        const int off2[2] = { ent_tok[e] * 80, ent_tok[e + 1] * 80 };
+                        float s2[2];
+                        row_dot_160_sub8<TG, 2, true, STAGE_GRID>(wr, xq, off2, 2, t, s2, s_grid);
+                        if (t < 2) dst[(size_t) (e + t) * L.n_ff + r] = s2[t] * sc;
+                    } else if (n == 3) {
+                        const int off3[3] = { ent_tok[e] * 80, ent_tok[e + 1] * 80, ent_tok[e + 2] * 80 };
+                        float s3[3];
+                        row_dot_160_sub8<TG, 3, true, STAGE_GRID>(wr, xq, off3, 3, t, s3, s_grid);
+                        if (t < 3) dst[(size_t) (e + t) * L.n_ff + r] = s3[t] * sc;
+                    } else {
+                        const int off4[4] = { ent_tok[e] * 80, ent_tok[e + 1] * 80, ent_tok[e + 2] * 80, ent_tok[e + 3] * 80 };
+                        float s4[4];
+                        row_dot_160_sub8<TG, 4, true, STAGE_GRID>(wr, xq, off4, 4, t, s4, s_grid);
+                        if (t < 4) dst[(size_t) (e + t) * L.n_ff + r] = s4[t] * sc;
+                    }
+                }
+            }
+            return;
+        }
+    } else if constexpr (SUB16) {
         if (xb == 80 && nb * Fmt<TG>::ipb == 80) {   // row_dot_80_sub16 covers exactly 80 dots (not the 128-value TQ blocks)
             const int subwarp = threadIdx.x >> 4, t = threadIdx.x & 15;
             const int row = blockIdx.x * 16 + subwarp;            // 0 .. 2*n_ff
@@ -1956,15 +2152,15 @@ __global__ void __launch_bounds__(256) native_down_kernel(const unsigned long lo
 }
 
 // the 8-lane down rows: IQ4_NL's K = 40, NVFP4's K = 20
-template<int TD, int NC, bool EXACT_N = false>
+template<int TD, int NC, bool EXACT_N = false, bool STAGE_GRID = false>
 __device__ __forceinline__ void row_dot_sub8(const uint8_t* row, const block_q8_1* x, const int (&off)[NC], int n, int t,
-                                             float (&s)[NC]) {
+                                             float (&s)[NC], const uint32_t* __restrict__ s_grid = nullptr) {
     if constexpr (TD == 40) row_dot_20_sub8<TD, NC, EXACT_N>(row, x, off, n, t, s);
-    else row_dot_40_sub8<TD, NC, EXACT_N>(row, x, off, n, t, s);
+    else row_dot_40_sub8<TD, NC, EXACT_N, STAGE_GRID>(row, x, off, n, t, s, s_grid);
 }
 
 // native_down_kernel with the entries taken GRP_NC at a time
-template<int TD, bool SUB_DOWN = true>
+template<int TD, bool SUB_DOWN = true, bool STAGE_GRID = false>
 __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned long long* __restrict__ grp_ptr,
                                                                 const int32_t* __restrict__ grp_start,
                                                                 const int32_t* __restrict__ n_groups,
@@ -1974,8 +2170,10 @@ __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned l
     const int ng = *n_groups;
     if (blockIdx.y >= ng) return;
     __shared__ uint32_t s_hq_buf[GRP_NC * 20 * 9];
+    STRATA_SHARED_ALIGN16_U32(s_grid_buf, IqGridWords<TD, STAGE_GRID>::value);
+    const uint32_t* s_grid = stage_iq_grid<TD, STAGE_GRID>(s_grid_buf, threadIdx.x, 256);
     const int nb = (int) (L.n_ff / Fmt<TD>::qk), hb = (int) (L.n_ff / 32);
-    if constexpr (SUB_DOWN && (TD == 20 || TD == 40)) {   // IQ4_NL (K 40) and NVFP4 (K 20): 8-lane rows
+    if constexpr (SUB_DOWN && (TD == 20 || TD == 40 || TD == 144 || TD == 146)) {   // IQ4_NL / TQ2_T / TQK7 (K 40) and NVFP4 (K 20): 8-lane rows
         if (hb == 20) {
             const int r = blockIdx.x * 32 + (threadIdx.x >> 3);
             const int t = threadIdx.x & 7;
@@ -1997,22 +2195,22 @@ __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned l
                         if (n == 1) {
                             const int off1[1] = { 0 };
                             float s1[1];
-                            row_dot_sub8<TD, 1, true>(wr, s_hq, off1, 1, t, s1);
+                            row_dot_sub8<TD, 1, true, STAGE_GRID>(wr, s_hq, off1, 1, t, s1, s_grid);
                             if (t == 0) out[(size_t) ent_dst[e] * L.n_embd + r] = s1[0] * sd;
                         } else if (n == 2) {
                             const int off2[2] = { 0, 20 };
                             float s2[2];
-                            row_dot_sub8<TD, 2, true>(wr, s_hq, off2, 2, t, s2);
+                            row_dot_sub8<TD, 2, true, STAGE_GRID>(wr, s_hq, off2, 2, t, s2, s_grid);
                             if (t < 2) out[(size_t) ent_dst[e + t] * L.n_embd + r] = s2[t] * sd;
                         } else if (n == 3) {
                             const int off3[3] = { 0, 20, 40 };
                             float s3[3];
-                            row_dot_sub8<TD, 3, true>(wr, s_hq, off3, 3, t, s3);
+                            row_dot_sub8<TD, 3, true, STAGE_GRID>(wr, s_hq, off3, 3, t, s3, s_grid);
                             if (t < 3) out[(size_t) ent_dst[e + t] * L.n_embd + r] = s3[t] * sd;
                         } else {
                             const int off4[4] = { 0, 20, 40, 60 };
                             float s4[4];
-                            row_dot_sub8<TD, 4, true>(wr, s_hq, off4, 4, t, s4);
+                            row_dot_sub8<TD, 4, true, STAGE_GRID>(wr, s_hq, off4, 4, t, s4, s_grid);
                             if (t < 4) out[(size_t) ent_dst[e + t] * L.n_embd + r] = s4[t] * sd;
                         }
                     }
@@ -2087,19 +2285,19 @@ __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned l
                     if (n == 1) {
                         const int off1[1] = { 0 };
                         float s1[1];
-                        row_dot_multi<TD, 1, true>(wr, s_hq, off1, 1, nb, lane, s1);
+                        row_dot_multi<TD, 1, true, STAGE_GRID>(wr, s_hq, off1, 1, nb, lane, s1, s_grid);
                         if (lane == 0) out[(size_t) ent_dst[e] * L.n_embd + r] = s1[0] * sd;
                     } else if (n == 2) {
                         const int off2[2] = { 0, 20 };
                         float s2[2];
-                        row_dot_multi<TD, 2, true>(wr, s_hq, off2, 2, nb, lane, s2);
+                        row_dot_multi<TD, 2, true, STAGE_GRID>(wr, s_hq, off2, 2, nb, lane, s2, s_grid);
                         if (lane < 2) out[(size_t) ent_dst[e + lane] * L.n_embd + r] = s2[lane] * sd;
                     } else {
                         int off[GRP_NC];
 #pragma unroll
                         for (int c = 0; c < GRP_NC; ++c) off[c] = min(c, n - 1) * 20;
                         float s[GRP_NC];
-                        row_dot_multi<TD, GRP_NC>(wr, s_hq, off, n, nb, lane, s);
+                        row_dot_multi<TD, GRP_NC, false, STAGE_GRID>(wr, s_hq, off, n, nb, lane, s, s_grid);
 #pragma unroll
                         for (int c = 0; c < GRP_NC; ++c)
                             if (c < n && lane == c) out[(size_t) ent_dst[e + c] * L.n_embd + r] = s[c] * sd;
@@ -2113,7 +2311,7 @@ __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned l
 #pragma unroll
                 for (int c = 0; c < GRP_NC; ++c) off[c] = (e + min(c, n - 1)) * hb;
                 float s[GRP_NC];
-                row_dot_multi<TD, GRP_NC>(wr, hq, off, n, nb, lane, s);
+                row_dot_multi<TD, GRP_NC, false, STAGE_GRID>(wr, hq, off, n, nb, lane, s, s_grid);
 #pragma unroll
                 for (int c = 0; c < GRP_NC; ++c)
                     if (c < n && lane == c) out[(size_t) ent_dst[e + c] * L.n_embd + r] = s[c] * sd;
@@ -3160,6 +3358,31 @@ __device__ void dq_tq(const void* vx, int64_t ibs, dst_t* yy, int tid) {
     }
 }
 
+// TQP (Gyro-L): pair trellis; the step's 2 weights are the first pair of TQ2_T state s.
+__device__ __forceinline__ float2 tqp_pair(uint32_t s) {
+    const uint32_t* lut = (const uint32_t*) tq_lut_f16;
+    const uint32_t x = (s & TQ_STATE_MASK) * 0x9e3779b1u;
+    const uint32_t pa = lut[x >> 21];
+    return make_float2(tq_h2f(pa & 0xFFFFu), tq_h2f(pa >> 16));
+}
+// one 256-value call = two 128-blocks; thread tid decodes block tid/16, lane (tid>>1)&7, steps
+// 8*l + 4*half .. +3 (8 values, 2 per step)
+template<int TY, typename dst_t>
+__device__ void dq_tqp(const void* vx, int64_t ibs, dst_t* yy, int tid) {
+    const int blk = tid >> 4, l = (tid >> 1) & 7, half = tid & 1;
+    const auto* b = (const typename TqInfo<TY>::block_t*) vx + 2 * ibs + blk;
+    const float d = tq_h2f(b->d);
+    uint32_t s[8];
+    tqp_states8_cheap<TY>(b->qs, l, s);
+    dst_t* y = yy + blk * 128 + 16 * l + 8 * half;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+        const float2 a = tqp_pair(s[4 * half + i]);
+        y[2 * i + 0] = cvt<dst_t>(d * a.x);
+        y[2 * i + 1] = cvt<dst_t>(d * a.y);
+    }
+}
+
 // Every type below must also be in is_iq() (BF16: embed_type_supported): the host entry points refuse the others,
 // so the default is unreachable.
 template<typename dst_t>
@@ -3188,6 +3411,9 @@ __device__ __forceinline__ void dq_dispatch(int ty, const void* vx, int64_t ibs,
         case 144: dq_tq<144>(vx, ibs, y, tid); break;
         case 145: dq_tq<145>(vx, ibs, y, tid); break;
         case 146: dq_tq<146>(vx, ibs, y, tid); break;
+        case 147: dq_tqp<147>(vx, ibs, y, tid); break;
+        case 148: dq_tqp<148>(vx, ibs, y, tid); break;
+        case 149: dq_tqp<149>(vx, ibs, y, tid); break;
         default: break;
     }
 }
@@ -3229,9 +3455,9 @@ __global__ void dequant_gu_kernel(int ty, const void* __restrict__ gate, const v
 bool is_iq(int t) {
     return t == 16 || t == 17 || t == 18 || t == 20 || t == 21 || t == 22 || t == 23 || t == 29 || t == 42 || t == 11 ||
 #ifdef STRATA_Q6K_EXPERTS
-           t == 12 || t == 13 || t == 14 || t == 7 || t == 6 || t == 2 || t == 3 || t == 8 || t == 40 || t == 144 || t == 145 || t == 146;
+           t == 12 || t == 13 || t == 14 || t == 7 || t == 6 || t == 2 || t == 3 || t == 8 || t == 40 || t == 144 || t == 145 || t == 146 || t == 147 || t == 148 || t == 149;
 #else
-           t == 12 || t == 13 || t == 7 || t == 6 || t == 2 || t == 3 || t == 8 || t == 40 || t == 144 || t == 145 || t == 146;
+           t == 12 || t == 13 || t == 7 || t == 6 || t == 2 || t == 3 || t == 8 || t == 40 || t == 144 || t == 145 || t == 146 || t == 147 || t == 148 || t == 149;
 #endif
 }
 // values per block of the types the grouped expert kernels take (0 = none)
@@ -3267,6 +3493,8 @@ bool env_on(const char* name) {
 // STRATA_OLD_IQ_MMVQ=1 keeps the per-column kernels (bitwise equal to the new ones; kept for A/B timing)
 bool g_old_kernels = env_on("STRATA_OLD_IQ_MMVQ");
 bool g_no_sub16_gu = env_on("STRATA_NO_SUB16_GU");
+// Opt-in until measured on the deployment hardware; keep the fork's original trellis launches otherwise.
+bool g_tq_sub8 = env_on("STRATA_TQ_SUB8");
 // STRATA_IQ_STAGE_GRID=0 disables staging 64-bit i-quant codebook tables into shared memory
 bool g_stage_grid = [] {
     const char* v = std::getenv("STRATA_IQ_STAGE_GRID");
@@ -4016,17 +4244,21 @@ template<int TG>
 void launch_gu(int64_t cap_groups, cudaStream_t s, const unsigned long long* grp_ptr, const int32_t* grp_start,
                const int32_t* n_groups, const int32_t* ent_tok, const block_q8_1* X, const NativeExpertLayout& L,
                float* gate, float* up) {
-    // the sub-16 rows (row_dot_80_sub16) assume 80 dots per row: (n_embd / qk) * ipb == 80. The APR trellis types
-    // (qk 128, ipb 8: 160 dots at n_embd 2560) take the full-warp multi kernel, as before the sub-16 kernels.
-    const bool g_no_sub16_gu = ::strata::kernels::g_no_sub16_gu || (L.n_embd / Fmt<TG>::qk) * Fmt<TG>::ipb != 80;
-    const dim3 grid((unsigned) ((2 * L.n_ff + GU_ROWS - 1) / GU_ROWS), (unsigned) cap_groups);
+    // Ordinary sub-16 rows require 80 dots; APR trellis rows require 160 and use eight lanes per row.
+    // Other row lengths keep the full-warp kernel.
+    constexpr bool tq = (TG == 144 || TG == 145);
+    const bool g_no_sub16_gu = ::strata::kernels::g_no_sub16_gu || (!tq && (L.n_embd / Fmt<TG>::qk) * Fmt<TG>::ipb != 80) ||
+                               (tq && (!g_tq_sub8 || (L.n_embd / Fmt<TG>::qk) * Fmt<TG>::ipb != 160));
+    dim3 grid((unsigned) ((2 * L.n_ff + GU_ROWS - 1) / GU_ROWS), (unsigned) cap_groups);
+    if (tq && !g_no_sub16_gu && !g_old_kernels && !split_off<TG>() && !g_pair_kernels)
+        grid.x = (unsigned) ((2 * L.n_ff + 31) / 32);
     if constexpr (!kSplit<TG>) native_gu_kernel<TG><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
     else if (g_old_kernels || split_off<TG>()) native_gu_kernel<TG><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
     else if (g_pair_kernels) {
         const dim3 pair_grid((unsigned) ((L.n_ff + 7) / 8), (unsigned) cap_groups);   // a warp per (gate, up) pair
         native_gu_pair_kernel<TG><<<pair_grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
     } else if constexpr (kStageIqGrid<TG>) {
-        if (!g_stage_grid || ((TG == 18 || TG == 21) && !stage_tables_on())) {
+        if (!g_stage_grid || (tq && !g_tq_sub8) || ((TG == 18 || TG == 21) && !stage_tables_on())) {
             if (g_no_sub16_gu) native_gu_multi_kernel<TG, false, false><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
             else native_gu_multi_kernel<TG, false, true><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
             return;
@@ -4098,16 +4330,25 @@ void launch_down(int64_t cap_groups, cudaStream_t s, const unsigned long long* g
         const dim3 grid((unsigned) ((L.n_embd + 7) / 8), (unsigned) cap_groups);
         native_down_kernel<TD><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
     } else if (g_pair_kernels) {
-        const dim3 pair_grid((unsigned) ((L.n_embd + 15) / 16), (unsigned) cap_groups); // a warp per (r, r+1) pair
+        const dim3 pair_grid((unsigned) ((L.n_embd + 15) / 16), (unsigned) cap_groups);
         native_down_pair_kernel<TD><<<pair_grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
     } else {
-        // native_down_multi_kernel's rows per block: 32 (TD 20) / 16 (TD 42) on the n_ff == 640 sub-warp paths,
-        // 8 otherwise (STRATA_NO_SUB16_GU=1 turns the sub-warp paths off).  A fixed 8-row grid launched 4x / 2x
-        // the blocks the kernel actually used.
-        const int rows = (L.n_ff == 640 && !g_no_sub16_gu) ? (TD == 20 ? 32 : (TD == 42 ? 16 : 8)) : 8;
+        const bool sub_down = !g_no_sub16_gu && ((TD != 144 && TD != 146) || g_tq_sub8);
+        const int rows = (L.n_ff == 640 && sub_down)
+                             ? ((TD == 20 || TD == 144 || TD == 146) ? 32 : (TD == 42 ? 16 : 8)) : 8;
         const dim3 grid((unsigned) ((L.n_embd + rows - 1) / rows), (unsigned) cap_groups);
-        if (g_no_sub16_gu) native_down_multi_kernel<TD, false><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
-        else native_down_multi_kernel<TD, true><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+        if constexpr (TD == 144 || TD == 146) {
+            if (!sub_down) {
+                if (g_stage_grid && g_tq_sub8) native_down_multi_kernel<TD, false, true><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+                else native_down_multi_kernel<TD, false, false><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+            } else {
+                if (g_stage_grid) native_down_multi_kernel<TD, true, true><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+                else native_down_multi_kernel<TD, true, false><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+            }
+        } else {
+            if (g_no_sub16_gu) native_down_multi_kernel<TD, false><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+            else native_down_multi_kernel<TD, true><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+        }
     }
 }
 
@@ -4147,6 +4388,9 @@ size_t iq_row_bytes(int t, int64_t n) noexcept {
         case 144: return (size_t) (n / 128) * sizeof(block_tq2_t);   // APR trellis types
         case 145: return (size_t) (n / 128) * sizeof(block_tqk6);
         case 146: return (size_t) (n / 128) * sizeof(block_tqk7);
+        case 147: return (size_t) (n / 128) * sizeof(block_tqp5);
+        case 148: return (size_t) (n / 128) * sizeof(block_tqp6);
+        case 149: return (size_t) (n / 128) * sizeof(block_tqp7);
         default: return 0;
     }
 }
@@ -5174,7 +5418,7 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     check("native_expert_grouped/swiglu");
     }
     if (g_exp_phase == 1) return;
-    const int d_rows = (!g_old_kernels && !g_no_sub16_gu && L.n_ff == 640) ? (L.d_type == 20 || L.d_type == 40 ? 32 : (L.d_type == 42 ? 16 : 8)) : 8;
+    const int d_rows = (!g_old_kernels && !g_no_sub16_gu && L.n_ff == 640) ? (L.d_type == 20 || L.d_type == 40 || L.d_type == 144 || L.d_type == 146 ? 32 : (L.d_type == 42 ? 16 : 8)) : 8;
     const dim3 gd((unsigned) ((L.n_embd + d_rows - 1) / d_rows), (unsigned) gy);
 #if STRATA_EXP_LAYOUTS
     const int em0d = sm75_down_em(em0, cap_groups);

@@ -36,6 +36,7 @@
 #include "strata/kernels/cvec.hpp"
 #include "strata/kernels/gr.hpp"
 #include "strata/kernels/kv_q4.hpp"
+#include "strata/kernels/kv_tq.hpp"
 #include "strata/kernels/kv_q8.hpp"
 #include "strata/kernels/native_mmvq.hpp"
 #include "strata/kernels/native_gr_postops.hpp"
@@ -1144,9 +1145,11 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         }
     }
 
-    // Set by pre() on every call: the window's q8_1 image already exists (QDEDUP made it in pre, or QFUSE's
-    // fused GR read made it), so post(l, 0)'s whole-window quantize must not run again (upstream's guards).
-    bool q8_image_ready = false;
+    // Per layer: pre() has already written that layer's q8_1 image of the window's activation rows - QDEDUP made
+    // it, or QFUSE's fused GR read did, or (a Hadamard-folded layer, APR) pre() rewrote it from the rotated rows -
+    // so post(l, 0)'s whole-window quantize must not run and overwrite it with the unrotated `mixed` (upstream's
+    // guards, one flag per layer because the folded layers are the ones that rewrite it).
+    std::vector<uint8_t> q8_ready((size_t) g.n_layers, 0);
 
     // ---------------------------------------------------------------- pre(l, group): up to the ring
     auto pre = [&](int64_t l, int grp) -> bool {
@@ -1674,7 +1677,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                               kcur_ + t * NKV * HD, kcur_ + t * NKV * HD, s, cs, mirror ? &hk : nullptr);
                             kv_append_q4_step(st.v_q4, st.v_q4, st.page_table, step_t, vcur_ + t * NKV * HD,
                                               vcur_ + t * NKV * HD, s, cs, mirror ? &hv : nullptr);
-                        } else if (st.kv_q4)
+                        } else if (st.kv_tq)
+                            kv_append_tq_step(st.kv_tq_bits, st.k_tq, st.v_tq, st.page_table, step_t,
+                                              kcur_ + t * NKV * HD, vcur_ + t * NKV * HD, s, cs, nullptr);
+                        else if (st.kv_q4)
                             kv_append_q4_step(st.k_q4, st.v_q4, st.page_table, step_t, kcur_ + t * NKV * HD,
                                               vcur_ + t * NKV * HD, s, cs, &st.host);
                         else if (st.kv_int8)
@@ -1698,7 +1704,9 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                            n, s, cs, mirror ? &hk : nullptr);
                         kv_append_q4_batch(st.v_q4, st.v_q4, st.page_table, steps, vcb, vcb, n, s, cs,
                                            mirror ? &hv : nullptr);
-                    } else if (st.kv_q4)
+                    } else if (st.kv_tq)
+                        kv_append_tq_batch(st.kv_tq_bits, st.k_tq, st.v_tq, st.page_table, steps, kcb, vcb, n, s, cs, nullptr);
+                    else if (st.kv_q4)
                         kv_append_q4_batch(st.k_q4, st.v_q4, st.page_table, steps, kcb, vcb, n, s, cs, &st.host);
                     else if (st.kv_int8)
                         kv_append_q8_batch(st.k_q, st.v_q, st.k_scale, st.v_scale, st.page_table, steps, kcb, vcb,
@@ -1900,6 +1908,17 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                       rr_stats_ != nullptr ? rr_stats_ + (n <= 8 ? 4 : 0) : nullptr, cs);
             } catch (const std::exception& e) { err = "verify route-resident: " + std::string(e.what()); return false; }
         }
+        // STRATA_VERIFY_ECAP (relaxed MTP, opt-in, upstream #3545): cap the window's unique experts before the
+        // plan - token 0 keeps all K picks, the speculative tail keeps the top (cap - K) entries by routing
+        // weight, the rest fold into a kept expert's group at w=0 (no expert traffic for them, zero
+        // contribution).  It changes the output only where a dropped low-weight expert of a draft position
+        // would have flipped it.  Inside the window: graph-capturable.
+        // Decode windows only (n <= kVerifyMaxT, the same rule the route-resident counters print): a prompt read
+        // through wider windows commits every row, so a cap there would drop real experts for no draft to save.
+        // It also keeps the fold inside the CPU pool's per-expert row arrays (cpu::MAXT, checked at init).
+        static const int ecap = [] { const char* v = std::getenv("STRATA_VERIFY_ECAP"); return v ? std::atoi(v) : 0; }();
+        if (ecap > K && n > 1 && n <= strata::kernels::kVerifyMaxT)
+            strata::kernels::verify_ecap(ids_ + tb * K, w_ + tb * K, n * (int) K, (int) K, ecap, cs);
         if (ar_on()) {
             resident_plan(ids_ + tb * K, n * (int) K, (int) K, hits_.d_res + l * g.n_expert, (int) g.n_expert,
                           hits_.cache_base, slot_off_d_, (long long) hits_.blob,
@@ -1966,7 +1985,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             }
             if (sh_fork) cudaEventRecord(ev_join_, sh_cs_);
         }
-        q8_image_ready = strata::kernels::cpu::expert_layout().native && (qdedup || q8_ffn);
+        q8_ready[(size_t) l] = strata::kernels::cpu::expert_layout().native && (qdedup || q8_ffn);
         // The grouped hits' activation rows are quantized in post(l, 0) below, once per layer, because that
         // node is reached only after both groups' pre have written `mixed` (the loop order after pre()); the
         // image is already made when QDEDUP (above) or QFUSE made it, and post(l, 0) then skips the launch.
@@ -1974,11 +1993,13 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             // APR: Hadamard-folded gate/up take H (s * x); xm itself stays as it is (the shared expert above and the
             // doorbell copy for the CPU pool, which rotates its own in native_quant_act). The q8_1 image of xm that
             // STRATA_QFUSE / STRATA_VERIFY_QDEDUP may already have written is of the unrotated input, so a folded layer
-            // always rewrites it from the rotated rows (same stream, after the shared expert has read it).
+            // always rewrites it from the rotated rows (same stream, after the shared expert has read it) and marks it
+            // written: post(l, 0) must then leave it alone, or the experts read the unrotated x.
             const auto& f = strata::kernels::cpu::expert_layout().fmt[(size_t) l];
             if (f.had_gu) {   // nat_xr_ exists: init carved it because this layer is folded (had_gu_any)
                 hadamard_rows(xm, nat_xr_ + (size_t) tb * N, n, N, f.had_block, had_sx_, cs);
                 quantize_q8_1_rows(nat_xr_ + (size_t) tb * N, n, N, nat_xq_ + (size_t) tb * (N / 32) * 36, cs);
+                q8_ready[(size_t) l] = 1;
             } else if (!qdedup && !q8_ffn) {
                 quantize_q8_1_rows(xm, n, N, nat_xq_ + (size_t) tb * (N / 32) * 36, cs);
             }
@@ -2000,7 +2021,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         // The window's activation rows for the grouped hits: quantized once per layer in group 0's post,
         // reached only after both groups' pre wrote `mixed` (see pre()); the per-group calls it replaces
         // wrote disjoint rows, so the saving is one launch per layer, not work.
-        if (grp == 0 && !q8_image_ready) {
+        if (grp == 0 && !q8_ready[(size_t) l]) {
             if (strata::kernels::cpu::expert_layout().native)
                 quantize_q8_1_rows(mixed_, T, N, nat_xq_, cs);
             else
