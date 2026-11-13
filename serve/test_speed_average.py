@@ -27,9 +27,9 @@ def function_source(text: str, name: str) -> str:
 
 
 def cards_block(text: str) -> str:
-    """The lines of renderMonitor that make the Decode and Prefill cards."""
-    start = text.index("  // the eight cards")
-    return text[start:text.index('  spark("sp-speed"', start)]
+    """The speed selection shared by the dashboard's Decode and Prefill tiles."""
+    prefill = text[text.index("const reqPrefill ="):text.index("\n", text.index("const reqPrefill ="))]
+    return prefill + "\n" + function_source(text, "monitorSpeeds")
 
 
 @unittest.skipUnless(NODE, "node is needed to run the page's own code")
@@ -38,11 +38,11 @@ class MonitorTab(unittest.TestCase):
 
     def cards(self, live, last, totals):
         block = cards_block((WEB / "app.js").read_text(encoding="utf-8"))
-        script = ("const calls = []; const setMetric = (...a) => calls.push(a); const fmt = (n, d = 0) => Number(n).toFixed(d);\n"
-                  f"function run(live, last, totals) {{\n{block}\n}}\nrun({json.dumps(live)}, {json.dumps(last)}, {json.dumps(totals)});\nconsole.log(JSON.stringify(calls));")
-        script = script.replace("spark(", "(() => {})(")
-        calls = run_node(script)
-        return {c[0]: (c[1], c[3]) for c in calls}
+        script = (f"{block}\nconst s = monitorSpeeds({json.dumps(live)}, {json.dumps(last)}, {json.dumps(totals)});\n"
+                  'const fmt = (v, d) => v == null ? null : v.toFixed(d);\n'
+                  'console.log(JSON.stringify({speed: [fmt(s.decode, 1), s.decodeLabel], '
+                  'prefill: [fmt(s.prefill, 0), s.prefillLabel]}));')
+        return {key: tuple(value) for key, value in run_node(script).items()}
 
     TOTALS = {"requests": 12, "prompt_tokens": 90000, "reused": 5000, "output_tokens": 40000, "prompt_ms": 120000.0, "decode_ms": 1000000.0}
     LAST = {"decode_tok_s": 50.5, "prompt_ms": 2000.0, "prompt_tokens": 1000, "reused": 0}
