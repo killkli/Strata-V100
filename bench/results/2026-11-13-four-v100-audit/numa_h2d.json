@@ -1,0 +1,111 @@
+{
+  "buffer_bytes": 134217728,
+  "copies_per_sample": 12,
+  "samples_per_pair": 3,
+  "rows": [
+    {
+      "first_touch_cpu": 0,
+      "expected_numa_node": 0,
+      "gpu": 0,
+      "GBps": [
+        12.024,
+        12.042,
+        11.969
+      ],
+      "median_GBps": 12.024,
+      "numa_maps": "default anon=32768 dirty=32768 active=0 N0=32768 kernelpagesize_kB=4"
+    },
+    {
+      "first_touch_cpu": 0,
+      "expected_numa_node": 0,
+      "gpu": 1,
+      "GBps": [
+        12.021,
+        12.01,
+        12.013
+      ],
+      "median_GBps": 12.013,
+      "numa_maps": "default anon=32768 dirty=32768 active=0 N0=32768 kernelpagesize_kB=4"
+    },
+    {
+      "first_touch_cpu": 0,
+      "expected_numa_node": 0,
+      "gpu": 2,
+      "GBps": [
+        5.977,
+        5.969,
+        5.98
+      ],
+      "median_GBps": 5.977,
+      "numa_maps": "default anon=32768 dirty=32768 active=0 N0=32768 kernelpagesize_kB=4"
+    },
+    {
+      "first_touch_cpu": 0,
+      "expected_numa_node": 0,
+      "gpu": 3,
+      "GBps": [
+        8.726,
+        8.7,
+        8.758
+      ],
+      "median_GBps": 8.726,
+      "numa_maps": "default anon=32768 dirty=32768 active=0 N0=32768 kernelpagesize_kB=4"
+    },
+    {
+      "first_touch_cpu": 14,
+      "expected_numa_node": 1,
+      "gpu": 0,
+      "GBps": [
+        7.336,
+        7.35,
+        7.35
+      ],
+      "median_GBps": 7.35,
+      "numa_maps": "default anon=32768 dirty=32768 active=8 N1=32768 kernelpagesize_kB=4"
+    },
+    {
+      "first_touch_cpu": 14,
+      "expected_numa_node": 1,
+      "gpu": 1,
+      "GBps": [
+        7.348,
+        7.361,
+        7.366
+      ],
+      "median_GBps": 7.361,
+      "numa_maps": "default anon=32768 dirty=32768 active=8 N1=32768 kernelpagesize_kB=4"
+    },
+    {
+      "first_touch_cpu": 14,
+      "expected_numa_node": 1,
+      "gpu": 2,
+      "GBps": [
+        6.08,
+        6.083,
+        6.083
+      ],
+      "median_GBps": 6.083,
+      "numa_maps": "default anon=32768 dirty=32768 active=8 N1=32768 kernelpagesize_kB=4"
+    },
+    {
+      "first_touch_cpu": 14,
+      "expected_numa_node": 1,
+      "gpu": 3,
+      "GBps": [
+        12.191,
+        12.193,
+        12.201
+      ],
+      "median_GBps": 12.193,
+      "numa_maps": "default anon=32768 dirty=32768 active=8 N1=32768 kernelpagesize_kB=4"
+    }
+  ],
+  "method": {
+    "allocation": "mmap, MADV_NOHUGEPAGE, memset on CPU 0 or 14, then cudaHostRegisterPortable",
+    "placement": "numa_maps confirms all 32768 4KiB pages on the intended node; virtual addresses removed",
+    "timing": "CUDA events around 12 sequential cudaMemcpyAsync copies on a nonblocking stream; 3 warmup copies, 3 samples",
+    "unit": "decimal GB/s",
+    "scope": "one GPU at a time, 128MiB bulk copy; not expert access, concurrent transfer, TTFT or inference throughput",
+    "environment": "no Strata engine or other GPU compute process at the start; clocks not locked; power limits 200W; IOMMU DMA-FQ; CUDA12.9; driver580.178.04"
+  }
+}

@@ -1,0 +1,392 @@
+{
+  "checked_at_utc": "2026-11-13T00:54:54.792538+00:00",
+  "scope": "Research and current-deployment audit; no production engine, config, kernel parameters or model files changed",
+  "local": {
+    "worktree_commit": "d189e4103619341863f2fba77b28f8a71d32cb61",
+    "deployed_source": "8b4c09bd3d9213b2d47880826c6e818c3140664d",
+    "fork_head": "ee96b35efdf7ddf3626f74c09c1d448be1479e77",
+    "fork_commits_after_deployed": 22,
+    "engine_version": "0.1.45.7",
+    "fork_latest_engine_version": "0.1.45.7",
+    "cuda": "12.9",
+    "driver": "580.178.04",
+    "cpu": "2x Xeon E5-2680 v4, 28 physical cores, AVX2, no AVX512",
+    "numa_ram_kib": [
+      65883200,
+      32972808
+    ],
+    "gpus": [
+      "V100-SXM2-16GB",
+      "V100-SXM2-16GB",
+      "V100-SXM2-16GB",
+      "V100-SXM2-16GB"
+    ],
+    "gpu_numa_nodes": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "gpu_pcie_gen3_widths": [
+      16,
+      16,
+      8,
+      16
+    ],
+    "gpu_power_limits_watts": [
+      200,
+      200,
+      200,
+      200
+    ],
+    "nvlink_in_topology": false,
+    "peer_read_supported_pairs": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "cross_socket_peer_read": "TNS",
+    "iommu_group_types": {
+      "DMA-FQ": 94
+    },
+    "memlock_bytes": 12653568000,
+    "service_running_at_inspection": false,
+    "config": {
+      "gpu": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "layer_split": "11,24,36",
+      "parallel": 2,
+      "max_context": 262144,
+      "kv": "int8",
+      "kv_resident": 32768,
+      "spec": 4,
+      "spec_min_p": 0.5,
+      "resident_experts": true,
+      "vision_gpu": false,
+      "env": {
+        "STRATA_HC_Q8": "1",
+        "STRATA_ROUTE_TAIL_SKIP": "0"
+      }
+    },
+    "native_layer_type_counts": {
+      "IQ3_S/IQ4_NL": 43,
+      "IQ4_XS/Q8_0": 1,
+      "IQ3_S/Q8_0": 4
+    }
+  },
+  "historical_20261109": {
+    "api_checks": [
+      {
+        "name": "health",
+        "passed": true
+      },
+      {
+        "name": "model_alias",
+        "passed": true
+      },
+      {
+        "name": "authentication_required",
+        "passed": true
+      },
+      {
+        "name": "openai_nonstream",
+        "passed": true
+      },
+      {
+        "name": "openai_sse_and_usage",
+        "passed": true
+      },
+      {
+        "name": "openai_tool_call",
+        "passed": true
+      },
+      {
+        "name": "openai_tool_result_roundtrip",
+        "passed": true
+      },
+      {
+        "name": "anthropic_messages",
+        "passed": true
+      },
+      {
+        "name": "responses_api",
+        "passed": true
+      },
+      {
+        "name": "two_simultaneous_clients",
+        "passed": true
+      }
+    ],
+    "benchmarks": [
+      {
+        "prompt_tokens": 2105,
+        "repeats_per_arm": 3,
+        "prompt_per_second": {
+          "baseline_median": 399.6,
+          "candidate_median": 717.4,
+          "change_percent": 79.53
+        },
+        "predicted_per_second": {
+          "baseline_median": 76.8,
+          "candidate_median": 95.5,
+          "change_percent": 24.35
+        },
+        "wall_seconds": {
+          "baseline_median": 8.701,
+          "candidate_median": 5.743
+        }
+      },
+      {
+        "prompt_tokens": 8576,
+        "repeats_per_arm": 3,
+        "prompt_per_second": {
+          "baseline_median": 930.6,
+          "candidate_median": 1110.4,
+          "change_percent": 19.32
+        },
+        "predicted_per_second": {
+          "baseline_median": 83.8,
+          "candidate_median": 97.9,
+          "change_percent": 16.83
+        },
+        "wall_seconds": {
+          "baseline_median": 12.366,
+          "candidate_median": 10.444
+        }
+      }
+    ],
+    "limits": "Combined engine/placement/memory-profile update. Three sequential cold-prefix requests per size/arm, 256 output tokens, no compilation or explicit page warmup during timing; outputs and adaptive placement can differ. Startup probes chose pcie_frac 0.30 before and 0.20 after. Not a statistical or all-context performance guarantee.",
+    "long_context_measured_tokens": 66444,
+    "vision_smoke_passed": true,
+    "workers": 13,
+    "host_core": 0,
+    "worker_cores": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "hc_q8_gib_per_gpu_reported": [
+      0.63,
+      0.63,
+      0.63,
+      0.63
+    ],
+    "startup_expert_slots": [
+      5144,
+      5290,
+      5259,
+      4474
+    ],
+    "all_loaded_vram_free_mib": [
+      422,
+      516,
+      514,
+      516
+    ],
+    "ple_mlock_failed": true,
+    "host_expert_complement_gib": 24.94,
+    "prompt_chunk": 8192,
+    "prompt_ring_slots": 96,
+    "adapt_overlap_active": false
+  },
+  "fresh_checks_20261113": {
+    "cpu_tests": {
+      "passed": 4,
+      "failed": 0,
+      "names": [
+        "conversation_split_failure_test",
+        "conversation_memory_test",
+        "vram_plan_test",
+        "nv_defaults_test"
+      ]
+    },
+    "gpu0_prompt_attention_parity": {
+      "command": "qsa_prompt_attn_parity 32768 2048 5",
+      "exit_code": 0,
+      "failures": 0,
+      "q4_0": "SKIP below sm80",
+      "int8_32k_abs_error_vs_fp64": 2.33e-06,
+      "int8_32k_old_ms": 24.079,
+      "int8_32k_volta_ms": 12.414,
+      "scope": "existing installed-source build, synthetic attention only"
+    },
+    "numa_bulk_transfer_file": "numa_h2d.json"
+  },
+  "findings": [
+    {
+      "priority": "P0",
+      "item": "FP16 fallback row-offset bug remains in source; no evidence current MMQ-covered IQ4_XS model hit it"
+    },
+    {
+      "priority": "P1",
+      "item": "HC_Q8 duplicates canonical data and uploads foreign layers on each GPU; latest fork fixes both"
+    },
+    {
+      "priority": "P1",
+      "item": "Per-stage NUMA first-touch and GPU2 x8 should be profiled; current bulk transfers confirm remote-socket penalty"
+    },
+    {
+      "priority": "P1",
+      "item": "Historical low-VRAM and PLE lock warnings warrant reserve/memlock budget tests"
+    },
+    {
+      "priority": "P2",
+      "item": "Tune one-vs-two slots, draft acceptance, per-stage splits and prompt chunk/ring against workload-specific TTFT and total throughput"
+    },
+    {
+      "priority": "P2",
+      "item": "Compact exact top-k is new but full-service speed gain unproven"
+    },
+    {
+      "priority": "research",
+      "item": "DFlash2, QAD/NVFP4, NUMA-aware pool and multi-engine experiments require separate implementation/integration and quality validation"
+    }
+  ],
+  "sources": [
+    {
+      "id": "fork_main",
+      "url": "https://github.com/jmnargi/Strata-V100/commit/ee96b35efdf7ddf3626f74c09c1d448be1479e77",
+      "event_or_measurement_date": "2026-11-12",
+      "evidence": "Fork head; 22 commits beyond deployed source"
+    },
+    {
+      "id": "release",
+      "url": "https://github.com/Niko1221/Strata/releases/tag/v0.2.13",
+      "event_or_measurement_date": "2026-11-09",
+      "evidence": "App/Terminal 0.2.13, engine0.1.59; release notes include Control0.1.59.1 hotfix"
+    },
+    {
+      "id": "fp16",
+      "url": "https://github.com/jmnargi/Strata-V100/pull/101",
+      "event_or_measurement_date": "2026-11-12",
+      "evidence": "FP16 expert row-offset correction; upstream synthetic regression"
+    },
+    {
+      "id": "hcq8",
+      "url": "https://github.com/jmnargi/Strata-V100/pull/102",
+      "event_or_measurement_date": "2026-11-12",
+      "evidence": "Remove duplicate BF16 and foreign-layer Q8 uploads on split"
+    },
+    {
+      "id": "topk",
+      "url": "https://github.com/jmnargi/Strata-V100/pull/103",
+      "event_or_measurement_date": "2026-11-12",
+      "evidence": "Exact compact long-context QSA selector; optional"
+    },
+    {
+      "id": "handoff",
+      "url": "https://github.com/Niko1221/Strata/issues/5538",
+      "event_or_measurement_date": "2026-11-07",
+      "evidence": "Three-stage V100/noNVLink measured handoff and acceptance tradeoffs"
+    },
+    {
+      "id": "layer_major",
+      "url": "https://github.com/Niko1221/Strata/issues/3976",
+      "event_or_measurement_date": "2026-11-12/13",
+      "evidence": "Original SSD-backed gain; late comments show RAM-resident regressions"
+    },
+    {
+      "id": "batch_mtp",
+      "url": "https://github.com/Niko1221/Strata/issues/3794",
+      "event_or_measurement_date": "2026-11-13",
+      "evidence": "Pipelined batch slots and MTP tradeoffs on resident Volta hardware"
+    },
+    {
+      "id": "split_objective",
+      "url": "https://github.com/Niko1221/Strata/issues/5265",
+      "event_or_measurement_date": null,
+      "evidence": "Optimize streamed bytes per link, not only decode window cost"
+    },
+    {
+      "id": "iq3_gemm",
+      "url": "https://github.com/Niko1221/Strata/issues/5569",
+      "event_or_measurement_date": null,
+      "evidence": "Half2 dequant and small-row tile; micro gains, neutral measured service"
+    },
+    {
+      "id": "attn_smem",
+      "url": "https://github.com/Niko1221/Strata/issues/5523",
+      "event_or_measurement_date": "2026-11-07",
+      "evidence": "KV union helps FP16/K8V4; small int8 effect"
+    },
+    {
+      "id": "cat",
+      "url": "https://github.com/1CatAI/1Cat-vLLM/releases/tag/v1.5.2",
+      "event_or_measurement_date": "2026-11-06",
+      "evidence": "TP4 on 4x32GB NVLink; normalized and observed throughput distinguished"
+    },
+    {
+      "id": "skinny",
+      "url": "https://github.com/dnv2003/v100-skinny",
+      "event_or_measurement_date": null,
+      "evidence": "QPN2/QPN8 on four16GB cards, TP4, dense27B; verify-width and data-layout lessons"
+    },
+    {
+      "id": "ac922",
+      "url": "https://github.com/eelgaev/Strata-AC922/blob/ac922/docs/IBM_AC922.md",
+      "event_or_measurement_date": "2026-10-04 measurements",
+      "evidence": "Per-node arenas, NVLink peer fetching, pipeline chunks; POWER9-specific"
+    },
+    {
+      "id": "llama_v100",
+      "url": "https://github.com/1115714829/llama.cpp-v100/blob/master/README.en.md",
+      "event_or_measurement_date": "2026-11-03",
+      "evidence": "2.0.1.2; 1/2/3/6 cards, AC922/NVLink, scope limits"
+    },
+    {
+      "id": "swift",
+      "url": "https://github.com/koldfrontier/dgx-spark-ops/tree/main/recipes/Swift-1.5-IQ3_S-Strata-Single-Tesla-V100",
+      "event_or_measurement_date": "2026-10-30/31 measurements",
+      "evidence": "Single32GBV100; slots, KV streaming, IOMMU"
+    },
+    {
+      "id": "extv",
+      "url": "https://github.com/ExTV/strata-5090-4070/blob/master/README.md",
+      "event_or_measurement_date": "2026-11-10 measurements",
+      "evidence": "5090+4070, SSD-bound; asymmetric prefill/caching approach"
+    },
+    {
+      "id": "hotrod",
+      "url": "https://github.com/sangharshadhyeta/Strata-HotRod",
+      "event_or_measurement_date": null,
+      "evidence": "Low-RAM SSD lookahead plus approximate expert substitution"
+    },
+    {
+      "id": "cuda",
+      "url": "https://docs.nvidia.com/cuda/archive/12.9.1/cuda-c-best-practices-guide/index.html",
+      "event_or_measurement_date": null,
+      "evidence": "Pinned memory, NUMA and async transfer guidance"
+    },
+    {
+      "id": "cuda_support",
+      "url": "https://developer.nvidia.com/blog/navigating-gpu-architecture-support-a-guide-for-nvidia-cuda-developers",
+      "event_or_measurement_date": "2025-08-04",
+      "evidence": "CUDA12.9 and R580 for pre-CC7.5 hardware"
+    },
+    {
+      "id": "new_quant",
+      "url": "https://github.com/jmnargi/Strata-V100/blob/ee96b35efdf7ddf3626f74c09c1d448be1479e77/docs/NVFP4.md",
+      "event_or_measurement_date": "2026-11-10/11 measurements",
+      "evidence": "QAD checkpoint conversion; exact NVFP4 work; QPN2 slower in service"
+    }
+  ]
+}
