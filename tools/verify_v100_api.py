@@ -4,6 +4,7 @@ import argparse
 import concurrent.futures
 import json
 import random
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -113,6 +114,22 @@ if args.mode in ('smoke', 'all'):
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         replies = list(pool.map(concurrent_request, [1, 2]))
     record('two_simultaneous_clients', replies, 0)
+
+    # Distinct sentinels catch cross-slot output reuse (a nonempty reply alone cannot).
+    barrier = threading.Barrier(2)
+    markers = ['SLOT_ALDER_72914', 'SLOT_BIRCH_83526']
+    def isolated_stream(n):
+        barrier.wait(timeout=30)
+        reply, dt = call('/v1/chat/completions', chat(
+            f'First write exactly {markers[n]}. Then list all prime numbers below 100.',
+            stream=True, stream_options={'include_usage': True}, max_tokens=192), stream=True)
+        content = ''.join(c.get('delta', {}).get('content') or ''
+                          for f in reply['frames'] for c in f.get('choices', []))
+        assert reply['done'] and markers[n] in content and markers[1-n] not in content, content
+        return {'request': n, 'seconds': round(dt, 3), 'content': content, 'done': reply['done']}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        replies = list(pool.map(isolated_stream, [0, 1]))
+    record('two_streams_keep_distinct_output', replies, 0)
 
 if args.mode in ('bench', 'all'):
     def compilers_running():
