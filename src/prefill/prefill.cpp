@@ -479,7 +479,7 @@ inline int bf16x2_mode(bool f16_io) {
         const char* e = std::getenv("STRATA_PREFILL_BF16X2");
         return e != nullptr ? std::atoi(e) : 0;
     }();
-    if (f16_io) return 0;
+    if (f16_io || v == 0) return 0;
 #if !defined(__HIPCC__)
     // Volta's producers write FP16 images and do not write BF16 remainders.
     int dev = 0, major = 0, minor = 0;
