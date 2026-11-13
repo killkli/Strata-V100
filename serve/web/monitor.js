@@ -10,6 +10,19 @@ const num = n => typeof n === "number" ? n.toLocaleString() : "—";
 const dur = v => typeof v === "number" ? (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`) : "—";
 const pct = (v, d = 1) => typeof v === "number" ? `${v.toFixed(d)}%` : "—";
 const active = r => !["completed", "error", "disconnected"].includes(r.state);
+// The run's average decode speed: every token produced over the run divided by the run's decode time, from each
+// finished request's engine timings (predicted_n over predicted_ms). Token-weighted, so a short request does not
+// outweigh a long one - the same figure the engine's DONE lines and the server's totals report. Not the last request.
+function averageDecodeSpeed(rows) {
+  let tokens = 0, ms = 0;
+  for (const r of rows) {
+    const t = r.timings;
+    if (!t) continue;
+    const n = t.predicted_n, d = t.predicted_ms;
+    if (typeof n === "number" && typeof d === "number" && n >= 2 && d > 0) { tokens += n; ms += d; }
+  }
+  return ms > 0 ? tokens / (ms / 1000) : null;
+}
 function text(id, value) { const el = $(id); if (el.textContent !== String(value)) el.textContent = value; }
 // the engine's two conversation tiers, straight from /metrics (no second source): a grid of label/value facts each
 function facts(id, rows) {
@@ -146,7 +159,7 @@ async function refresh() {
     text("model", status.model); text("count", records.length);
     text("active", inflight ? `${inflight} active / queued` : status.auto_load ? "Loads automatically on the next request" : "No active requests");
     const last = records.find(r => !active(r));
-    text("wall", last ? seconds(last.wallclock_s) : "—"); text("speed", speed(last?.timings?.predicted_per_second));
+    text("wall", last ? seconds(last.wallclock_s) : "—"); text("speed", speed(averageDecodeSpeed(records.filter(r => !active(r)))));
     $("load").disabled = operating || Boolean(inflight) || status.loaded; $("unload").disabled = operating || Boolean(inflight) || !status.loaded;
     list(); if (selected) await showDetail();
     caches(metrics);

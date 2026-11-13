@@ -145,6 +145,8 @@ public:
             size_ = n;
         }
     }
+    // Full-image restore may overwrite these bytes; preserve sharing before writes.
+    void resize_for_overwrite(size_t n) { resize(n); }
     void pop_back() { resize(size_ - 1); }
 
     // Adopt `other`'s first `prefix_bytes` bytes without copying.  The source keeps

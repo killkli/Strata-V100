@@ -113,8 +113,59 @@ class ComponentStart(unittest.TestCase):
             time.sleep(0.05)
         self.assertIsNone(runtime._read_state("app"))
 
+    def test_a_packaged_stub_engine_starts_and_a_changed_library_does_not(self):
+        """The package is made by packaging/package_engine.py (schema 2: archs, min_driver, build_id), the start hashes
+        every file: one flipped byte in a library the stub never loads still refuses the start, and no engine runs."""
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
+        import package_engine
+        src = self.root / "stub-src"
+        src.mkdir()
+        (src / "engine_main.py").write_text(FAKE_ENGINE, encoding="utf-8")
+        if WINDOWS:
+            entry = "strata.cmd"
+            (src / entry).write_bytes(f'@echo off\r\n"{sys.executable}" "%~dp0engine_main.py" %*\r\n'.encode())
+            library = "cudart64_13.dll"
+        else:
+            entry = "strata"
+            (src / entry).write_text(f'#!/bin/sh\nexec "{sys.executable}" "$(dirname "$0")/engine_main.py" "$@"\n')
+            library = "libcudart.so.13"
+        (src / library).write_bytes(b"a runtime library the stub never loads " * 200)
+        (src / "BUILD.json").write_text(json.dumps({"version": "0.1.45"}))
+        out = self.components / "engine"
+        out.mkdir()
+        folder = package_engine.build(src, "cuda", "0.1.45", components.host_platform(), out, entry=entry,
+                                      archs=("sm_86", "compute_89"), min_driver={"nvidia": "580.65"},
+                                      build_id="stub-1", variant="cuda13", include=["engine_main.py"])
+        patches = (mock.patch.object(ec, "cuda_archs_present", return_value=["sm_86"]),
+                   mock.patch.object(ec, "nvidia_driver_version", return_value="610.47"))
+        for item in patches:
+            item.start()
+            self.addCleanup(item.stop)
+        code, started = self._cli("runtime", "start", "--profile", "app", "--wait", "30", "--shutdown-timeout", "2")
+        log = self.root / "runtime" / "app.server.log"
+        self.assertEqual(code, 0, (started, log.read_text(errors="replace")[-1500:] if log.exists() else "no server log"))
+        self.assertEqual(started["state"], "ready")
+        self.assertEqual(Path((self.root / "ran.txt").read_text().splitlines()[0]).resolve(),
+                         (folder / "engine_main.py").resolve())
+        self.assertEqual(self._cli("runtime", "stop", "--profile", "app", "--wait", "20")[1]["state"], "stopped")
+        deadline = time.monotonic() + 5
+        while runtime._read_state("app") is not None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        (self.root / "ran.txt").unlink()
+        body = bytearray((folder / library).read_bytes())
+        body[100] ^= 0xFF                                       # same size; only the full hash sees it
+        (folder / library).write_bytes(bytes(body))
+        code, result = self._cli("runtime", "start", "--profile", "app", "--wait", "60", "--shutdown-timeout", "2")
+        self.assertEqual(code, 5, result)                      # the refusal is the first thing the user sees: no host, no server
+        self.assertFalse(result["ok"])
+        self.assertFalse((self.root / "ran.txt").exists(), "a package with a changed library must not run")
+        self.assertIn("integrity check", json.dumps(result))
+        self.assertIn(library, json.dumps(result))
+        self.assertIn("not started", json.dumps(result))
+        self.assertIsNone(runtime._read_state("app"), "no runtime host may exist after the refusal")
+
     def test_no_engine_is_a_notice_and_starts_nothing(self):
-        code, result = self._cli("runtime", "start", "--profile", "app", "--wait", "20", "--shutdown-timeout", "2")
+        code, result = self._cli("runtime", "start", "--profile", "app", "--wait", "60", "--shutdown-timeout", "2")
         self.assertNotEqual(code, 0)
         self.assertFalse(result["ok"])
         self.assertFalse((self.root / "ran.txt").exists(), "no engine may run")
@@ -129,7 +180,7 @@ class ComponentStart(unittest.TestCase):
     def test_a_tampered_engine_is_not_started(self):
         folder = install_fake_engine(self.components)
         (folder / "engine_main.py").write_text(FAKE_ENGINE + "# changed\n", encoding="utf-8")
-        code, result = self._cli("runtime", "start", "--profile", "app", "--wait", "20", "--shutdown-timeout", "2")
+        code, result = self._cli("runtime", "start", "--profile", "app", "--wait", "60", "--shutdown-timeout", "2")
         self.assertNotEqual(code, 0)
         self.assertFalse((self.root / "ran.txt").exists(), "a changed package must not run")
 
@@ -150,6 +201,23 @@ class ComponentStart(unittest.TestCase):
                 entry.unlink(missing_ok=True)
             server.with_component_engine({"exe": "component:strata-engine", "backend": "cuda"})
         self.assertEqual(caught.exception.code, 5)
+
+    def test_a_picture_reader_path_from_an_older_engine_folder_follows_the_installed_package(self):
+        """After an engine update the folder name changes; the run config's absolute vision exe must not stop the server."""
+        from serve import server
+        folder = install_fake_engine(self.components)
+        reader = folder / "strata-vision"
+        reader.write_text("x", encoding="utf-8")
+        gone = str(self.components / "engine" / "0.0.1-old" / "strata-vision")
+        cfg = server.with_component_engine({"exe": "component:strata-engine", "backend": "cuda",
+                                            "vision": {"exe": gone, "cpu_exe": gone, "mmproj": "/m.gguf"}})
+        self.assertEqual(cfg["vision"]["exe"], str(reader))
+        self.assertEqual(cfg["vision"]["cpu_exe"], str(reader))
+        self.assertEqual(cfg["vision"]["mmproj"], "/m.gguf")
+        ok = {"exe": "component:strata-engine", "backend": "cuda", "vision": {"exe": str(reader)}}
+        self.assertEqual(server.with_component_engine(ok)["vision"], {"exe": str(reader)})
+        none = server.with_component_engine({"exe": "component:strata-engine", "backend": "cuda", "vision": {"exe": gone.replace("strata-vision", "other")}})
+        self.assertTrue(none["vision"]["exe"].endswith("other"))        # no such file in the package: left as it is
 
     def test_the_build_json_lib_dirs_follow_the_package_folder(self):
         """The Windows HIP package keeps the ROCm DLLs in rocm/bin (BUILD.json lib_dirs): strata.exe does not load without them on PATH."""

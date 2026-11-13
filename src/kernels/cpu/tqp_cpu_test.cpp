@@ -34,8 +34,12 @@ void fail(const char* what, int a = 0, int b = 0) {
 }
 
 // ---- the type predicates as they were before the pair types (the old formulas, copied)
-bool old_supported(int t) { return t == 144 || t == 145 || t == 146; }
-int old_kbits(int t) { return t == 144 ? 8 : t == 145 ? 6 : t == 146 ? 7 : 0; }
+bool old_supported(int t) {
+    return t == 144 || t == 145 || t == 146 || t == kTqTypeK5X || t == kTqTypeK4X || t == kTqTypeK5T || t == kTqTypeK4T;
+}
+int old_kbits(int t) {
+    return t == 144 ? 8 : t == 145 ? 6 : t == 146 ? 7 : (t == kTqTypeK5X || t == kTqTypeK5T) ? 5 : (t == kTqTypeK4X || t == kTqTypeK4T) ? 4 : 0;
+}
 
 void check_predicates() {
     for (int t = 0; t < 300; ++t) {

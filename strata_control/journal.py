@@ -19,6 +19,7 @@ from pathlib import Path
 
 from strata_control import profiles, recipes
 from strata_control.profiles import ProfileError
+from strata_control import posix_owner
 
 
 MAX_RECORDS = 500
@@ -32,13 +33,14 @@ RESULT_KEYS = frozenset({"ok", "state", "instance_id", "previous_instance_id", "
                          "applicable", "issue_codes", "error_type", "changed",
                          "application_record", "setup_settings_removed", "generation_ready",
                          "api_identity_verified", "launch_attested", "readiness_state", "verified_now",
-                         "cancelled"})
+                         "run_id", "successful", "cancelled"})
 RECORD_KEYS = frozenset({"schema_version", "operation_id", "profile", "recipe", "kind",
                          "recipe_revision", "profile_revision", "owner_pid", "intent",
                          "state", "started_at", "finished_at", "cancellation_policy",
                          "events", "result"})
 DIRECT_RECORD_KEYS = (RECORD_KEYS - {"recipe", "recipe_revision"}) | {"origin"}
 DIRECT_KINDS = frozenset({"runtime.start", "runtime.stop", "runtime.restart", "runtime.verify",
+                          "bench.run",
                           "engine.calibrate.measure", "engine.calibrate.apply", "engine.calibrate.rollback"})
 
 
@@ -50,8 +52,8 @@ def _directory(profile: str, *, create: bool = False) -> Path:
         details = directory.lstat()
         if not stat.S_ISDIR(details.st_mode):
             raise ProfileError("operation journal directory must not be a symlink", 5)
-        if os.name == "posix" and (details.st_uid != os.getuid() or stat.S_IMODE(details.st_mode) & 0o077):
-            raise ProfileError("operation journal directory must be owner-only", 5)
+        if os.name == "posix" and (posix_owner.owner_only_wrong(directory, details)):
+            raise ProfileError(posix_owner.owner_only_text("operation journal directory must be owner-only", directory), 5)
     return directory
 
 
@@ -76,7 +78,10 @@ def _lock_name(profile: str) -> str:
 def _validate_direct_intent(kind: str, intent: object) -> dict:
     if kind not in DIRECT_KINDS or not isinstance(intent, dict):
         raise ProfileError("direct operation kind or intent is unsupported", 5)
-    expected = ({"runtime.start": {"wait_s", "shutdown_timeout_s",
+    expected = ({"bench.run": {"path", "suite", "concurrency", "repeat", "request_timeout",
+                               "condition", "if_profile_revision", "if_source_sha256",
+                               "if_owner_id", "if_instance_id"},
+                 "runtime.start": {"wait_s", "shutdown_timeout_s",
                                     "expected_profile_revision", "expected_source_sha256"},
                  "runtime.stop": {"wait_s", "expected_owner_id", "expected_instance_id"},
                  "runtime.restart": {"wait_s", "startup_wait_s", "expected_profile_revision",
@@ -99,10 +104,40 @@ def _validate_direct_intent(kind: str, intent: object) -> dict:
     if (set(intent) != expected and not calibration_job and not legacy_start and not legacy_stop and not legacy_verify and
             not (kind == "runtime.restart" and set(intent) in legacy_restart)):
         raise ProfileError("direct operation intent has unsupported fields", 5)
-    if kind.startswith("runtime."):
-        ranges = {"wait_s": (0, 600) if kind == "runtime.start" else
+    if kind == "bench.run":
+        from strata_cli import bench
+        path = intent["path"]
+        suite = intent["suite"]
+        maximum = 64 if suite == "parallel-overload-v1" else 16
+        if (not isinstance(path, str) or len(path) > 1024 or not Path(path).is_absolute() or
+                any(ord(char) < 32 or ord(char) == 127 or
+                    0x202a <= ord(char) <= 0x202e or 0x2066 <= ord(char) <= 0x2069
+                    for char in path) or
+                not isinstance(suite, str) or suite not in bench.SUITES or
+                type(intent["concurrency"]) is not int or
+                not 1 <= intent["concurrency"] <= maximum or type(intent["repeat"]) is not int or
+                not 1 <= intent["repeat"] <= 5 or type(intent["request_timeout"]) not in (int, float) or
+                not math.isfinite(intent["request_timeout"]) or
+                not 1 <= intent["request_timeout"] <= 600 or
+                (intent["condition"] is not None and
+                 (not isinstance(intent["condition"], str) or
+                  not re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", intent["condition"]))) or
+                not isinstance(intent["if_profile_revision"], str) or
+                not re.fullmatch(r"[0-9a-f]{16}", intent["if_profile_revision"]) or
+                not isinstance(intent["if_source_sha256"], str) or
+                not re.fullmatch(r"[0-9a-f]{64}", intent["if_source_sha256"]) or
+                any(not isinstance(intent[key], str) or not re.fullmatch(r"[0-9a-f]{32}", intent[key])
+                    for key in ("if_owner_id", "if_instance_id"))):
+            raise ProfileError("direct benchmark intent is invalid", 5)
+    elif kind.startswith("runtime."):
+        # The waits are bounded by the runtime that runs them, so the ceiling is read from it (#3949): a start or a
+        # restart may wait for a big model up to MAX_START_WAIT. Repeating the number here is what broke a long start
+        # twice over - the CLI validator and this record both stopped it at 600 s on their way to the runtime.
+        from strata_control import runtime as _runtime
+        start_wait_max = int(_runtime.MAX_START_WAIT)
+        ranges = {"wait_s": (0, start_wait_max) if kind == "runtime.start" else
                     (1, 1800) if kind == "runtime.restart" else (1, 600),
-                  "shutdown_timeout_s": (0, 300), "startup_wait_s": (1, 600)}
+                  "shutdown_timeout_s": (0, 300), "startup_wait_s": (1, start_wait_max)}
         for key in set(intent) - {"expected_profile_revision", "expected_source_sha256",
                                "expected_owner_id", "expected_instance_id", "load",
                                "allow_source_switch", "allow_source_migration"}:
@@ -157,8 +192,8 @@ def _load_file(path: Path, profile: str) -> dict:
         details = path.lstat()
         if not stat.S_ISREG(details.st_mode) or details.st_size > MAX_RECORD_BYTES:
             raise ProfileError("operation record must be a regular file under 64 KiB", 5)
-        if os.name == "posix" and (details.st_uid != os.getuid() or stat.S_IMODE(details.st_mode) & 0o077):
-            raise ProfileError("operation record must be owner-only", 5)
+        if os.name == "posix" and (posix_owner.owner_only_wrong(path, details)):
+            raise ProfileError(posix_owner.owner_only_text("operation record must be owner-only", path), 5)
         record = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ProfileError("operation record was not found", 5) from None
@@ -364,6 +399,11 @@ def run_direct(profile: str, kind: str, profile_revision: str, intent: dict, act
 
 
 def compact_direct_result(kind: str, result: dict) -> dict:
+    if kind == "bench.run":
+        summary = result.get("summary") or {}
+        return {"ok": result.get("ok", True), "report_path": result.get("path"),
+                "run_id": summary.get("run_id"), "instance_id": summary.get("instance_id"),
+                "successful": result.get("successful"), "cancelled": summary.get("cancelled")}
     if kind == "runtime.verify":
         return {key: result.get(key) for key in ("ok", "state", "instance_id", "error", "exit_code",
                                                   "api_identity_verified", "launch_attested", "generation_ready",

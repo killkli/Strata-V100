@@ -5,6 +5,7 @@
 #include "strata/kernels/cpu/expert_layout.hpp"
 
 #include "tq_states.hpp"
+#include "tq_computed.hpp"
 #include "ggml-common-tq.h"
 
 #include <cmath>
@@ -25,6 +26,7 @@ namespace strata::kernels::cpu {
 namespace {
 
 alignas(64) int16_t g_table[(tq_detail::kTqStateMask + 1) * 4];
+alignas(64) int16_t g_table_c[(tq_detail::kTqStateMask + 1) * 4];
 
 void fill_table() {
     for (uint32_t s = 0; s <= tq_detail::kTqStateMask; ++s) {
@@ -39,6 +41,10 @@ void fill_table() {
     }
 }
 
+void fill_table_computed() {
+    for (uint32_t s = 0; s <= tq_detail::kTqStateMask; ++s) tq_detail::comp_state4(s, g_table_c + 4 * s);
+}
+
 int env_isa_cap() {
     const char* e = std::getenv("STRATA_TQ_ISA");
     if (e == nullptr || *e == 0) return 2;
@@ -49,11 +55,10 @@ int env_isa_cap() {
 }
 
 template <int KB>
-void rows_scalar_t(const uint8_t* w, size_t row_bytes, int n, const tq_detail::TqAct* const* a, int nt,
+void rows_scalar_t(const int16_t* tab, const uint8_t* w, size_t row_bytes, int n, const tq_detail::TqAct* const* a, int nt,
                    float* const* out, int r0, int r1) {
     const int nb = n / 128;
     constexpr size_t bsz = 2 + 4 * KB;
-    const int16_t* tab = tq_state_table();
     for (int r = r0; r < r1; ++r) {
         const uint8_t* x = w + (size_t) r * row_bytes;
         float acc[kTqMaxTokens][4] = {};
@@ -124,14 +129,26 @@ const int16_t* tq_state_table() {
     return g_table;
 }
 
-bool tq_supported(int t) noexcept { return t == 144 || t == 145 || t == 146 || t == 147 || t == 148 || t == 149; }
+const int16_t* tq_state_table_computed() {
+    static std::once_flag once;
+    std::call_once(once, fill_table_computed);
+    return g_table_c;
+}
+
+const int16_t* tq_state_table_for(int t) { return (t == kTqTypeK5X || t == kTqTypeK4X) ? tq_state_table_computed() : tq_state_table(); }
+
+bool tq_supported(int t) noexcept {
+    return t == 144 || t == 145 || t == 146 || t == 147 || t == 148 || t == 149 ||
+           t == kTqTypeK5X || t == kTqTypeK4X || t == kTqTypeK5T || t == kTqTypeK4T;
+}
 
 int tq_kbits(int t) noexcept {
     if (t == 148) return 6;                                   // TQP6
     if (t == 144) return 8;
     if (t == 146 || t == 149) return 7;
     if (t == 145) return 6;
-    if (t == 147) return 5;
+    if (t == 147 || t == kTqTypeK5X || t == kTqTypeK5T) return 5;
+    if (t == kTqTypeK4X || t == kTqTypeK4T) return 4;
     return 0;
 }
 
@@ -182,11 +199,13 @@ void unpack_act(const void* q8_0, int n, TqAct& a) {
     }
 }
 
-void tq_rows_scalar(int kb, const uint8_t* w, size_t row_bytes, int n, const TqAct* const* a, int nt,
+void tq_rows_scalar(int kb, const int16_t* tab, const uint8_t* w, size_t row_bytes, int n, const TqAct* const* a, int nt,
                     float* const* out, int r0, int r1) {
-    if (kb == 8) rows_scalar_t<8>(w, row_bytes, n, a, nt, out, r0, r1);
-    else if (kb == 6) rows_scalar_t<6>(w, row_bytes, n, a, nt, out, r0, r1);
-    else rows_scalar_t<7>(w, row_bytes, n, a, nt, out, r0, r1);
+    if (kb == 8) rows_scalar_t<8>(tab, w, row_bytes, n, a, nt, out, r0, r1);
+    else if (kb == 6) rows_scalar_t<6>(tab, w, row_bytes, n, a, nt, out, r0, r1);
+    else if (kb == 5) rows_scalar_t<5>(tab, w, row_bytes, n, a, nt, out, r0, r1);   // experimental TQK5X / TQK5T
+    else if (kb == 4) rows_scalar_t<4>(tab, w, row_bytes, n, a, nt, out, r0, r1);   // experimental TQK4X / TQK4T
+    else rows_scalar_t<7>(tab, w, row_bytes, n, a, nt, out, r0, r1);
 }
 
 void tq_rows_scalar_tqp(int kb, const uint8_t* w, size_t row_bytes, int n, const TqAct* const* a, int nt,
@@ -216,14 +235,14 @@ ActSet& unpack_all(const void* const* act, int n, int nt) {
     return *set;
 }
 
-void rows_on(TqIsa isa, int kb, const uint8_t* w, size_t row_bytes, int n, const tq_detail::TqAct* const* a, int nt,
-             float* const* out, int r0, int r1) {
+void rows_on(TqIsa isa, int kb, const int16_t* tab, const uint8_t* w, size_t row_bytes, int n,
+             const tq_detail::TqAct* const* a, int nt, float* const* out, int r0, int r1) {
     switch (isa) {
 #if defined(STRATA_TQ_X86)
-        case TqIsa::avx512: tq_detail::tq_rows_avx512(kb, w, row_bytes, n, a, nt, out, r0, r1); break;
-        case TqIsa::avx2: tq_detail::tq_rows_avx2(kb, w, row_bytes, n, a, nt, out, r0, r1); break;
+        case TqIsa::avx512: tq_detail::tq_rows_avx512(kb, tab, w, row_bytes, n, a, nt, out, r0, r1); break;
+        case TqIsa::avx2: tq_detail::tq_rows_avx2(kb, tab, w, row_bytes, n, a, nt, out, r0, r1); break;
 #endif
-        default: tq_detail::tq_rows_scalar(kb, w, row_bytes, n, a, nt, out, r0, r1); break;
+        default: tq_detail::tq_rows_scalar(kb, tab, w, row_bytes, n, a, nt, out, r0, r1); break;
     }
 }
 
@@ -247,20 +266,20 @@ void rows_pair_on(TqIsa isa, int kb, const uint8_t* w, size_t row_bytes, int n, 
 void tq_rows(TqIsa isa, int ggml_type, const uint8_t* w, size_t row_bytes, int n, const void* const* act, int nt,
              float* const* out, int r0, int r1) {
     if (!tq_isa_ok(isa)) std::abort();   // a caller bug: asked for an ISA this CPU does not have
-    tq_state_table();
+    const int16_t* tab = tq_state_table_for(ggml_type);
     const ActSet& s = unpack_all(act, n, nt);
     if (ggml_type >= 147 && ggml_type <= 149) {   // Gyro-L pair trellis: the AVX2 pair kernel (scalar is the reference)
         const int kb = tq_kbits(ggml_type);
         rows_pair_on(isa, kb, w, row_bytes, n, s.ptr, nt, out, r0, r1);
         return;
     }
-    rows_on(isa, tq_kbits(ggml_type), w, row_bytes, n, s.ptr, nt, out, r0, r1);
+    rows_on(isa, tq_kbits(ggml_type), tab, w, row_bytes, n, s.ptr, nt, out, r0, r1);
 }
 
 void tq_gu_rows(TqIsa isa, int ggml_type, const uint8_t* blob, size_t gu_row, size_t up_off, int n,
                 const void* const* act, int nt, float* const* ff, int r0, int r1) {
     if (!tq_isa_ok(isa)) std::abort();
-    tq_state_table();
+    const int16_t* tab = tq_state_table_for(ggml_type);
     const ActSet& s = unpack_all(act, n, nt);
     thread_local std::vector<float> gbuf, ubuf;
     const size_t nr = (size_t) r1;   // row r of token t at [t * r1 + r]
@@ -275,7 +294,7 @@ void tq_gu_rows(TqIsa isa, int ggml_type, const uint8_t* blob, size_t gu_row, si
     const bool pair = ggml_type >= 147 && ggml_type <= 149;   // Gyro-L pair trellis: its own kernels
     auto rows = [&](const uint8_t* w, float* const* o) {
         if (pair) rows_pair_on(isa, kb, w, gu_row, n, s.ptr, nt, o, r0, r1);
-        else rows_on(isa, kb, w, gu_row, n, s.ptr, nt, o, r0, r1);
+        else rows_on(isa, kb, tab, w, gu_row, n, s.ptr, nt, o, r0, r1);
     };
     rows(blob, gp);
     rows(blob + up_off, up);

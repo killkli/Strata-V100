@@ -13,9 +13,6 @@
 //   4. a one-slot budget has no room for root and leaf, so the pin is off and the oldest leaves (the
 //      newest point stays, as before);
 //   5. the policy is pure: the same stamps, the same victim.
-//
-// The switch tier order is a second pure rule: the longest compatible prefix wins, and an equal-length
-// RAM image beats the disk record (disk_reuse_wins / ram_reuse_wins).
 #include "strata/program/conv_cache.hpp"
 
 #include <cstdint>
@@ -23,8 +20,7 @@
 #include <vector>
 
 using strata::program::conv_cache::eviction_victim;
-using strata::program::conv_cache::disk_reuse_wins;
-using strata::program::conv_cache::ram_reuse_wins;
+using strata::program::conv_cache::restore_fits;
 using strata::program::conv_cache::spread_victim;
 
 namespace {
@@ -82,13 +78,6 @@ int main() {
               "spread: two items, one slot - the plain policy");
     }
     {
-        using strata::program::conv_cache::retained_kv_cells;
-        check(retained_kv_cells(8192, 40960, 29999) == 40960, "an active burst retains its K/V high-water mark");
-        check(retained_kv_cells(8192, 40960, 30000) == 8192, "idle deadline returns surplus K/V to experts");
-        check(retained_kv_cells(8192, 131072, 0) == 65536, "retained surplus is bounded to 64K cells");
-        check(retained_kv_cells(131072, 40960, 0) == 131072, "retention never reduces the current request extent");
-    }
-    {
         const std::vector<uint64_t> stamps = {1, 2, 3, 4, 5, 6, 7};   // chat A: root + six turns, one over
         check(eviction_victim(stamps.data(), stamps.size(), 6) == 1,
               "over budget with fresh stamps: the oldest leaf leaves (the FIFO it was)");
@@ -119,38 +108,6 @@ int main() {
         const size_t b = eviction_victim(stamps.data(), stamps.size(), 4);
         check(a == 1 && b == 1, "ties among equally stale leaves: the earlier index, deterministically");
     }
-    {
-        // The tier order on a session switch: the disk record must STRICTLY beat the parked RAM image,
-        // the live prefix and a slot session; an equal-length RAM image wins the tie (host memory, no
-        // file read). This is the 7455 regression: `>=` let the disk win an equal-length tie.
-        check(!disk_reuse_wins(true, 9000, 9000, 0, 0, false),
-              "disk equal to the RAM image: the RAM image wins the tie (no file read)");
-        check(disk_reuse_wins(true, 9001, 9000, 0, 0, false),
-              "disk strictly longer than the RAM image: the disk record wins");
-        check(!disk_reuse_wins(true, 8000, 9000, 0, 0, false),
-              "disk shorter than the RAM image: the disk record loses");
-        check(disk_reuse_wins(true, 9000, 0, 0, 0, false),
-              "disk longer than the live prefix with no RAM image: the disk record wins");
-        check(!disk_reuse_wins(true, 9000, 0, 9000, 0, false),
-              "disk equal to the live prefix: the resident state is kept");
-        check(!disk_reuse_wins(false, 0, 0, 0, 0, false), "no disk hit: never the disk tier");
-    }
-    {
-        // A slot session is state already on the device; the disk must beat it strictly too.
-        check(!disk_reuse_wins(true, 9000, 5000, 0, 9000, true),
-              "disk equal to the slot session: the slot state is kept");
-        check(disk_reuse_wins(true, 9001, 5000, 0, 9000, true),
-              "disk strictly longer than the slot session: the disk record wins");
-    }
-    {
-        // Taking the RAM image: only when it strictly beats both the live prefix and the slot session.
-        check(ram_reuse_wins(9000, 0, 0), "a longer parked RAM image is taken over the live prefix");
-        check(!ram_reuse_wins(9000, 9000, 0), "a RAM image no longer than the live prefix is not taken");
-        check(!ram_reuse_wins(9000, 0, 9000), "a RAM image equal to the slot session is not taken");
-        check(ram_reuse_wins(9001, 0, 9000), "a RAM image longer than the slot session is taken");
-        check(!ram_reuse_wins(0, 0, 0), "no RAM match: nothing is taken");
-    }
-
     {   // --prompt-cache-tail: the tail checkpoint goes first; never the root, never the newest item
         const std::vector<uint64_t> st = {1, 2, 3, 4, 5, 6, 7};
         const bool t2[7] = {false, false, false, true, false, false, false};
@@ -175,6 +132,24 @@ int main() {
         const std::vector<uint64_t> s4 = {1, 9, 3, 5};
         check(eviction_victim(s4.data(), s4.size(), 4, nullptr, all) == 2, "everything pinned: the oldest pin leaves, never the root");
         check(eviction_victim(s4.data(), s4.size(), 1, nullptr, all) == 0, "a one-slot budget keeps no pin: the oldest leaves");
+    }
+    {   // #2409: a restore is refused only for a card that must create its copy stream and has no room for it
+        constexpr uint64_t need = strata::program::conv_cache::kRestoreFirstUseMib << 20;
+        const uint64_t loaded[] = {300ull << 20, 104ull << 20};         // a loaded card: far under --vram-reserve-mib
+        const uint8_t ready[] = {1, 1};
+        check(restore_fits(loaded, ready, 2, need), "cards with their stream already: any amount free admits (the #2409 review's case)");
+        const uint8_t later_new[] = {1, 0};
+        check(restore_fits(loaded, later_new, 2, need), "a card that must create its stream, with 104 MiB free: admitted");
+        const uint64_t full[] = {300ull << 20, 20ull << 20};
+        check(!restore_fits(full, later_new, 2, need), "a card that must create its stream, with 20 MiB free: reread instead");
+        check(restore_fits(full, ready, 2, need), "the same full card with its stream: admitted");
+        const uint64_t edge[] = {need, need - 1};
+        const uint8_t none[] = {0, 0};
+        check(!restore_fits(edge, none, 2, need), "one byte under the need refuses");
+        check(restore_fits(edge, none, 1, need), "exactly the need admits");
+        check(restore_fits(nullptr, none, 2, need) && restore_fits(full, nullptr, 2, need) && restore_fits(full, none, 0, need) &&
+                  restore_fits(full, none, 2, 0),
+              "no sample, no cards, no need: do not refuse");
     }
     std::printf(g_fail ? "FAIL\n" : "PASS\n");
     return g_fail ? 1 : 0;

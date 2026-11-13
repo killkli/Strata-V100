@@ -1,243 +1,206 @@
-# Strata-V100
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/host/public/brand/strata-lockup-dark.svg">
+    <img src="apps/host/public/brand/strata-lockup-light.svg" alt="Strata" width="340">
+  </picture>
+</p>
 
-[English](README.md) · **简体中文**
+<h3 align="center">在你自己的电脑上运行强大的 AI。</h3>
+<p align="center">本地聊天、写代码、处理图片。</p>
 
-**[Strata](https://github.com/Niko1221/Strata) 的社区维护分支（fork），专注于 V100 支持。** 本分支让 NVIDIA Volta（`sm_70`）支持保持可用，在 Tesla V100 硬件上开发并实测性能改动，并定期合并上游改进，以获得 V100 之外的新特性和修复。
+<p align="center">
+  <a href="#模型">模型</a> · <a href="#安装"><b>安装</b></a> ·
+  <a href="#硬件">硬件</a> · <a href="#工具">工具</a> ·
+  <a href="#帮助">帮助</a> · <a href="#支持-strata">支持</a>
+</p>
 
-Strata 是 [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) 的开源本地运行时。它把 GPU、系统内存和存储组合起来，让这个大模型能在个人电脑上运行。本分支保留了 Strata 项目的全部内容：其他受支持的 NVIDIA 和 AMD 硬件、Web 界面、OpenAI 兼容 API、工具、图片输入以及上游特性同样重要。
+<p align="center">
+  <a href="https://github.com/Niko1221/Strata/releases/latest"><img src="https://img.shields.io/github/v/release/Niko1221/Strata?label=download&color=0ab887" alt="下载 Strata"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Niko1221/Strata" alt="MIT 许可证"></a>
+  <a href="https://github.com/sponsors/Niko1221"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=fff" alt="在 GitHub Sponsors 上支持 Strata"></a>
+  <a href="https://buymeacoffee.com/strataengine"><img src="https://img.shields.io/badge/Buy_me_a_coffee-FFDD00?logo=buymeacoffee&logoColor=000" alt="在 Buy Me a Coffee 上支持 Strata"></a>
+</p>
 
-> **向 Niko（[@Niko1221](https://github.com/Niko1221)）和原版 Strata 的贡献者致以诚挚谢意。** 本项目建立在他们的工作之上：Strata 的模型运行时、架构、特性，以及让这个模型得以本地运行的所有工作，都来自上游项目。没有那个基础，就不会有 V100 分支。感谢你们让它成为可能，也感谢你们持续开发 Strata。
+<p align="center"><sub><a href="README.md">English</a> · <b>简体中文</b> · <a href="README.ja.md">日本語</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.pl.md">Polski</a></sub></p>
 
-[上游 Strata](https://github.com/Niko1221/Strata) · [Issues](https://github.com/jmnargi/Strata-V100/issues) · [Pull requests](https://github.com/jmnargi/Strata-V100/pulls) · [Discussions](https://github.com/jmnargi/Strata-V100/discussions)
+**免费、开源，由你自己运行。** 在桌面上使用 Strata，或搭配你喜欢的编程工具。无需账号。
 
-## 本分支的关注点
+## 模型
 
-- **Tesla V100 / Volta 支持（`sm_70`）**：保住 V100 的正常构建和运行时支持。V100 构建使用 CUDA 12.x 工具包；CUDA 13 不编译 `sm_70` 代码。
-- **测试机：** 两张 Tesla V100-PCIE-16GB；GPU 0 走 PCIe Gen3 x4，GPU 1 走 Gen3 x16。下文的双卡流水线测量使用两张卡。历史单卡基准只用了 x16 那张。两条完整 Gen3 x16 链路的系统尚未在本机测量。
-- **上游整合**：这不是 Strata 的独立替代品。上游改动会定期合并进来，并检查、修正 V100 兼容性。上游新特性可能有高于 `sm_70` 的硬件要求；它们不会自动加速 V100。
-- **更广泛的 Strata 社区**：欢迎针对其他受支持平台的改进、错误报告、测试、文档和贡献。
+我们**首先推荐 ISTA-DASLab**，其次是 **Unsloth** 和其他提供方，前提是有内存放得下的兼容模型。
 
-对 V100 的支持不意味着每个上游特性或每种其他 GPU 配置都在 V100 上测过。在依赖某个硬件相关特性之前，请先查看相关代码、发布说明和测量报告。
+<details>
+<summary><img src="docs/media/models/qwen.svg" width="22" alt="" align="middle"> &nbsp;<b>Qwen3.8-Flash-Next</b></summary>
 
-## 上游选择性同步 — 2026 年 10 月 19 日
+| 提供方 | 可选项 |
+| --- | --- |
+| **ISTA-DASLab · 推荐** | Q2\_0, IQ2\_XS, IQ3\_XXS, IQ3\_S。[Coder：IQ1\_M](docs/MODELS.md#coder)，适合写代码。 |
+| **Unsloth** | UD-IQ4\_XS, UD-Q4\_K\_XL, UD-Q5\_K\_XL, UD-Q6\_K\_XL, Q8\_0 |
+| **Gyro · agentionai** | [Gyro-S, Gyro-M](https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF)。占用内存更少，但速度更慢。 |
+| **其他选项** | [Swift 1.5](docs/MODELS.md#swift-15), [NVFP4](docs/NVFP4.md), [OrcaRouter](docs/ORCA.md) |
 
-本分支从上游提交 `3d1fb480` 引入了共享的 CUDA 引擎和服务器改动，保留了本分支的 Volta 内核、流水线 K/V 增长和会话缓存改动，排除了无关的桌面安装包以及独立的 Metal、AMD、Intel 后端更新。见[同步范围](improvements/RELEASE-2026-10-19-V100.md)。`sm_70` 请使用 CUDA 12.8。引入某个上游选项并不代表它在 V100 上有性能收益。
+[比较大小、内存需求和兼容性](docs/MODELS.md)。
 
-## 上游 v0.1.39 整合
+</details>
 
-本次更新整合了 [Strata v0.1.39](https://github.com/Niko1221/Strata/releases/tag/v0.1.39)（含其间的各版本），保留本分支的 V100 tensor-core 专家、注意力改动、非对称 GPU 切分和磁盘会话缓存。
+<details>
+<summary><img src="docs/media/models/qwen.svg" width="22" alt="" align="middle"> &nbsp;<b>Qwen3.6-35B-A3B</b></summary>
 
-- **并行请求：** 在模型配置中设置 `"parallel": 2`，或使用 `./setup.sh --parallel 2`。Setup 会为新的 Volta 配置写入该默认值，并保留已有设置。引擎可以同时解码多个独立会话。多余的请求等待空闲槽位。槽位会占用额外显存，并可能降低单请求速度；如果两个槽位会话放不下，引擎会明确说明，并退回一次只服务一个请求，配置保持不变。精确性设置、显存开销和限制见[批处理槽位](docs/zh_CN/BATCHING.md)。
-- **API 与界面：** 本次更新新增 OpenAI Responses API、模型设置、会话缓存监控和按槽位的指标。见 [API 详情](docs/zh_CN/DETAILS.md#using-it)。
-- **性能与内存：** 本次更新包含 verify-pass 启动次数削减、字节粒度提示环、Linux 大页、RAM 预算修正和多 GPU 选项。显式 `--layer-split` 现在会自动只加载各阶段自己那些层的 dense 权重（上游的 `--trim-stage-weights` 标志和 `STRATA_STAGE_TRIM` 已移除）；腾出的显存归专家缓存。对新显卡的优化不意味着 V100 提速。会改变舍入的可选路径使用前必须实测。
-- **其他平台：** 上游的 Intel Arc、较老 CPU 和更多 AMD 路径仍然可用。本机不为这些平台提供硬件验证。
+**Unsloth:** UD-Q4_K_XL, UD-Q6_K_XL, Q8_0。这些是目前文档中收录的该模型的版本。
 
-V100 需要 CUDA 12.x 和包含 `sm_70` 的构建。不要在 V100 上安装 CUDA 13 引擎。已有安装建议显式配置并行；更新不会覆盖模型配置。
+[模型指南和兼容性](docs/QWEN36.md)。
 
-**在两张 V100 上实测（2026 年 10 月 4 日，最终构建）。** 整合后的构建与之前安装的运行时做受控的前后对比，一次一个请求（无批处理槽位），冷启动，Qwen3.8-Flash-Next Q2_0 配 int8 KV、524,288 token 上下文，20/28 层切分和 MTP（`--spec 8`）保持不变；每个长度两个全新请求，取中位数：
+</details>
 
-| 目标提示长度 | 之前 (tok/s) | 整合后 (tok/s) | 变化 |
-| ---: | ---: | ---: | ---: |
-| 2K | 701.41 | 718.5 | +2.44 % |
-| 8K | 1,402.82 | 1,458.0 | +3.93 % |
-| 32K | 2,262.4 | 2,283.7 | +0.94 % |
+<details>
+<summary><img src="docs/media/models/deepseek.svg" width="22" alt="" align="middle"> &nbsp;<b>DeepSeekV4.1-Flash-1017</b></summary>
 
-每个数值是两个全新请求（`reused=0`）的中位数。增益很小；每个长度两次重复不构成统计结论。六次配对请求的首 token 全部与基线一致。不声称完整回复完全相同：自适应专家层在整合后的构建上把不同的专家组合留在 GPU 和 CPU 上，两条路径的舍入不同。不声称 decode 或质量有任何变化。这些是最终构建的实测值（引擎 SHA-256 `e9ad337a…`），完整数据见[完整报告](benchmarks/v100-q2_0-upstream-v0139-2026-10-04.md)。
+可在**桌面应用**和**终端**中使用。内存放不下的部分会从 SSD 读取，所以需要大量空闲磁盘空间。
 
-524,288 token 上下文下的并行槽位取决于切分方式和最后一级剩余的显存；实测的回退行为（请求 2 个槽位、实际一次服务一个请求、配置不动）见 [docs/BATCHING.md](docs/zh_CN/BATCHING.md)。
+| 版本（ISTA-DAS） | 下载大小 | 所需空闲磁盘 |
+| --- | ---: | ---: |
+| 1.75 bpw | 239 GB | 约245 GB |
+| 2.00 bpw | 257 GB | 约265 GB |
+| 2.25 bpw | 274 GB | 约280 GB |
 
-## 双 V100 流水线性能 — 2026 年 10 月 15 日
+支持 NVIDIA RTX 30、40 和 50 系列（Windows 和 Linux）、AMD Radeon AI PRO R9700（Linux）、AMD Ryzen AI Max — Strix Halo（Windows），以及内存 64 GB 或以上的 Apple 芯片 Mac（[Mac](docs/DEEPSEEK_MAC.md)）。安装程序会下载模型文件和 DeepSeek 引擎，然后启动模型。
 
-实测服务配置启用 `--pipeline-windows 2`，GPU 顺序 `0,1`，层切分 `16`。使用两张 16 GiB 的 V100（175 W）、Ryzen 5 3600、原生 IQ3_S 混合格式模型、int8 KV，以及 `--spec 8` 的 MTP。配置的上下文容量仍为 524,288 token。实测的最大提示为 32,768 token。
+```sh
+strata launch --family deepseek41 --model ist-das-2.00bpw --plan
+```
 
-**长回复安全性：** 把本配置与 `STRATA_KV_GROW=1` 组合使用时，请使用包含[流水线 KV 增长修复](benchmarks/v100-pipeline-kv-growth-fix-2026-10-16.md)的构建。更早的流水线循环在长回复期间可能访问未映射的 KV 单元。修复会在扩展映射之前排空投机工作，然后再恢复流水线。下面短输出的速度测量没有触及该边界。
+以下为 Strata 0.2.5 上 2.00 bpw 版本的实测结果。“输出”是回答的速度，“提示词”是 Strata 读取你输入内容的速度。
 
-### 全新提示的 prefill（至 32K）
+| 硬件 | 输出 | 提示词 |
+| --- | ---: | ---: |
+| RTX 5070 12 GB, 64 GB 内存 | 4 到 6 tokens/s | 约 110 tokens/s（4K） |
+| RTX 3060 12 GB, 46 GB 内存 | 9 到 11 tokens/s | 约 155 tokens/s（4K） |
+| 1x Radeon AI PRO R9700, 251 GB 内存 | 21 到 25 tokens/s | 320 到 360 tokens/s (8K) |
+| 4x Radeon AI PRO R9700 | 74 到 77 tokens/s | 400 到 450 tokens/s (8K) |
 
-每个数值是三个精确 token 数请求的中位数，无提示复用，输出上限 16 token。prefill 时间不含回复生成。吞吐量为提示 token 数除以 prefill 时间中位数。
+[内存、磁盘和详细信息](docs/DEEPSEEK41.md) · [发行说明](https://github.com/Niko1221/Strata/releases)
 
-| 提示 token 数 | 之前 prefill 时间 | 流水线 prefill 时间 | 之前 tokens/s | 流水线 tokens/s | 吞吐变化 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 2,048 | 2.089 s | 2.090 s | 980.6 | 979.8 | −0.09% |
-| 8,192 | 5.487 s | 5.494 s | 1,493.0 | 1,491.2 | −0.13% |
-| 16,384 | 8.828 s | 8.857 s | 1,855.9 | 1,849.8 | −0.33% |
-| 32,768 | 15.668 s | 15.677 s | 2,091.4 | 2,090.2 | −0.06% |
+</details>
 
-全新提示的 prefill 基本不变。这些微小差异不足以说明存在有意义的回退。
+<a id="the-other-sizes"></a>
 
-### 多轮对话 decode
+不确定哪个放得下？[为你的电脑选择模型](docs/MODELS.md#pick-by-memory)。
 
-独立的 HTTP 对比使用 8,828 token 的初始提示和六轮续写，上下文达到约 11.9K token。每个数值是四个请求的中位数，交替轮次反转两臂顺序，输出上限 256 token。新增提示 token 指该轮实际处理的 token 数，不是上下文总大小。
+## 安装
 
-| 轮次 | 新增提示 token | 之前 decode tokens/s | 流水线 decode tokens/s | decode 变化 |
-| ---: | ---: | ---: | ---: | ---: |
-| 1 | 121 | 70.20 | 79.45 | +13.18% |
-| 2 | 321 | 70.60 | 82.05 | +16.22% |
-| 3 | 1,086 | 76.60 | 79.00 | +3.13% |
-| 4 | 128 | 73.00 | 79.90 | +9.45% |
-| 5 | 313 | 74.35 | 86.55 | +16.41% |
-| 6 | 1,089 | 74.15 | 80.75 | +8.90% |
+<a id="option-a-the-strata-app"></a>
 
-六个 decode 吞吐比的中位数为 **+11.31%**。这不是“到 32K 的每个上下文长度都实测到 decode 增益”。自动 CPU 共享和常驻路由下，生成长度和 MTP 工作量各不相同。整请求延迟互有胜负；一个短轮次的 HTTP 中位数出现回退。不要把该 decode 增益解读为整请求的必然加速，也不要把它当作输出完全一致的对比。
+### 桌面应用
 
-另一组固定设置的对照在 2K、8K、32K 提示长度上，三个完整的 16 token 输出序列全部一致。这不证明每个生产请求的输出都相同。
+**[下载适用于 Windows、Linux 或 Mac 的 Strata →](https://github.com/Niko1221/Strata/releases/latest)**
 
-精确计时、构建来源、被否决的试验和复现命令见[评估报告](benchmarks/v100-upstream-pr-evaluation-2026-10-15.md)。在别的安装上启用该选项之前，先看[服务配置指南](docs/zh_CN/NVIDIA_V100.md#dual-pcie-pipeline-service-profile)。
+安装应用，选择模型，就可以开始聊天。每个系统只有一个安装程序。首次启动时，应用会下载适合你显卡的引擎。[安装程序帮助](docs/INSTALL.md#the-app)。
 
-## V100 基准
+<sub>文件: `Strata-0.2.13-windows-x64-setup.exe` · `Strata-0.2.13-linux-x86_64.AppImage` · `Strata-0.2.13-macos-arm64.dmg`</sub>
 
-下表记录的是单张 Tesla V100-PCIE-16GB 走 PCIe Gen3 x16 的单卡运行。测试机上还有第二张走 PCIe Gen3 x4 的 V100，本次未使用。双卡系统或两条完整宽度链路的机器结果可能不同，可能更好。这是一次可复现的测量，不是对其他系统速度的承诺。
+<p align="center">
+  <img src="docs/media/app-chat.png" width="900" alt="Strata 桌面应用，聊天和实时代码预览并排显示">
+  <br><sub>聊天、文件和实时预览都在一个窗口里。</sub>
+</p>
 
-| 目标提示长度 | 提示 token 中位数 | Prefill (tokens/s) | Decode (tokens/s) | GPU 最高温度 |
-| ---: | ---: | ---: | ---: | ---: |
-| 1K | 1,036 | 398.6 | 52.0 | 56 °C |
-| 4K | 4,111 | 1,214.0 | 50.8 | 61 °C |
-| 8K | 8,185 | 1,442.4 | 48.1 | 63 °C |
-| 16K | 16,367 | 1,490.7 | 49.8 | 67 °C |
-| 32K | 32,765 | 1,495.7 | 47.3 | 72 °C |
-| 64K | 65,533 | 1,484.3 | 43.0 | 81 °C |
-| 128K | 131,063 | 1,033.0 † | 40.9 | 84 °C |
-| 256K | 256,080 | 617.8 † | 36.8 | 84 °C |
+<a id="option-b-the-terminal-one-line"></a>
 
-**测试设置：** Qwen3.8-Flash-Next Q2_0；仅一张 V100（GPU1，PCIe Gen3 x16）；Ryzen 5 3600；48 GB DDR4-3200；CUDA 12.8；262,144 token 上下文；int8 KV 缓存；自动 prefill；MTP `--spec 8`、draft floor 0.70；配对专家变体；700 MiB 视觉预留。每个数值是三个全新、无缓存请求（`reused=0`）恰好输出 256 token 的中位数。计时取自引擎的 `/metrics` 端点。
-- **较老的显卡**（Tesla P40 / V100、GTX 10、Radeon VII / MI50、RX 6700 XT、RX 5500 XT）：[较老的 GPU](docs/zh_CN/OLDER_GPUS.md)。
-- **Intel Arc**，在 Linux 上从源码构建：[Intel Arc](docs/zh_CN/INTEL_ARC.md)。
-- **AMD Ryzen AI Max（Strix Halo）**，在 Linux 上从源码构建：[Strix Halo](docs/zh_CN/STRIX_HALO.md)。
-- **不支持 AVX2 的老处理器**：能用，但很慢。[较老的 CPU](docs/zh_CN/INSTALL.md#older-cpus-experimental)。
+### 终端应用
 
-每次请求前，被动散热的显卡空闲至少 120 秒，并在没有软件热降频的情况下 15 秒内降到 55 °C 以下。起始温度为 51–55 °C。所有请求都计入。128K 和 256K 提示在提示处理期间达到 84 °C 并出现软件热降频，尽管起始温度已冷却；长时间运行可能降频。† 表示提示期间出现降频。
+更喜欢终端？安装 Strata，然后运行 **`strata launch`**。
 
-测量于 2026-10-02。引擎：本分支版本 0.1.31，构建提交 `78417ea`（SHA-256 `512b1f25d60479a2ddb66fcf1ddca5407963e45378a3c8a463413ad159edae17`）。该基准记录于后来的上游 v0.1.36 整合和 V100 注意力 PR 之前，不是对当前 `main` 构建的测量。历史表格按其原始出处保留，不要把它当作与更早表格或当前构建的受控对比。
+<details open>
+<summary><b>安装命令</b></summary>
 
-原始数据：[`summary.json`](bench/results/2026-10-02-v100-single-cooled/summary.json)、[`protocol.json`](bench/results/2026-10-02-v100-single-cooled/protocol.json)、[`matrix.json`](bench/results/2026-10-02-v100-single-cooled/matrix.json)、[`completed-requests.json`](bench/results/2026-10-02-v100-single-cooled/completed-requests.json) 和 [GPU 遥测](bench/results/2026-10-02-v100-single-cooled/gpu.csv)。完整方法与历史见 [docs/DETAILS.md#tesla-v100-fork-benchmark](docs/zh_CN/DETAILS.md#tesla-v100-fork-benchmark)，基准说明见 [benchmarks/README.md](benchmarks/README.md)，V100 性能报告见 [benchmarks/](benchmarks/)。
+**Linux / Mac**
 
-近期的 V100 pull request 包含实测的内核级改动，并在端到端增益未确立时明确说明。例如，从上游 PR #600 移植的提示注意力在其测量形状上报告 int8 注意力内核时间减少 27.9%，而模型 prefill 变化在所报各次运行中为 +1.3% 到 +3.0%；它没有确立可靠的 decode 增益。对比结果前先读[完整报告](benchmarks/v100-q2_0-pr600-2026-10-03.md)。
+```sh
+curl -fsSL --connect-timeout 15 --max-time 120 https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh
+```
 
-## V100 性能工作
+**Windows PowerShell**
 
-V100 的工作覆盖提示路径、decode 路径、内存使用、存储读取和多 GPU 执行。以下改动都已合入本分支历史；每个链接都包含自己的测试方法、硬件细节和限制。内核计时的改善不一定在全模型吞吐上产生相同百分比的增益。
+```powershell
+irm -TimeoutSec 120 https://github.com/Niko1221/Strata/releases/latest/download/install.ps1 | iex
+```
 
-### 提示处理
+在 Windows 上，安装后请打开一个新的终端。然后运行：
 
-- **Volta 上的 BF16 转 FP16 tensor-core GEMM：** Volta 没有原生 BF16 GEMM 支持。本分支把 BF16 权重精确转换为 FP16，让提示 GEMM 使用 V100 tensor core，而不是标量回退路径。相关的 FP16 提示激活图使用正确的位表示。
-- **更快的 PLE 表读取：** 把 POSIX PLE 读取切换为排队的 `io_uring` O_DIRECT 操作，带同步回退。一次实测的全新 8K PLE gather 从约 6.9 秒降到 7 毫秒。
-- **Q2_0 MMQ prefill：** 为 Strata 的内部专家类型启用 llama.cpp 已有的 Q2_0 矩阵-矩阵量化路径。一次实测的 14,486 token 提示 prefill 吞吐提升 6.5%（926.1 → 986.2–986.9 tokens/s）。
-- **只对活跃 QSA 块打分：** 避免对超出当前提示活跃范围的块打分。一次实测的 15,423 token 提示上，QSA 选择时间下降 91.1%；在所报测试中端到端 prefill 吞吐从 961.0 升到 1,111.3–1,112.9 tokens/s。
-- **Volta 的 tensor-core 提示注意力：** 在 V100 上使用 `mma.m8n8k4` 而不是 FP32 回退。较早的一个 PR 测得注意力内核约 1.6–1.9× 提速，其测试中提示吞吐更高。后来的上游 PR #600 移植在一个测量形状上把 int8 注意力内核时间减少 27.9%；所报的端到端 prefill 增量更小（其 4K–32K 测试中 +1.3% 到 +3.0%）。
+```sh
+strata launch
+```
 
-### Decode 与多 GPU 执行
+按提示下载并启动模型。[终端指南](docs/TERMINAL_LAUNCH.md)。
 
-- **批量验证窗口：** 把多个投机解码位置合在一起跑，减少每 token 的启动开销。配对的历史测试报告输出生成更快，但结果随提示和运行条件变化。
-- **分块 QSA 块打分：** 在查询块之间复用已选的 key 数据，而不是反复读取。实测 256 查询 / 65K 块的内核从 3.5 ms 降到 1.3 ms；每次打分的算术保持位级一致。
-- **融合 Volta GR 与批量 KV 追加：** 跨验证位置合并工作，用更少的启动追加 KV 数据。在测试的双 V100 配置上，4K–32K 提示的 decode 提升 5.6–17.3%，prefill 基本不变。
-- **非对称双 V100 调优：** 针对双卡配置改进 host-row 处理、device-plan 调度和内存所有权。一个较早的安装配置在 4K–32K 上显示 prefill 提升 13.3–18.7%，但 decode 结果互有胜负，且那次运行中两张 GPU 都出现热降频。这些数值没有分离出每个代码改动的贡献。
-- **削减权重与调度开销：** 使用显式切分时每张卡只加载自己拥有的层，避免不必要的 CPU 激活量化和空调度屏障，并可选启用配对行专家内核。GPU0 实测原生 dense 分配从 1,376.20 MiB 降到 541.27 MiB。配对行模式是可选启用的；所报的全模型结果没有确立 decode 改进。
+</details>
 
-### 注意力内核与内存流量
+<p align="center">
+  <img src="docs/media/terminal-monitor.png" width="900" alt="Strata 终端应用，显示模型活动、速度、内存和最近的请求">
+  <br><sub>模型运行时，随时查看模型和硬件状态。</sub>
+</p>
 
-- **Decode 注意力（上游 PR #540 移植）：** 减少 score 洗牌和共享内存流量，同时保持累加顺序。实测 M=1 时 GPU0 内核时间从 52.90 微秒降到 31.13 微秒，M=8 时从 180.42 降到 111.85 微秒。所报的全模型 decode 变化很小；prefill 基本不变。
-- **提示注意力（上游 PR #600 移植）：** 使用带四个独立 MMA 计算的 Volta tensor-core 实现。该 PR 报告了正确性检查和内核级 / 模型级测量；27.9% 的内核削减不应读作全模型速度提升 27.9%。
-- **KV gather 与 GDN 递归（上游 PR #627 移植）：** 使用更宽的对齐 int8 KV 加载并带安全的原始宽度回退，并为 V100 提示递归使用多个累加器。实测内核时间：32K KV gather 约改善 10%，4,096 token 递归约改善 7%。配对模型 prefill 差异小于 0.2%；没有确立可靠的端到端 decode 增益。
+<a id="build-from-source"></a>
 
-### 构建支持与证据
+[从源码构建](docs/SOURCE_INSTALL.md) · [Docker](docs/DOCKER.md) · [完整安装指南](docs/INSTALL.md)
 
-本分支还修复了 `sm_70` 的 CUDA 配置与链接，在上游合并过程中维持 V100 设备准入，并在上游改动的架构要求排除 Volta 时进行适配。这些兼容性修复让优化路径保持可构建；它们本身不是性能声明。
+<a id="what-you-need"></a>
 
-完整证据和实现范围见 [PR #1](https://github.com/jmnargi/Strata-V100/pull/1)、[#2](https://github.com/jmnargi/Strata-V100/pull/2)、[#5](https://github.com/jmnargi/Strata-V100/pull/5)、[#6](https://github.com/jmnargi/Strata-V100/pull/6)、[#11](https://github.com/jmnargi/Strata-V100/pull/11)、[#12](https://github.com/jmnargi/Strata-V100/pull/12)、[#15](https://github.com/jmnargi/Strata-V100/pull/15)、[#16](https://github.com/jmnargi/Strata-V100/pull/16) 和 [#17](https://github.com/jmnargi/Strata-V100/pull/17)。这些结果使用不同的日期、构建、提示、GPU 位置和协议。它们是历史测量，不是单一的受控前后对比，也不保证在每个 V100 系统上都有增益。
+## 硬件
 
-## 开始使用
+| 支持的硬件 | 指南 |
+| --- | --- |
+| **NVIDIA GeForce RTX 20 / 30 / 40 / 50 系列** | [NVIDIA 安装](docs/INSTALL.md#what-you-need) |
+| **AMD Radeon RX 7700 / 7800 / 7900、RX 9060 / 9070、AI PRO R9700** | [AMD 安装](docs/AMD_HIP.md) |
+| **AMD Radeon RX 6800 / 6900 · 实验性** | [RX 6000 安装](docs/AMD_HIP.md#rdna2-gfx1030) |
+| **Intel Arc · Linux** | [Intel 安装](docs/INTEL_ARC.md) |
+| **Apple Silicon · M1 或更新** | [Mac 安装](docs/MAC.md) |
+| **AMD Ryzen AI Max · Strix Halo** | [Strix Halo 安装](docs/STRIX_HALO.md) |
 
-本分支跟随上游的安装体验。完整且最新的平台要求、模型选择和选项见[安装指南](docs/zh_CN/INSTALL.md)、[模型指南](docs/zh_CN/MODELS.md)和[上游 AI 安装指南](docs/zh_CN/AI_SETUP.md)。
+<a id="using-it"></a>
 
-- **Windows：** 下载或克隆本仓库，运行 `START-HERE.bat`。
-- **Linux：** 克隆本仓库，运行 `./setup.sh`。
-- 按提示选择模型和上下文大小。Setup 会下载模型数据并启动本地服务。
-- 打开 setup 打印的地址（通常是 `http://127.0.0.1:8080`）。
+## 工具
 
-Tesla V100 请使用带 `sm_70` 支持的 CUDA 12 引擎。Setup 会为 Volta 选择较老 GPU 引擎；Linux 上会本地构建它。上游的 Windows CUDA 12 压缩包包含 Volta 代码，但没有在这台 Linux 机器上测试过。工具包和驱动要求见[较老 GPU 指南](docs/zh_CN/OLDER_GPUS.md)。Docker 请按照 [Docker 说明](docs/zh_CN/INSTALL.md)操作，并为目标 GPU 架构构建。
+**Claude Code · Codex CLI · OpenCode · oh-my-pi · pi.dev · Hermes Agent · OpenClaw**，也可以通过兼容 OpenAI 和 Anthropic 的 API 使用更多工具。
 
-## 使用 Strata
+运行 **`strata connect`**，查看你所用工具的设置方法。[连接指南](docs/TERMINAL_LAUNCH.md#connect-your-apps-strata-connect)。
 
-- **Web 应用：** 使用 setup 打印的本地 URL 进行聊天和实时 Monitor。
-- **OpenAI 兼容 API：** 把应用的 base URL 设为 `http://127.0.0.1:8080/v1`。
-- **Anthropic 兼容 API：** 使用 `http://127.0.0.1:8080/v1/messages`。
-- **OpenAI Responses API：** 使用 `http://127.0.0.1:8080/v1/responses`。这个无状态端点支持 Codex 风格的工具调用；它不存储 `previous_response_id`。
-- **图片、MCP、多 GPU 与配置：** 见[详细说明](docs/zh_CN/DETAILS.md)、[MCP 服务器](docs/zh_CN/MCP_SERVER.md)和[多 GPU 指南](docs/zh_CN/MULTI_GPU.md)。
+<a id="guides"></a>
+<a id="how-fast-is-it"></a>
+<a id="how-does-it-work"></a>
+<a id="something-went-wrong"></a>
 
-服务器默认只监听 localhost。如果你把它暴露给其他机器，请配置 API key 并使用可信网络。不要在 issue、基准结果或 pull request 中发布密钥或私有配置。
+## 帮助
 
-### 会话缓存磁盘（可选启用）
+[全部指南](docs) · [故障排查](docs/TROUBLESHOOTING.md) · [报告问题](https://github.com/Niko1221/Strata/issues/new/choose) ·
+[基准测试](docs/COMMUNITY_BENCHMARKS.md) · [工作原理](docs/HOW_IT_WORKS.md) · [参与贡献](CONTRIBUTING.md)
 
-会话状态分三层。L1 是活跃会话及其常驻提示检查点。L2 是可选的主机内存缓存（`--conversation-cache-mib`）。L3 是可选的磁盘存储，在重启之间保留已保存的会话和检查点组。引擎捕获状态时，流式 KV 层使用其权威的主机内存池。
+## 支持 Strata
 
-要使用磁盘存储，在引擎参数中加入 `--conversation-cache-disk strata-conversations --conversation-cache-disk-gib 25`。路径和正的 GiB 预算必须一起提供。存储默认关闭，需要 `--serve`，可与 `--conversation-cache-mib 0` 一起用，并支持多 GPU 的 `--layer-split`。可选：`--conversation-cache-disk-slots N` 限制记录数，`--conversation-cache-disk-min-free-mib N` 在文件系统上保留空闲空间。
+**帮助本地 AI 保持开放。** GitHub 赞助或一杯咖啡，都能帮助我们在更多硬件上开发和测试。
 
-引擎会在保留策略移除某个活跃检查点、或某个请求覆盖其分支之前保住它。每个保存的检查点都包含 GDN 状态、PLE 历史、QSA 索引器状态和所需的 KV 后备。仅有 token KV 数据不足以恢复本模型。
+<a href="https://github.com/sponsors/Niko1221"><img src="https://img.shields.io/badge/Sponsor_on_GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors：支持 Strata" height="48"></a>
+<a href="https://buymeacoffee.com/strataengine"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee：支持 Strata" height="48"></a>
 
-相关检查点共享一个归档组内的一份 KV 镜像。引擎移动并扩展该镜像，而不是为每个检查点复制完整前缀。当后备仍然有效时，只复制新增或变化的 KV 页。组在到达磁盘元数据上限之前停止增长。后续的组有自己的后备。引擎不会把已保存的检查点与来自前缀另一次计算的 KV 字节拼在一起。
+### 忠实支持者
 
-归档组与已保存会话使用相同的 L2 字节和槽位上限。启用磁盘层时，L2 容量受害者会移入 L3。成功的 L2 准入不会同时把镜像写到磁盘。如果镜像放不下 L2，引擎会尝试存入 L3。物理内存和磁盘空闲空间限制仍然生效。最小 token 设置同样适用于检查点归档。
+感谢每一位支持 Strata 的人。
 
-保住检查点是优化，不是硬性要求。如果主机内存下限或磁盘预算拒绝该镜像，引擎会丢弃该检查点、记录日志并继续服务。它不会停止服务器。会话保持正确；只是失去该检查点的复用。
+<!-- supporters:start (one line per public supporter, newest last; copy a line and change the GitHub name in all four places) -->
+<a href="https://github.com/ryan4yin"><img src="https://github.com/ryan4yin.png?size=96" width="48" height="48" alt="ryan4yin" title="ryan4yin"></a>
+<a href="https://github.com/themactep"><img src="https://github.com/themactep.png?size=96" width="48" height="48" alt="themactep" title="themactep"></a>
+<a href="https://github.com/macintog"><img src="https://github.com/macintog.png?size=96" width="48" height="48" alt="macintog" title="macintog"></a>
+<a href="https://github.com/bisonbet"><img src="https://github.com/bisonbet.png?size=96" width="48" height="48" alt="bisonbet" title="bisonbet"></a>
+<a href="https://github.com/vizv"><img src="https://github.com/vizv.png?size=96" width="48" height="48" alt="vizv" title="vizv"></a>
+<a href="https://github.com/kod88vn"><img src="https://github.com/kod88vn.png?size=96" width="48" height="48" alt="kod88vn" title="kod88vn"></a>
+<a href="https://github.com/seoulworker"><img src="https://github.com/seoulworker.png?size=96" width="48" height="48" alt="seoulworker" title="seoulworker"></a>
+<a href="https://github.com/jackyini"><img src="https://github.com/jackyini.png?size=96" width="48" height="48" alt="jackyini" title="jackyini"></a>
+<a href="https://github.com/router0mail"><img src="https://github.com/router0mail.png?size=96" width="48" height="48" alt="router0mail" title="router0mail"></a>
+<!-- supporters:end -->
 
-查找会在活跃会话、L2、L3 和空闲批处理槽位之间选择最长的兼容前缀。token、图片身份和控制向量模式必须匹配。对较早消息的编辑，复用在第一个变化 token 之前的某个已保存检查点处结束。引擎必须重新处理后缀；没有那个位置的递归状态，它不能从任意匹配的 token 处恢复。增大 `--prompt-cache` 不能替代检查点保留。
+[MIT 许可证](LICENSE) · [致谢和模型许可证](docs/HOW_IT_WORKS.md#credits) · [隐私](docs/SAFETY.md)
 
-L2 归档在恢复后仍然可用。当字节预算和物理内存下限允许时，有效的 L3 镜像会提升进 L2。只有其中有界的一部分检查点会常驻到活跃会话。恢复一个分支不会从已保存归档中移除其他检查点。
+<a id="option-c-let-your-ai-set-it-up"></a>
 
-磁盘存储支持只追加的会话链。继续的链可以追加新的 token ID、检查点、运行状态和 KV 页。L2 逐出会写出完整的种子镜像；不需要 GPU 捕获。回退（rewind）会开启一个独立分支，而不是替换源链。文件格式对检查点归档没有变化。
+<sub>面向 AI 工具和自动阅读器： <a href="AGENTS.md">技术参考</a> · <a href="docs/AI_SETUP.md">安装说明</a></sub>
 
-磁盘面板带有校验和与版本字段。种子使用临时文件加重命名。不完整的追加会回收到最后一个完整面板。无效或不兼容的记录会被移除。磁盘存储按最近最少使用逐出链，以执行其字节预算、记录上限和空闲空间下限。因此 L2 和 L3 都不提供无限历史。如果两层都已逐出所需检查点，请求必须重新处理缺失的前缀。
-
-启用根保留时，引擎会把共享的系统提示根一次性捕获进 L2。L3 在 L2 逐出或 L2 准入失败时接收根。禁用 L2 时，启用的 L3 可以直接接收根。`--conversation-cache-keep-root` 和 `--conversation-cache-disk-keep-root` 分别控制各层的根保留，其 `--no-` 变体禁用之。根的逐出优先级低于普通镜像；显式的请求检查点钉选仍受保护。
-
-磁盘层不增加并发执行。并发请求的显存开销见[批处理槽位](docs/zh_CN/BATCHING.md)。捕获必须在请求覆盖所需会话字节之前完成。恢复是同步的。L2 逐出写出使用主机快照，可能增加磁盘 I/O 延迟。按你需要的会话和检查点历史来设定两层缓存预算。检查点保留的验证见 [V100 指南](docs/zh_CN/NVIDIA_V100.md)，较早的测量见[磁盘基准报告](benchmarks/v100-l3-conversation-cache-2026-10-03.md)。
-
-#### V100 实测结果
-
-在本分支的双 V100 层切分配置上，从 25 GiB NVMe 缓存恢复一个 33,725 token 的会话，读取耗时 1,614.6 ms，恢复耗时 315.8 ms。完整的恢复提示阶段（含 22 个新 token）耗时 3,015.1 ms。冷读同样 33,725 token 前缀耗时 20,332.7 ms。对恢复的请求这是 **6.74 倍加速**和 **85.2% 的提示延迟削减**。943.6 MiB 的记录在两张 GPU 上都恢复了位级一致的主模型状态和相同输出。重启恢复通过位级一致性验证，损坏记录回退产生匹配的输出。见[基准报告](benchmarks/v100-l3-conversation-cache-2026-10-03.md)。
-
-在本分支的双 V100 层切分机器上（Qwen3.8-Flash-Next Q2_0，int8 KV）：两个会话通过一个临时缓存交替，8 次请求正确服务，`corruptions=0 evictions=0`；每个会话一个链文件，在三次各 +12 新 token 的停放（park）中从 238 MiB 增长到 594 MiB（全快照存储在 100k+ token 时每次停放会写一个全新的约 2.4 GiB 文件）。全新短会话的第一次停放为链播种（约 118 MiB：每层一个 K/V 页加模型固定的运行状态）；之后每次停放都是增量（+12 token 约 118 MiB），读回/恢复路径不变（读取约 0.4 秒，恢复约 0.04–0.08 秒）。
-
-### 懒加载视觉（可选启用）
-
-图片编码器（`strata-vision`）只要运行就持有约 1.74 GiB 显存（第一张 GPU 1.43 GiB，第二张 0.31 GiB）。启用懒加载后，它在图片请求之间不运行：那部分显存留给专家缓存，纯文本工作保持完整的常驻专家数。
-
-要启用它，在模型配置中加入：
-
-- `"vram_elastic": true`（引擎标志 `--vram-elastic`）：专家缓存分段，引擎可以在请求之间归还并重新取回显存。
-- `"vision": {"lazy": true, "idle_s": 900}`：编码器在第一个图片请求时启动，在 `idle_s` 秒（900 = 15 分钟）没有图片请求后停止。编码器需要引擎的一次一个请求模式，所以不要与 `"parallel"` 组合（或用其他方式给编码器显存，例如 `POST /v1/vram`）。
-
-行为方式：
-
-- 文本请求永远不会启动编码器。图片请求先让引擎归还各 GPU 的显存——每张 GPU 一个预留，层切分时为 `[1700, 600]`，单卡为 `[1800]`，可用 `"vram_mib"` 覆盖——然后在引擎空闲时启动编码器并编码图片。
-- `idle_s` 秒没有图片请求后编码器停止，专家缓存长回完整大小。已编码的图片缓存在磁盘上，再发同一张图不会重新编码。
-- 在本分支的双 V100 层切分上实测：编码器空闲时缓存常驻 **14,005** 个专家（编码器常驻时为 12,688），冷图片请求 **5.9 秒**完成，编码器卸载后两个缓存都回到 14,005。见[详细说明](docs/zh_CN/DETAILS.md)。
-
-## 贡献
-
-欢迎贡献。帮助不需要你有 V100：文档、测试、安装、服务器行为、API 兼容性和其他受支持设备的改进都有价值。V100 专属代码和性能结果最好在真实 Volta 硬件上验证。
-
-1. 先查看 [open issues](https://github.com/jmnargi/Strata-V100/issues) 和 [pull requests](https://github.com/jmnargi/Strata-V100/pulls)，避免重复工作。
-2. 对广泛的上游特性，先判断改动是否应属于 [Niko 的上游仓库](https://github.com/Niko1221/Strata)。本分支定期整合上游改动；聚焦的 V100 修复和测量可以在这里提出。
-3. 做一个聚焦的改动，描述测试所用的硬件和确切步骤，并附上相关测试。
-4. 对性能声明，报告基线和候选、完整运行时设置、工作负载、重复次数和限制。尽可能附上原始数据或可复现命令。把内核计时与全模型吞吐分开，不要声明测量没有显示的增益。
-5. 向本仓库的 `main` 分支开 pull request。说明改动是 V100 专属、上游整合，还是通用 Strata 改进。不要把凭据、个人配置和无关的本地文件带进改动。
-
-当前测量方法见 [`benchmarks/README.md`](benchmarks/README.md) 和 [`docs/DETAILS.md`](docs/zh_CN/DETAILS.md)。贡献仍受项目许可证以及所含组件和模型文件的许可证约束。
-
-## 项目历史
-
-本分支在保留 Strata 上游发展的同时开发 V100 支持和 V100 专属工作。近期的整合与性能 pull request 体现了这一过程：
-
-- [#14 — 合并上游 v0.1.36 并保留 V100 支持](https://github.com/jmnargi/Strata-V100/pull/14)
-- [#15 — 从上游 PR #627 移植实测的 V100 KV gather 与 GDN 递归改动](https://github.com/jmnargi/Strata-V100/pull/15)
-- [#16 — 减少 V100 decode 注意力的洗牌与共享内存流量](https://github.com/jmnargi/Strata-V100/pull/16)
-- [#17 — 移植上游 PR #600 的 Volta 提示注意力内核](https://github.com/jmnargi/Strata-V100/pull/17)
-
-这些报告描述的是具体测过的改动；它们不是跨模型或跨 GPU 的全面提速声明。更多细节见[完整 pull request 历史](https://github.com/jmnargi/Strata-V100/pulls?q=is%3Apr+is%3Amerged)和[提交历史](https://github.com/jmnargi/Strata-V100/commits/main)。
-
-## 致谢与许可证
-
-本仓库是 [Niko1221 的 Strata](https://github.com/Niko1221/Strata) 的 fork。**我们深深感谢 Niko 和所有上游贡献者。** 他们的原始工作正是本分支、其 V100 支持和本地模型运行时得以存在的原因。我们在定期引入上游改动的同时，力求为上游工作署名并遵循其走向。
-
-Strata 使用了 [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp) 和其他开源组件。项目以 [MIT 许可证](LICENSE)授权；组件和模型文件可能有各自条款。见[致谢与许可证说明](docs/zh_CN/HOW_IT_WORKS.md#credits)。
+**赞助、硬件合作或其他合作：** [niko.veit@outlook.com](mailto:niko.veit@outlook.com).

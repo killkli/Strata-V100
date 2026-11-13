@@ -11,12 +11,10 @@ const kfmt = (n) => (n == null ? "–" : n >= 1000 ? `${fmt(n / 1000, n >= 10000
 // a context size: 32768 -> "32K" (powers of two), else like kfmt
 const ctxfmt = (n) => (n && n % 1024 === 0 ? `${fmt(n / 1024)}K` : kfmt(n));
 const gb = (b, d = 1) => (b == null ? "–" : fmt(b / 1073741824, d));   // memory: binary GB, as Windows shows it
-// a card's energy used: Wh, in kWh once it is worth it (a V100 at 45 W reaches 1 kWh in a day)
-const wh = (v) => (v == null ? "–" : v >= 1000 ? `${fmt(v / 1000, 2)} kWh` : `${fmt(v, v < 10 ? 1 : 0)} Wh`);
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem("strata." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem("strata." + k, JSON.stringify(v)); } catch (e) { /* private mode: in memory only */ } },
+  set(k, v) { try { localStorage.setItem("strata." + k, JSON.stringify(v)); return true; } catch (e) { return false; } },
 };
 
 // ------------------------------------------------------------------ toasts
@@ -52,7 +50,7 @@ async function copyText(text, btn) {
     use.setAttribute("href", `${SPRITE}#i-check`);
     setTimeout(() => use.setAttribute("href", `${SPRITE}#i-copy`), 1500);
   }
-  toast("success", "Copied to clipboard", "", 1800);
+  toast("success", tr("toast.copied", "Copied to clipboard"), "", 1800);
 }
 
 // ------------------------------------------------------------------ theme and tabs
@@ -62,6 +60,7 @@ function setTheme(t, save) {
   if (save) try { localStorage.setItem("strata.theme", t); } catch (e) { /* ignore */ }
   $("theme-icon").setAttribute("href", `${SPRITE}#i-${t === "dark" ? "sun" : "moon"}`);
   $("dark-toggle").setAttribute("aria-checked", String(t === "dark"));
+  refreshPreviews();                                  // the preview frames carry the page's colours
 }
 const flipTheme = () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark", true);
 $("theme-btn").onclick = flipTheme;
@@ -89,23 +88,36 @@ for (const b of document.querySelectorAll(".st-tab")) b.onclick = () => showTab(
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ------------------------------------------------------------------ server access
+let apiKey = store.get("apikey", "");
 function headers(json = false) {
   const h = {};
-  const key = store.get("apikey", "");
-  if (key) h.Authorization = "Bearer " + key;
+  if (apiKey) h.Authorization = "Bearer " + apiKey;
   if (json) h["Content-Type"] = "application/json";
   return h;
 }
-$("api-key").value = store.get("apikey", "");
-$("api-key").onchange = () => { store.set("apikey", $("api-key").value.trim()); toast("success", "API key saved", "Kept in this browser only."); };
+$("api-key").value = apiKey;
+function saveApiKey(notify = false) {
+  apiKey = $("api-key").value.trim();                // usable even when browser storage is blocked or full
+  const saved = store.set("apikey", apiKey);
+  if (notify) {
+    if (saved) toast("success", "API key saved", "Kept in this browser only.");
+    else toast("warn", "API key used for this page only", "Browser storage is unavailable. Enter it again after reloading.");
+  }
+}
+$("api-key").oninput = () => saveApiKey();
+$("api-key").onchange = () => saveApiKey(true);
 
 let health = {model: "strata", images: false, max_context: 0};
+// the texts that depend on what this server offers: the empty chat's line and the attach button's hint
+function renderEmptyChat() {
+  $("attach-btn").title = health.images ? tr("composer.attachPictures", "Attach a text file or a picture (or drop it here)")
+                                        : tr("composer.attach", "Attach a text file (or drop it here)");
+  $("chat-empty-sub").textContent = tr("chat.emptyModel", "{model} runs on this PC. Nothing leaves it.", {model: health.model});
+}
 async function loadHealth() {
   try {
     health = await (await fetch("health")).json();
-    $("attach-btn").title = health.images ? "Attach a text file or a picture (or drop it here)"
-                                          : "Attach a text file (or drop it here)";
-    $("chat-empty-sub").textContent = `${health.model} runs on this PC. Nothing leaves it.`;
+    renderEmptyChat();
     $("tab-btn-images").hidden = !health.image_generation;
     if (location.hash === "#images" && health.image_generation) showTab("images");
   } catch (e) {
@@ -114,241 +126,80 @@ async function loadHealth() {
 }
 
 // ------------------------------------------------------------------ Monitor
-// The Monitor tab, rendered from GET /metrics: the engine's own numbers, the hardware sampler's one-second series
-// (each card and the total), and the finished requests.  A reading that is absent stays "–"; nothing here may throw.
+const METRICS = [
+  {key: "speed", label: "Speed", icon: "gauge", unit: "t/s", series: "tok_s"},
+  {key: "gpu", label: "GPU load", icon: "gpu", unit: "%", series: "gpu_util", max: 100},
+  {key: "vram", label: "VRAM", icon: "layers", unit: "GB", series: "gpu_mem_used"},
+  {key: "temp", label: "GPU temp", icon: "thermometer", unit: "°C", series: "gpu_temp", tone: "warn"},
+  {key: "power", label: "Power", icon: "bolt", unit: "W", series: "gpu_power"},
+  {key: "pcie", label: "PCIe", icon: "link", unit: "", series: "gpu_pcie_rx_mb", tone: "info"},
+  {key: "cpu", label: "CPU", icon: "cpu", unit: "%", series: "cpu", max: 100},
+  {key: "disk", label: "Disk read", icon: "disk", unit: "MB/s", series: "disk_read_mb", tone: "info"},
+];
+$("metrics").innerHTML = METRICS.map((m) => `
+  <div class="st-card metric-card"><div class="st-metric">
+    <span class="st-metric__label">${icon(m.icon, "st-icon st-icon--sm")}${esc(m.label)}</span>
+    ${m.key === "speed" ? `<div class="speed-values">
+      <div><span class="st-metric__value" id="mv-speed">-</span><span class="st-metric__sub" id="ms-speed">Decode</span></div>
+      <div class="speed-prefill"><span class="st-metric__value" id="mv-prefill">-</span><span class="st-metric__sub" id="ms-prefill">Prefill</span></div>
+    </div>` : `<span class="st-metric__value" id="mv-${m.key}">–</span>
+    <span class="st-metric__sub" id="ms-${m.key}"></span>`}
+    <svg class="st-metric__spark" id="sp-${m.key}" viewBox="0 0 100 32" preserveAspectRatio="none"${m.tone ? ` data-tone="${m.tone}"` : ""}>
+      <path class="area" fill="currentColor" opacity=".12"/><path class="line" fill="none" stroke="currentColor"
+      stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      ${m.key === "speed" ? `<g id="sp-prefill" class="speed-prefill"><path class="area" fill="currentColor" opacity=".12"/>
+        <path class="line" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"
+        stroke-linecap="round" vector-effect="non-scaling-stroke"/></g>` : ""}</svg>
+  </div></div>`).join("");
 
-let lastMetrics = null, metricsFailures = 0, keyWarned = false, mcpTick = 0;
-let reqShowAll = false;   // the request log: the last 12, or every one the server keeps (issue #35)
-
-const setText = (id, value) => { const el = $(id); if (el && el.textContent !== String(value)) el.textContent = value; };
-const mean = (values) => {
-  const v = values.filter((x) => typeof x === "number" && !Number.isNaN(x));
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-};
-function median(values) {
-  const v = values.filter((x) => typeof x === "number" && !Number.isNaN(x)).sort((a, b) => a - b);
-  if (!v.length) return null;
-  const m = v.length >> 1;
-  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
-}
-const dur = (v, d = 2) => (v == null ? "–" : v >= 1000 ? `${fmt(v / 1000, d)} s` : `${fmt(v, 0)} ms`);
-const rate = (v, d = 1) => (v == null ? "–" : `${fmt(v, d)} t/s`);
-const pctText = (v, d = 0) => (v == null ? "–" : `${fmt(v, d)}%`);
-// the prompt reading speed of one finished request: the tokens it read, the cached prefix excluded
-const reqPrefill = (r) => (r && r.prompt_ms > 0 ? Math.max(0, (r.prompt_tokens || 0) - (r.reused || 0)) / (r.prompt_ms / 1000) : null);
-
-function sparkPaths(values, max) {
+function spark(id, values, max) {
+  const svg = $(id);
   const v = (values || []).map((x) => (x == null ? 0 : x));
-  if (v.length < 2) return {line: "", area: ""};
+  if (v.length < 2) { svg.querySelector(".line").setAttribute("d", ""); svg.querySelector(".area").setAttribute("d", ""); return; }
   const top = Math.max(max || 0, ...v, 1);
   const pts = v.map((x, i) => [(i / (v.length - 1)) * 100, 30 - (x / top) * 26]);
   const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(2)},${p[1].toFixed(2)}`).join("");
-  return {line, area: `${line}L100,32L0,32Z`};
+  svg.querySelector(".line").setAttribute("d", line);
+  svg.querySelector(".area").setAttribute("d", `${line}L100,32L0,32Z`);
 }
-function sparkSvg(cls, path, tone) {
-  return `<svg class="${cls}" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"${tone ? ` data-tone="${tone}"` : ""}>` +
-    `<path class="area" fill="currentColor" opacity=".12" d="${path.area}"/>` +
-    `<path class="line" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"` +
-    ` vector-effect="non-scaling-stroke" d="${path.line}"/></svg>`;
-}
-function spark(id, values, max) {
-  const svg = $(id);
-  if (!svg) return;
-  const p = sparkPaths(values, max);
-  svg.querySelector(".line").setAttribute("d", p.line);
-  svg.querySelector(".area").setAttribute("d", p.area);
+function setMetric(key, value, unit, sub) {
+  $(`mv-${key}`).innerHTML = value == null ? "–" : `${esc(value)}${unit ? `<small>${esc(unit)}</small>` : ""}`;
+  $(`ms-${key}`).textContent = sub || "";
 }
 
-// ---- the throughput chart: a line chart sized to its element, so the axis text stays crisp
-function axisAge(seconds) {
-  if (seconds < 1) return "now";
-  if (seconds < 90) return `-${Math.round(seconds)}s`;
-  return `-${fmt(seconds / 60, seconds < 300 ? 1 : 0)}m`;
+let lastMetrics = null, metricsFailures = 0, keyWarned = false, mcpTick = 0;
+let metricsEpoch = 0;
+// After Load or Unload returns, a poll that started earlier can still say the opposite. Hold the POST's state until a later
+// poll agrees, or until the first poll that started after the POST arrives. (PR #3550 by sakuumomo)
+let metricsHold = null;
+let reqShowAll = false;   // the Monitor's request table: the last 12, or every one the server keeps (issue #35)
+function metricsAgree(live, state) {
+  const s = (live && live.state) || "";
+  if (state === "unloaded") return s === "unloaded";
+  return s !== "" && s !== "unloaded";
 }
-function chart(svg, series, max) {
-  const W = Math.max(260, Math.round(svg.clientWidth || 720));
-  const H = Math.max(90, Math.round(svg.clientHeight || 190));
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  // a series may name the axis it scales to: "left" (default) or "right", so two
-  // series on different orders of magnitude each keep a readable curve
-  const hasRight = series.some((s) => s.axis === "right");
-  const padL = 46, padR = hasRight ? 46 : 10, padT = 8, padB = 18;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-  const n = Math.max(0, ...series.map((s) => s.values.length));
-  const axisTop = (side) => {
-    const flat = series.filter((s) => (s.axis || "left") === side)
-                       .flatMap((s) => s.values).filter((v) => typeof v === "number");
-    return Math.max(side === "left" ? max || 0 : 0, ...flat, 1e-9) * 1.06;
-  };
-  const topL = axisTop("left"), topR = axisTop("right");
-  const px = (i) => padL + (n <= 1 ? plotW : (i / (n - 1)) * plotW);
-  const pyOn = (top) => (v) => padT + plotH - (Math.max(0, Math.min(v, top)) / top) * plotH;
-  const py = pyOn(topL);
-  const base = (padT + plotH).toFixed(1);
-  let out = "";
-  const axisColor = (side) => {
-    const s = series.find((x) => (x.axis || "left") === side && x.color);
-    return s ? ` style="fill:${s.color}"` : "";
-  };
-  for (let t = 0; t <= 4; t++) {
-    const yy = py((topL / 4) * t);
-    out += `<line class="grid" x1="${padL}" y1="${yy.toFixed(1)}" x2="${(W - padR).toFixed(1)}" y2="${yy.toFixed(1)}"/>` +
-           `<text class="axis"${axisColor("left")} x="${padL - 7}" y="${(yy + 4).toFixed(1)}" text-anchor="end">${fmt((topL / 4) * t, topL >= 100 ? 0 : 1)}</text>`;
-    if (hasRight) {
-      const yr = pyOn(topR)((topR / 4) * t);
-      out += `<text class="axis"${axisColor("right")} x="${(W - padR + 7).toFixed(1)}" y="${(yr + 4).toFixed(1)}" text-anchor="start">${fmt((topR / 4) * t, topR >= 100 ? 0 : 1)}</text>`;
-    }
-  }
-  series.forEach((s, si) => {
-    const pyS = pyOn((s.axis || "left") === "right" ? topR : topL);
-    const pts = s.values.map((v, i) => (typeof v === "number" ? [px(i), pyS(v)] : null)).filter(Boolean);
-    if (pts.length < 2) return;
-    const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
-    if (si === 0) {
-      out += `<path class="chart-area" d="${d}L${pts[pts.length - 1][0].toFixed(1)},${base}L${pts[0][0].toFixed(1)},${base}Z"/>`;
-    }
-    out += `<path class="chart-line" style="stroke:${s.color}" d="${d}"/>`;
-  });
-  for (const f of [0, 0.25, 0.5, 0.75, 1]) {
-    const i = f * (n - 1);
-    out += `<text class="axis" x="${px(i).toFixed(1)}" y="${H - 4}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">` +
-           `${axisAge(n - 1 - i)}</text>`;
-  }
-  svg.innerHTML = out;
-}
-
-// ---- the KPI tiles: session averages, with the recent window beside them
-const KPIS = [
-  {key: "decode", label: "Decode", icon: "gauge", spark: true},
-  {key: "prefill", label: "Prefill", icon: "download", spark: true},
-  {key: "ttft", label: "Time to first token", icon: "clock", spark: true},
-  {key: "duration", label: "Request time", icon: "activity"},
-  {key: "requests", label: "Requests", icon: "layers"},
-  {key: "tokens", label: "Tokens written", icon: "memory"},
-  {key: "hit", label: "Expert cache hit", icon: "experts"},
-  {key: "spec", label: "Draft acceptance", icon: "bolt"},
-];
-$("kpis").innerHTML = KPIS.map((k) => `
-  <div class="kpi">
-    <span class="kpi__label">${icon(k.icon, "st-icon st-icon--sm")}${esc(k.label)}</span>
-    <span class="kpi__value" id="kpi-${k.key}">–</span>
-    <span class="kpi__sub" id="kpisub-${k.key}"></span>
-    ${k.spark ? `<svg class="kpi__spark" id="kpispark-${k.key}" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
-      <path class="area" fill="currentColor" opacity=".12"/><path class="line" fill="none" stroke="currentColor"
-      stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>` : ""}
-  </div>`).join("");
-function setKpi(key, value, sub) {
-  const el = $(`kpi-${key}`);
-  if (el.innerHTML !== value) el.innerHTML = value;
-  setText(`kpisub-${key}`, sub || "");
-}
-const kpiValue = (text, unit) => (text === "–" ? "–" : `${esc(text)}${unit ? `<small>${esc(unit)}</small>` : ""}`);
-
-// ---- the per-GPU breakout: one card per card of the run, each with its own series
-function gpuCards(hw, h, st) {
-  const cards = hw.gpus || [];
-  const names = String(st.gpu_name || "").split(" + ");
-  const block = (label, value, note, path, bar, tone) => `<div class="gpu-block">
-    <div class="gpu-block__top"><span>${esc(label)}</span><span><b>${value}</b>${note ? ` <em>${esc(note)}</em>` : ""}</span></div>
-    ${bar == null ? "" : `<div class="st-progress"${tone ? ` data-tone="${tone}"` : ""}><div class="st-progress__bar" style="width:${Math.max(0, Math.min(100, bar)).toFixed(1)}%"></div></div>`}
-    ${path ? sparkSvg("gpu-spark", path, tone) : ""}
-  </div>`;
-  return cards.map((g) => {
-    const i = g.index;
-    const memPct = g.mem_used != null && g.mem_total ? (100 * g.mem_used) / g.mem_total : null;
-    const pwPct = g.power != null && g.power_limit ? (100 * g.power) / g.power_limit : null;
-    // the card's own counter: it runs from driver load, so it survives a reload and is not the page's total
-    const since = g.energy_wh != null ? "since driver load" : "";
-    const gen = g.pcie_gen_max || g.pcie_gen;
-    const link = gen ? `Gen${gen}${g.pcie_width ? ` x${g.pcie_width}` : ""}${g.pcie_gen && g.pcie_gen < gen ? ` · idle Gen${g.pcie_gen}` : ""}` : "–";
-    const mb = (v) => (v == null ? "–" : `${fmt(v, v < 10 ? 1 : 0)} MB/s`);
-    return `<div class="st-card gpu-card">
-      <div class="gpu-card__head"><span class="gpu-card__index">GPU ${esc(i)}</span>
-        <span class="gpu-card__name" title="${esc(names[i] || st.gpu_name || "")}">${esc(names[i] || st.gpu_name || "")}</span></div>
-      ${block("Load", pctText(g.util), "", sparkPaths(h[`gpu${i}_util`], 100), g.util, "warn")}
-      ${block("VRAM", g.mem_used == null ? "–" : `${gb(g.mem_used)} GB`, g.mem_total ? `of ${gb(g.mem_total, 0)} GB` : "",
-              sparkPaths(h[`gpu${i}_mem_used`], g.mem_total), memPct, null)}
-      ${block("Temperature", g.temp == null ? "–" : `${fmt(g.temp)} °C`, "",
-              sparkPaths(h[`gpu${i}_temp`], 90), g.temp == null ? null : Math.min(100, g.temp), "warn")}
-      ${block("Power", g.power == null ? "–" : `${fmt(g.power)} W`, g.power_limit ? `of ${fmt(g.power_limit)} W` : "",
-              sparkPaths(h[`gpu${i}_power`], g.power_limit), pwPct, null)}
-      ${block("Energy", wh(g.energy_wh), since, null, null, null)}
-      <div class="gpu-pcie"><span>PCIe <b>${esc(link)}</b></span>
-        <span>rx <b>${mb(g.pcie_rx_mb)}</b> · tx <b>${mb(g.pcie_tx_mb)}</b></span></div>
-    </div>`;
-  }).join("");
-}
-
-// ---- the machine card and the L3 card share one tile: label, value, a sub-line, an optional bar and series
-const lastOf = (series) => {
-  const v = (series || []).filter((x) => typeof x === "number");
-  return v.length ? v[v.length - 1] : null;
-};
-const mbRate = (v) => (v == null ? "–" : v >= 1000 ? `${fmt(v / 1024, 2)}<small>GB/s</small>`
-                                                  : `${fmt(v, v < 1 ? 2 : v < 10 ? 1 : 0)}<small>MB/s</small>`);
-const plural = (n, word) => `${fmt(n)} ${word}${n === 1 ? "" : "s"}`;
-function metricTile(label, iconName, value, sub, bar, tone, path) {
-  return `<div class="sys-metric">
-    <span class="sys-metric__label">${icon(iconName, "st-icon st-icon--sm")}${esc(label)}</span>
-    <span class="sys-metric__value">${value}</span>
-    <span class="sys-metric__sub">${esc(sub || "")}</span>
-    ${bar == null ? "" : `<div class="st-progress"${tone ? ` data-tone="${tone}"` : ""}><div class="st-progress__bar" style="width:${Math.max(0, Math.min(100, bar)).toFixed(1)}%"></div></div>`}
-    ${path ? sparkSvg("sys-metric__spark", path) : ""}
-  </div>`;
-}
-
-function sysMetrics(hw, st, h) {
-  const ramPct = hw.ram_total ? (100 * hw.ram_used) / hw.ram_total : null;
-  return [
-    metricTile("CPU load", "cpu", hw.cpu == null ? "–" : `${fmt(hw.cpu)}<small>%</small>`,
-               `${st.cores ? `${fmt(st.cores)} cores · ` : ""}${st.threads ? `${fmt(st.threads)} threads` : ""}`,
-               hw.cpu, hw.cpu != null && hw.cpu > 90 ? "danger" : null, sparkPaths(h.cpu, 100)),
-    metricTile("System RAM", "memory", hw.ram_used == null ? "–" : `${gb(hw.ram_used)}<small>GB</small>`,
-               hw.ram_total ? `of ${gb(hw.ram_total, 0)} GB` : "", ramPct,
-               ramPct != null && ramPct > 92 ? "danger" : null, sparkPaths(h.ram_used, hw.ram_total)),
-    metricTile("Disk read", "disk", mbRate(hw.disk_read_mb), "", null, null, sparkPaths(h.disk_read_mb)),
-    metricTile("Disk write", "disk", mbRate(hw.disk_write_mb), "", null, null, sparkPaths(h.disk_write_mb)),
-  ].join("");
-}
-
-// ---- the L3 conversation disk cache: parked conversations kept as records on disk, resumed by a later request
-function l3Metrics(l3, h) {
-  const hits = l3.hits || 0, misses = l3.misses || 0;
-  const hitPct = hits + misses ? (100 * hits) / (hits + misses) : null;
-  const used = l3.budget_bytes ? (100 * (l3.bytes || 0)) / l3.budget_bytes : null;
-  const avg = (total, n) => (n ? (total || 0) / n : null);
-  return [
-    metricTile("Store", "layers", l3.bytes == null ? "–" : `${gb(l3.bytes)}<small>GB</small>`,
-               `${plural(l3.records || 0, "record")}${l3.budget_bytes ? ` of ${gb(l3.budget_bytes, 0)} GB` : ""}`,
-               used, used != null && used > 90 ? "warn" : null, null),
-    metricTile("Reuse", "experts", pctText(hitPct, 1), `${plural(hits, "hit")} · ${plural(misses, "miss")}`,
-               null, null, null),
-    metricTile("Parked", "download", `${gb(l3.parked_bytes)}<small>GB</small>`,
-               `${plural(l3.parks, "park")} · ${dur(avg(l3.park_ms, l3.parks))} each`, null, null, null),
-    metricTile("Restored", "refresh", kfmt(l3.restored_tokens || 0),
-               `${plural(l3.restores, "restore")} · ${dur(avg(l3.restore_ms, l3.restores))} each`, null, null, null),
-    metricTile("Disk read", "disk", mbRate(lastOf(h.l3_read_mb)),
-               `last record read in ${dur(l3.last_read_ms)}`, null, null, sparkPaths(h.l3_read_mb)),
-    metricTile("Disk write", "disk", mbRate(lastOf(h.l3_write_mb)),
-               `last park in ${dur(l3.last_park_ms)}`, null, null, sparkPaths(h.l3_write_mb)),
-  ].join("");
-}
-
 async function poll() {
+  const epoch = ++metricsEpoch;
   try {
     const r = await fetch(reqShowAll ? "metrics?requests=all" : "metrics", {headers: headers()});
     if (r.status === 401) {
-      setPill("error", "API key needed");
-      if (!keyWarned) { keyWarned = true; toast("warn", "API key needed", "This server needs a key: add it under About > Settings.", 6000); }
+      setPill("error", tr("pill.keyNeeded", "API key needed"));
+      if (!keyWarned) { keyWarned = true; toast("warn", tr("pill.keyNeeded", "API key needed"), tr("toast.keyAbout", "This server needs a key: add it under About > Settings."), 6000); }
     } else if (r.ok) {
-      lastMetrics = await r.json();
+      const m = await r.json();
+      if (metricsHold && epoch <= metricsHold.after && !metricsAgree(m.live, metricsHold.state)) {
+        setTimeout(poll, 1000);
+        return;
+      }
+      if (metricsHold && (metricsAgree(m.live, metricsHold.state) || epoch > metricsHold.after)) metricsHold = null;
+      lastMetrics = m;
       metricsFailures = 0;
       render(lastMetrics);
     } else {
       throw new Error(`HTTP ${r.status}`);
     }
   } catch (e) {
-    if (++metricsFailures === 3) setPill("error", "Server not reachable");
+    if (++metricsFailures === 3) setPill("error", tr("pill.unreachable", "Server not reachable"));
   }
   if (tab === "monitor" && ++mcpTick % 10 === 0) loadMcp();       // server states change rarely: every 10 s
   setTimeout(poll, 1000);
@@ -357,26 +208,168 @@ async function poll() {
 function setPill(state, text) {
   $("pill").dataset.state = state === "error" ? "queued" : state;
   $("pill-text").textContent = text;
+  // a poll re-sets the sentence every second; refit only when its text changed
+  if (text !== lastPillText) { lastPillText = text; fitHeader(); }
 }
+let lastPillText = null;
+// The pill's sentence is the first thing the header row can spare when it runs out of room.
+function fitHeader() {
+  const header = document.querySelector(".st-header");
+  if (!header) return;
+  header.classList.remove("st-header--clip");
+  if (header.scrollWidth > header.clientWidth) header.classList.add("st-header--clip");
+}
+window.addEventListener("resize", fitHeader);
+
+// ------------------------------------------------------------------ Load / Unload (POST /load, /unload: the header button)
+// Metrics stay "unloaded" until the engine is READY, so a turn or an image job on this page has to paint Loading itself.
+// modelOp covers the button's own POST, which returns before the next poll can agree.
+let modelOp = null;
+let imageBusy = false;
+function pageBusy() { return busy != null || imageBusy; }
+// "generating an image" is the job a refresh can see. imageBusy is this page's POST before that phase is published. A chat
+// phase already on the metrics wins, because Stop still stops that reply.
+function imageLive(live) {
+  if (live && live.phase === "generating an image") return true;
+  const state = live && live.state;
+  if (state === "reading" || state === "generating") return false;
+  return imageBusy;
+}
+function paintLive() { if (lastMetrics) render(lastMetrics); }
+function turnBlocksUnload(live) {
+  const state = (live && live.state) || "";
+  return pageBusy() || state === "reading" || state === "generating" || (live && live.queued > 0);
+}
+function setModelButton(text, title, disabled) {
+  const btn = $("unload-btn");
+  btn.textContent = text; btn.title = title; btn.disabled = disabled;
+  fitHeader();
+}
+function modelButton(live) {
+  if (modelOp === "load") return setModelButton(tr("model.loading", "Loading…"), tr("model.loadingTitle", "The model is loading"), true);
+  if (modelOp === "unload") return setModelButton(tr("model.unloading", "Unloading…"), tr("model.unloadingTitle", "The model is unloading"), true);
+  const state = (live && live.state) || "";
+  const metricsBusy = state === "reading" || state === "generating" || (live && live.queued > 0);
+  const imageNow = imageLive(live);
+  const unload = tr("model.unload", "Unload");
+  if (state === "unloaded") {
+    if (imageNow) return setModelButton(tr("model.loading", "Loading…"), tr("model.imageLoading", "An image is already loading the model"), true);
+    if (pageBusy()) return setModelButton(tr("model.loading", "Loading…"), tr("model.replyLoading", "A reply is already loading the model"), true);
+    return setModelButton(tr("model.load", "Load"), tr("model.loadTitle", "Load the model now. A message also loads it."), false);
+  }
+  if (imageNow) return setModelButton(unload, tr("model.imageBusy", "An image is generating. It finishes on its own."), true);
+  if (!state) return setModelButton("…", tr("model.waiting", "Waiting for the server"), true);
+  if (metricsBusy || pageBusy()) return setModelButton(unload, tr("model.stopFirst", "Stop the reply, then unload"), true);
+  return setModelButton(unload, tr("model.unloadTitle", "Unload the model and free the GPU"), false);
+}
+$("unload-btn").onclick = async () => {
+  if (modelOp) return;
+  const live = (lastMetrics && lastMetrics.live) || {};
+  const loading = live.state === "unloaded";
+  const busyCopy = (sample, stillLoading) => stillLoading
+    ? (imageLive(sample) ? tr("model.imageLoadingDot", "An image is already loading the model.") : tr("model.replyLoadingDot", "A reply is already loading the model."))
+    : (imageLive(sample) ? tr("model.imageBusy", "An image is generating. It finishes on its own.") : tr("model.stopFirstDot", "Stop the reply, then unload."));
+  if (loading ? pageBusy() : turnBlocksUnload(live)) {
+    toast("warn", tr("model.busy", "Model is busy"), busyCopy(live, loading));
+    return;
+  }
+  if (!loading && !confirm(tr("model.confirmUnload", "Unload the model and free the GPU? Load, or the next message, brings it back."))) return;
+  // confirm() blocks the poll. Yield so a sample that arrived during the dialog is applied. A confirmed Unload stays an unload.
+  if (!loading) {
+    modelOp = "unload";
+    modelButton(live);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  const now = (lastMetrics && lastMetrics.live) || {};
+  const loadingNow = loading;
+  if (loadingNow ? pageBusy() : turnBlocksUnload(now)) {
+    modelOp = null;
+    if (lastMetrics) render(lastMetrics); else modelButton(now);
+    toast("warn", tr("model.busy", "Model is busy"), busyCopy(now, loadingNow));
+    return;
+  }
+  modelOp = loadingNow ? "load" : "unload";
+  modelButton(now);
+  if (loadingNow) toast("info", tr("model.loadingToast", "Loading the model"), tr("model.fewMinutes", "This can take a few minutes."));
+  const remember = (state) => {
+    if (!lastMetrics) lastMetrics = {};
+    lastMetrics.live = Object.assign({}, lastMetrics.live, {state, queued: 0});
+    metricsHold = {state, after: metricsEpoch};
+  };
+  try {
+    const r = await fetch(loadingNow ? "load" : "unload", {method: "POST", headers: headers(true), body: "{}"});
+    let body = {};
+    try { body = await r.json(); } catch (e) { /* the connection dropped */ }
+    const status = body.status || "";
+    const msg = (body.error && body.error.message) ||
+                (r.status === 401 ? tr("toast.keyAbout2", "API key needed: add it under About > Settings.") : tr("toast.httpAnswer", "The server answered HTTP {code}.", {code: r.status}));
+    const failTitle = loadingNow ? tr("model.loadFailed", "Load failed") : tr("model.unloadFailed", "Unload failed");
+    if (loadingNow) {
+      if (r.ok && status === "loaded") {
+        remember("idle");
+        toast("success", tr("model.loaded", "Model loaded"), tr("model.gpuInUse", "The GPU is in use."));
+      } else {
+        toast("error", failTitle, msg);
+      }
+    } else if (status === "unloaded" || status === "not loaded") {
+      remember("unloaded");
+      toast(status === "unloaded" ? "success" : "info",
+            status === "unloaded" ? tr("model.unloaded", "Model unloaded") : tr("model.alreadyUnloaded", "Already unloaded"),
+            tr("model.gpuFree", "The GPU is free. Load, or the next message, brings it back."));
+    } else if (r.status === 409 || status === "busy") {
+      let sample = (lastMetrics && lastMetrics.live) || {};
+      try {
+        const mr = await fetch("metrics", {headers: headers()});
+        if (mr.ok) {
+          const m = await mr.json();
+          if (m && m.live) { sample = m.live; lastMetrics = m; }
+        }
+      } catch (e) { /* the 409 body has no phase */ }
+      toast("warn", tr("model.busy", "Model is busy"), imageLive(sample)
+        ? tr("model.imageBusy", "An image is generating. It finishes on its own.") : tr("model.stopFirstDot", "Stop the reply, then unload."));
+    } else if (status === "unsupported") {
+      toast("error", tr("model.unsupported", "Unload is not available"), "");
+    } else {
+      toast("error", failTitle, msg);
+    }
+  } catch (e) {
+    toast("error", loadingNow ? tr("model.loadFailed", "Load failed") : tr("model.unloadFailed", "Unload failed"), tr("model.noAnswer", "The server did not answer."));
+  } finally {
+    modelOp = null;
+    if (lastMetrics) render(lastMetrics); else modelButton({});
+  }
+};
 
 function render(m) {
-  const live = m.live || {}, hw = m.hardware || {}, st = m.hardware_static || {}, eng = m.engine || {};
-  // the header pill
-  if (live.state === "reading") {
+  const live = m.live || {}, hw = m.hardware || {}, st = m.hardware_static || {}, eng = m.engine || {}, h = m.history || {};
+  const last = (m.requests || [])[0];
+  // the header pill. modelOp and a local load win over "N queued": with parallel requests, queued stays up through
+  // ensure_loaded(), and metrics stay "unloaded" until the engine is READY. An image POST in that window is still a load.
+  const localLoad = live.state === "unloaded" && (busy != null || imageBusy);
+  if (modelOp === "load") {
+    setPill("idle", tr("model.loading", "Loading…"));
+  } else if (modelOp === "unload") {
+    setPill("idle", tr("model.unloading", "Unloading…"));
+  } else if (localLoad) {
+    setPill("idle", tr("model.loading", "Loading…"));
+  } else if (imageLive(live)) {
+    setPill("reading", tr("pill.image", "Generating image…"));
+  } else if (live.state === "reading") {
     const pct = live.prompt_total ? Math.round((100 * live.prompt_read) / live.prompt_total) : null;
-    setPill("reading", pct != null ? `Reading prompt · ${pct}%` : "Reading prompt");
+    setPill("reading", pct != null ? tr("pill.readingPct", "Reading prompt · {pct}%", {pct}) : tr("pill.reading", "Reading prompt"));
   } else if (live.state === "generating") {
-    setPill("generating", `Generating · ${fmt(live.tok_s, 1)} tok/s`);
+    setPill("generating", tr("pill.generating", "Generating · {rate} tok/s", {rate: fmt(live.tok_s, 1)}));
+  } else if (live.state === "unloaded") {
+    setPill("idle", tr("pill.unloaded", "Unloaded"));
   } else {
-    setPill("idle", "Idle");
+    setPill("idle", tr("pill.idle", "Idle"));
   }
-  if (live.queued > 0) setPill("queued", `${live.queued} queued`);
-  if (tab === "monitor") renderMonitor(m);
+  modelButton(live);
+  if (!modelOp && !localLoad && live.queued > 0) setPill("queued", tr("pill.queued", "{n} queued", {n: live.queued}));
+  if (tab === "monitor") renderMonitor(live, hw, st, eng, h, last, m.requests || [], m.totals, m.requests_kept);
   if (tab === "monitor") renderConvCache(m.conversation_cache);
   if (tab === "about") renderAbout(eng, hw, st);
 }
-// the chart is sized from its element: a window resize redraws it before the next poll
-window.addEventListener("resize", () => { if (lastMetrics && tab === "monitor") render(lastMetrics); });
 
 // #596: the conversation cache - the prompt's state the engine keeps between requests (always), and the whole
 // conversations it parks in RAM when "--conversation-cache-mib N" is in the run config's args (opt-in)
@@ -407,34 +400,44 @@ function renderConvCache(c) {
     ["Last switch", c.enabled ? event : null],
   ]);
   $("cc-note").textContent = c.enabled
-    ? "The L2 RAM tier keeps whole parked conversations in host memory: a request that continues one gets its state back instead of reading it again; the oldest goes when the slots or the memory are full."
-    : "The engine keeps the last conversation's state, so a follow-up reads only what is new. To keep several conversations (agents taking turns) in the L2 RAM tier, add \"--conversation-cache-mib\", \"8192\" to the run config's args (docs/DETAILS.md).";
+    ? "A request that continues a parked conversation gets its state back instead of reading it again; the oldest goes when the slots or the memory are full."
+    : "The engine keeps the last conversation's state, so a follow-up reads only what is new. To keep several conversations (agents taking turns), add \"--conversation-cache-mib\", \"8192\" to the run config's args (docs/DETAILS.md).";
 }
 
 function renderTotals(t) {
   if (!t || !t.requests) return "";
   const since = new Date(t.since * 1000).toLocaleString([], {weekday: "short", hour: "2-digit", minute: "2-digit"});
-  const read = Math.max(0, (t.prompt_tokens || 0) - (t.reused || 0));
+  const read = t.prompt_tokens - t.reused;
   const pSpeed = t.prompt_ms > 0 && read > 0 ? ` at ${fmt(read / (t.prompt_ms / 1000))} tok/s` : "";
   const oSpeed = t.decode_ms > 0 && t.output_tokens > 0 ? ` at ${fmt(t.output_tokens / (t.decode_ms / 1000), 1)} tok/s` : "";
-  const ttft = t.ttft_ms > 0 ? ` · first token after ${dur(t.ttft_ms / t.requests)} on average` : "";
   return `Since ${since}: ${fmt(t.requests)} requests · ${fmt(read)} prompt tokens read${pSpeed} (${fmt(t.reused)} reused) · ` +
-         `${fmt(t.output_tokens)} written${oSpeed}${ttft}`;
+         `${fmt(t.output_tokens)} written${oSpeed}`;
 }
-
-function renderMonitor(m) {
-  const live = m.live || {}, hw = m.hardware || {}, st = m.hardware_static || {}, eng = m.engine || {};
-  const h = m.history || {}, requests = m.requests || [], totals = m.totals || {};
-  const keptCount = m.requests_kept == null ? requests.length : m.requests_kept;
-  const last = requests[0];
-  const win = requests.slice(0, 20);        // the recent window the tiles and the TTFT outliers are measured over
-
+function renderMonitor(live, hw, st, eng, h, last, requests, totals, kept) {
   // model state
-  const on = live.queued > 0 ? "queued" : live.state;
-  for (const b of document.querySelectorAll("#state-badges .st-badge")) b.classList.toggle("on", b.dataset.s === on || b.dataset.s === live.state);
+  // A local turn keeps metrics on "unloaded" for the whole engine start.
+  const imageNow = imageLive(live);
+  const starting = modelOp === "load" || imageNow || (busy != null && live.state === "unloaded");
+  const on = !modelOp && live.queued > 0 ? "queued" : live.state;
+  for (const b of document.querySelectorAll("#state-badges .st-badge")) {
+    const lit = (b.dataset.s === on || b.dataset.s === live.state) && !(starting && b.dataset.s === "unloaded");
+    b.classList.toggle("on", lit);
+  }
   const prog = $("state-progress");
   let label = "Waiting for a request", detail = "", pct = 0;
-  if (live.state === "reading") {
+  if (modelOp === "load" || (busy != null && live.state === "unloaded" && !imageNow)) {
+    label = "Loading";
+    delete prog.dataset.tone;
+    detail = "The model is loading.";
+  } else if (imageNow && (live.state === "unloaded" || live.state === "reading" || live.state === "generating" || live.state === "idle")) {
+    label = live.state === "unloaded" ? "Loading" : "Generating image";
+    delete prog.dataset.tone;
+    detail = live.state === "unloaded" ? "The model is loading." : "An image is generating. It finishes on its own.";
+  } else if (modelOp === "unload") {
+    label = "Unloading";
+    delete prog.dataset.tone;
+    detail = "Freeing the GPU.";
+  } else if (live.state === "reading") {
     label = "Reading prompt";
     prog.dataset.tone = "info";
     if (live.prompt_total) {
@@ -448,81 +451,63 @@ function renderMonitor(m) {
     delete prog.dataset.tone;
     pct = live.max_tokens ? Math.min(100, (100 * live.generated) / live.max_tokens) : 0;
     detail = `${fmt(live.generated)} tokens · ${fmt(live.tok_s, 1)} tok/s`;
+  } else if (live.state === "unloaded") {
+    label = "Unloaded";
+    delete prog.dataset.tone;
+    detail = "Load brings it back. A message does too.";
   } else if (last) {
     delete prog.dataset.tone;
     detail = `last: ${fmt(last.output_tokens)} tokens${last.decode_tok_s ? ` at ${fmt(last.decode_tok_s, 1)} tok/s` : ""}`;
   }
-  setText("state-label", label);
-  setText("state-detail", detail);
+  $("state-label").textContent = label;
+  $("state-detail").textContent = detail;
   $("state-bar").style.width = `${pct}%`;
 
-  // live chips: only what the running request actually has
-  const chips = [];
-  if (live.state !== "idle") {
-    if (live.tok_s != null) chips.push(["Decode", rate(live.tok_s)]);
-    if (live.prefill_tok_s_mean != null) chips.push(["Prefill", rate(live.prefill_tok_s_mean)]);
-    if (live.generated != null) chips.push(["Written", `${fmt(live.generated)}${live.max_tokens ? ` / ${fmt(live.max_tokens)}` : ""}`]);
-    if (live.elapsed_s != null) chips.push(["Elapsed", `${fmt(live.elapsed_s, 1)} s`]);
+  // the eight cards
+  // Idle: not the last request's speed (one request is noisy) but the run's average from the server's totals
+  // (token-weighted, the same figure the engine's DONE lines and Prometheus report). Live stays live.
+  const avgDecode = totals && totals.decode_ms > 0 && totals.output_tokens > 0 ? totals.output_tokens / (totals.decode_ms / 1000) : null;
+  const readTokens = totals ? totals.prompt_tokens - (totals.reused || 0) : 0;
+  const avgPrefill = totals && totals.prompt_ms > 0 && readTokens > 0 ? readTokens / (totals.prompt_ms / 1000) : null;
+  const speed = live.state === "generating" ? live.tok_s : avgDecode != null ? avgDecode : last ? last.decode_tok_s : null;
+  setMetric("speed", speed == null ? null : fmt(speed, 1), "t/s",
+            live.state === "generating" ? "Decode now" : avgDecode != null ? "Decode · run average" : last ? "Decode last request" : "Decode");
+  const prefill = live.state !== "idle" ? live.prefill_tok_s_mean
+                : avgPrefill != null ? avgPrefill : last && last.prompt_ms > 0 ? Math.max(0, last.prompt_tokens - (last.reused || 0)) / (last.prompt_ms / 1000) : null;
+  setMetric("prefill", prefill == null ? null : fmt(prefill), "t/s",
+            live.state === "reading" ? "Prefill now" : live.state === "generating" ? "Prefill this request" : avgPrefill != null ? "Prefill · run average" : last ? "Prefill last request" : "Prefill");
+  spark("sp-speed", h.tok_s);
+  spark("sp-prefill", h.prefill_tok_s_mean);
+  // a model split across several cards (issue #112): the cards show their total / mean / hottest, and each card's own
+  const per = (f) => (hw.gpus || []).map((g) => `GPU ${g.index} ${f(g)}`).join(" · ");
+  const multi = (hw.gpus || []).length > 1;
+  setMetric("gpu", hw.gpu_util == null ? null : fmt(hw.gpu_util), "%",
+            multi ? per((g) => (g.util == null ? "–" : `${fmt(g.util)}%`)) : st.gpu_name || (st.gpu_note ? "not available" : ""));
+  spark("sp-gpu", h.gpu_util, 100);
+  setMetric("vram", hw.gpu_mem_used == null ? null : gb(hw.gpu_mem_used), hw.gpu_mem_total ? `/ ${gb(hw.gpu_mem_total, 0)} GB` : "GB",
+            multi ? per((g) => (g.mem_used == null ? "–" : `${gb(g.mem_used)} GB`))
+                  : eng.expert_slots ? `${fmt(eng.expert_slots)} experts cached` : (st.gpu_note ? "not available on Windows AMD yet" : ""));
+  spark("sp-vram", h.gpu_mem_used, hw.gpu_mem_total);
+  setMetric("temp", hw.gpu_temp == null ? null : fmt(hw.gpu_temp), "°C",
+            multi ? per((g) => (g.temp == null ? "–" : `${fmt(g.temp)}°`)) : "");
+  spark("sp-temp", h.gpu_temp, 90);
+  setMetric("power", hw.gpu_power == null ? null : fmt(hw.gpu_power), "W", hw.gpu_power_limit ? `of ${fmt(hw.gpu_power_limit)} W limit` : "");
+  spark("sp-power", h.gpu_power, hw.gpu_power_limit);
+  const gen = hw.gpu_pcie_gen_max || hw.gpu_pcie_gen;
+  setMetric("pcie", gen ? `Gen${gen}` : null, hw.gpu_pcie_width ? `x${hw.gpu_pcie_width}` : "",
+            hw.gpu_pcie_rx_mb == null ? "" : `to GPU ${fmt(hw.gpu_pcie_rx_mb, hw.gpu_pcie_rx_mb < 10 ? 1 : 0)} MB/s` +
+            (hw.gpu_pcie_gen && gen && hw.gpu_pcie_gen < gen ? ` · idle Gen${hw.gpu_pcie_gen}` : ""));
+  spark("sp-pcie", h.gpu_pcie_rx_mb);
+  setMetric("cpu", hw.cpu == null ? null : fmt(hw.cpu), "%", st.threads ? `${st.cores ? `${st.cores} cores · ` : ""}${st.threads} threads` : "");
+  spark("sp-cpu", h.cpu, 100);
+  if (hw.disk_read_mb == null) {
+    setMetric("disk", null, "", st.psutil ? "" : "needs psutil (setup installs it)");
+  } else {
+    const big = hw.disk_read_mb >= 1000;
+    setMetric("disk", big ? fmt(hw.disk_read_mb / 1024, 2) : fmt(hw.disk_read_mb, hw.disk_read_mb < 10 ? 1 : 0), big ? "GB/s" : "MB/s",
+              hw.disk_write_mb == null ? "" : `write ${fmt(hw.disk_write_mb, 1)} MB/s`);
   }
-  if (live.queued) chips.push(["Queued", fmt(live.queued)]);
-  $("state-live").innerHTML = chips.map(([k, v]) => `<span class="live-chip">${esc(k)} <b>${esc(v)}</b></span>`).join("");
-
-  // the tiles: the session's averages, the recent window beside them
-  const readTokens = Math.max(0, (totals.prompt_tokens || 0) - (totals.reused || 0));
-  const sessionDecode = totals.decode_ms > 0 && totals.output_tokens ? totals.output_tokens / (totals.decode_ms / 1000) : null;
-  const sessionPrefill = totals.prompt_ms > 0 && readTokens ? readTokens / (totals.prompt_ms / 1000) : null;
-  const sessionTtft = totals.ttft_ms > 0 && totals.requests ? totals.ttft_ms / totals.requests : null;
-  const winDecode = mean(win.map((r) => r.decode_tok_s));
-  const winPrefill = mean(win.map(reqPrefill));
-  const winTtft = mean(win.map((r) => r.ttft_ms));
-  const winDuration = mean(win.map((r) => r.duration_s));
-  const winHit = mean(win.map((r) => (r.hit_rate == null ? null : r.hit_rate * 100)));
-  const winSpec = mean(win.map((r) => (r.drafts_offered ? (100 * (r.drafts_accepted || 0)) / r.drafts_offered : null)));
-  const errors = requests.filter((r) => r.finish === "error").length;
-  setKpi("decode", kpiValue(fmt(sessionDecode ?? winDecode, 1), "t/s"),
-         `now ${rate(live.state === "generating" ? live.tok_s : last ? last.decode_tok_s : null)} · recent ${rate(winDecode)}`);
-  setKpi("prefill", kpiValue(fmt(sessionPrefill ?? winPrefill, 1), "t/s"),
-         `now ${rate(live.state === "idle" ? null : live.prefill_tok_s_mean)} · recent ${rate(winPrefill)}`);
-  setKpi("ttft", kpiValue(dur(sessionTtft), ""),
-         `recent ${dur(winTtft)} · last ${dur(last ? last.ttft_ms : null)}`);
-  setKpi("duration", kpiValue(winDuration == null ? "–" : fmt(winDuration, 1), "s"), `${fmt(win.length)} recent requests`);
-  setKpi("requests", kpiValue(fmt(totals.requests || 0), ""),
-         `${fmt(keptCount)} kept · ${fmt(errors)} error${errors === 1 ? "" : "s"}`);
-  setKpi("tokens", kpiValue(kfmt(totals.output_tokens || 0), ""),
-         `${kfmt(readTokens)} prompt read · ${kfmt(totals.reused || 0)} reused`);
-  setKpi("hit", kpiValue(pctText(winHit, 1), ""), `last ${pctText(last && last.hit_rate != null ? last.hit_rate * 100 : null, 1)}`);
-  setKpi("spec", kpiValue(pctText(winSpec, 1), ""),
-         `${fmt(totals.drafts_accepted || 0)} of ${fmt(totals.drafts_offered || 0)} drafts accepted`);
-  spark("kpispark-decode", h.tok_s);
-  spark("kpispark-prefill", h.prefill_tok_s_mean);
-  spark("kpispark-ttft", win.map((r) => r.ttft_ms).reverse());
-
-  // throughput over the sampler's window
-  const samples = (h.tok_s || []).length;
-  chart($("chart-speed"), [{values: h.tok_s || [], color: "var(--st-accent)", axis: "left"},
-                           {values: h.prefill_tok_s_mean || [], color: "var(--st-info)", axis: "right"}]);
-  $("legend-speed").innerHTML =
-    `<span style="color:var(--st-accent)"><i></i>Decode <b>${rate(live.state === "generating" ? live.tok_s : last ? last.decode_tok_s : null)}</b></span>` +
-    `<span style="color:var(--st-info)"><i></i>Prefill <b>${rate(live.state === "idle" ? null : live.prefill_tok_s_mean)}</b></span>`;
-  setText("chart-note", samples ? `${fmt(samples)} s of history, one sample a second` : "waiting for the sampler");
-
-  // each card of the run on its own
-  $("gpu-grid").innerHTML = gpuCards(hw, h, st);
-
-  // the L3 store: only a run started with --conversation-cache-disk has one, and only once its store opened
-  const l3 = m.l3;
-  $("l3-card").hidden = !(l3 && l3.on);
-  if (l3 && l3.on) {
-    setText("l3-sub", l3.path || "");
-    $("l3-metrics").innerHTML = l3Metrics(l3, h);
-    const skipped = l3.skips ? ` ${fmt(l3.skips)} parks were skipped.` : "";
-    setText("l3-note", (l3.evictions || l3.corruptions || l3.write_failures)
-      ? `${fmt(l3.evictions || 0)} evictions · ${fmt(l3.corruptions || 0)} corrupt records · ` +
-        `${fmt(l3.write_failures || 0)} failed writes.${skipped}`
-      : `Parked conversations are records in this folder. A request resumes one when its prompt starts with that ` +
-        `record's tokens; the engine keeps the longest matching prefix. Disk read and write are the engine's own ` +
-        `traffic, so a record the operating system still has cached counts as almost nothing.${skipped}`);
-  }
+  spark("sp-disk", h.disk_read_mb);
 
   // context fill: the running request, else the last one
   const ctx = eng.max_context || 0;
@@ -532,73 +517,47 @@ function renderMonitor(m) {
   const frac = ctx ? Math.min(1, used / ctx) : 0;
   $("ctx-fill").setAttribute("stroke-dasharray", `${(235.6 * frac).toFixed(1)} 314.2`);
   $("ctx-fill").style.opacity = 235.6 * frac >= 3 ? "1" : "0";         // a near-zero arc would draw just its round cap
-  setText("ctx-pct", `${Math.round(frac * 100)}%`);
-  setText("ctx-sub", ctx ? `${kfmt(used)} / ${ctxfmt(ctx)}` : "–");
+  $("ctx-pct").textContent = `${Math.round(frac * 100)}%`;
+  $("ctx-sub").textContent = ctx ? `${kfmt(used)} / ${ctxfmt(ctx)}` : "–";
   const cacheBytes = (eng.expert_cache_mib || 0) * 1048576;
-  setText("slots-text", eng.expert_slots ? `${fmt(eng.expert_slots)} · ${gb(cacheBytes)} GB` : "–");
+  $("slots-text").textContent = eng.expert_slots ? `${fmt(eng.expert_slots)} · ${gb(cacheBytes)} GB` : "–";
   $("slots-bar").style.width = hw.gpu_mem_total ? `${Math.min(100, (100 * cacheBytes) / hw.gpu_mem_total)}%` : "0%";
-  const kv = {int8: "8-bit", q4_0: "4-bit (Hadamard-rotated)", fp16: "16-bit"}[eng.kv] || eng.kv;
-  setText("kv-text", kv ? `${kv}${eng.kv_resident ? `, ${fmt(eng.kv_resident)} positions streamed` : ", all in VRAM"}` : "–");
-  setText("spec-text", eng.spec ? `MTP, up to ${Math.max(0, (eng.mtp_max || eng.spec) - 1)} drafts${eng.lookup ? " + lookup" : ""}` : "off");
-  setText("kept-text", `${fmt(requests.length)} of ${fmt(keptCount)}`);
+  $("ram-text").textContent = hw.ram_total ? `${gb(hw.ram_used)} / ${gb(hw.ram_total, 0)} GB` : "–";
+  const ramPct = hw.ram_total ? (100 * hw.ram_used) / hw.ram_total : 0;
+  $("ram-bar").style.width = `${ramPct}%`;
+  if (ramPct > 92) $("ram-progress").dataset.tone = "danger"; else delete $("ram-progress").dataset.tone;
+  $("temp-text").textContent = hw.gpu_temp == null ? "–" : `${fmt(hw.gpu_temp)} °C`;
+  $("temp-bar").style.width = hw.gpu_temp == null ? "0%" : `${Math.min(100, hw.gpu_temp)}%`;
 
-  // this machine
-  setText("sys-sub", st.cpu_name || "");
-  $("sys-metrics").innerHTML = sysMetrics(hw, st, h);
-
-  // the request log
+  // recent requests
   const body = $("req-body");
-  const shown = requests.slice(0, reqShowAll ? requests.length : 12);
-  const medTtft = median(win.map((r) => r.ttft_ms));
-  const ttftCls = (v) => (v == null || !medTtft ? "" : v > 3 * medTtft ? " slower" : v > 1.5 * medTtft ? " slow" : "");
-  if (!shown.length) {
-    body.innerHTML = `<tr><td colspan="10" class="muted">No requests yet</td></tr>`;
+  if (!requests.length) {
+    body.innerHTML = `<tr><td colspan="9" class="muted">No requests yet</td></tr>`;
   } else {
     const badge = {stop: ["", "Done"], length: ["", "Max tokens"], cancel: ["st-badge--queued", "Stopped"],
-                   disconnect: ["st-badge--queued", "Closed"], error: ["st-badge--error", "Error"]};
-    body.innerHTML = shown.map((r) => {
+                   disconnect: ["st-badge--queued", "Closed"], error: ["st-badge--error", "Error"],
+                   timeout: ["st-badge--queued", "Timeout"]};
+    body.innerHTML = requests.slice(0, reqShowAll ? requests.length : 12).map((r) => {
       const [cls, text] = badge[r.finish] || ["", r.finish || "–"];
       const t = new Date(r.time * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
       const proj = r.projection == null ? "" : ` <span class="st-badge${r.projection ? " st-badge--reading" : ""}" title="experimental speed projection ${r.projection ? "on" : "off"}">${r.projection ? "ESP" : "stock"}</span>`;
       // #588: the VRAM share; the PCIe share (--pcie-frac) beside it when there is one
       const hit = r.hit_rate == null ? "–" : `${(r.hit_rate * 100).toFixed(1)}%` +
         (r.pcie_share ? ` <span class="muted" title="routed experts the GPU read over PCIe (--pcie-frac) or another GPU computed">+${(r.pcie_share * 100).toFixed(1)}% PCIe</span>` : "");
-      const drafts = r.drafts_offered ? `${fmt(r.drafts_accepted || 0)} of ${fmt(r.drafts_offered)} drafts accepted` : "";
-      return `<tr><td>${esc(t)}</td><td><span class="st-badge ${cls}">${esc(text)}</span>${proj}</td>
-        <td class="num${ttftCls(r.ttft_ms)}" title="Time to first token${medTtft ? `; recent median ${dur(medTtft)}` : ""}">${dur(r.ttft_ms)}</td>
-        <td class="num">${fmt(r.prompt_tokens)}</td>
-        <td class="num">${fmt(r.reused)}</td>
-        <td class="num">${fmt(reqPrefill(r), 0)}</td>
-        <td class="num">${fmt(r.output_tokens)}</td>
-        <td class="num">${fmt(r.decode_tok_s, 1)}</td>
-        <td class="num" title="Expert cache hit rate${drafts ? `; ${drafts}` : ""}">${hit}</td>
-        <td class="num">${fmt(r.duration_s, 1)} s</td></tr>`;
+      // Reused tokens are not prefetched again. Match the Monitor's existing Prefill metric.
+      const fresh = r.prompt_tokens == null ? null : Math.max(0, r.prompt_tokens - (r.reused || 0));
+      const prefillRate = fresh > 0 && r.prompt_ms > 0 ? fresh / (r.prompt_ms / 1000) : null;
+      return `<tr><td>${esc(t)}</td><td><span class="st-badge ${cls}">${esc(text)}</span>${proj}</td><td class="num">${fmt(r.prompt_tokens)}</td>
+        <td class="num">${fmt(r.reused)}</td><td class="num">${fmt(r.output_tokens)}</td><td class="num">${fmt(prefillRate)}</td><td class="num">${fmt(r.decode_tok_s, 1)}</td>
+        <td class="num">${hit}</td><td class="num">${fmt(r.duration_s, 1)} s</td></tr>`;
     }).join("");
   }
   const all = $("req-all");
-  all.hidden = keptCount <= 12;
-  all.textContent = reqShowAll ? "Show fewer" : `Show all (${keptCount})`;
+  kept = kept == null ? requests.length : kept;
+  all.hidden = kept <= 12;
+  all.textContent = reqShowAll ? "Show fewer" : `Show all (${kept})`;
   $("req-wrap").classList.toggle("all", reqShowAll);
-  setText("req-sum", `${fmt(requests.length)} of ${fmt(keptCount)} kept`);
   $("req-totals").textContent = renderTotals(totals);
-
-  // #465: the engine's batch slots - sent only when the run has more than one (live.parallel / live.slots)
-  const slots = live.slots || [];
-  $("slots-card").hidden = !slots.length;
-  if (slots.length) {
-    const running = slots.filter((s) => s.state !== "idle").length;
-    setText("slots-sum", `${fmt(running)} of ${fmt(slots.length)} in use` +
-      (live.waiting ? ` · ${fmt(live.waiting)} waiting` : ""));
-    $("slots-grid").innerHTML = slots.map((s) => {
-      const busy = s.state !== "idle";
-      const detail = !busy ? (s.held_tokens ? `${fmt(s.held_tokens)} tokens held for a next turn` : "free")
-        : `${s.state === "reading" ? "reading the prompt" : "decoding"} · ${fmt(s.generated)} tokens · ` +
-          `${fmt(s.elapsed_s, 1)} s${s.tok_s != null ? ` · ${fmt(s.tok_s, 1)} tok/s` : ""}`;
-      return `<div class="slot-row" data-state="${busy ? s.state : "idle"}">
-        <span class="slot-row__n">Slot ${s.slot + 1}</span><span class="slot-row__state">${esc(s.state)}</span>
-        <span class="muted small">${esc(detail)}</span></div>`;
-    }).join("");
-  }
 }
 
 function facts(el, rows) {
@@ -745,10 +704,36 @@ function inline(s) {
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code class="inline">${esc(codes[+i])}</code>`);
 }
-function codeBlock(lang, code) {
-  return `<div class="st-code"><div class="st-code__head"><span>${esc(lang || "code")}</span>` +
-    `<button class="st-btn st-btn--icon" data-code-copy aria-label="Copy code">${icon("copy")}</button></div>` +
-    `<pre><code>${esc(code)}</code></pre></div>`;
+// An ```svg or ```html block that is complete gets a Preview button (serve/web/preview.js): the block's own code in a sandboxed
+// frame, built when it is first opened and again when the theme changes. The state lives on the box (data-preview), so it
+// resets if the answer is rebuilt. A page (html) can also be run WITH scripts, after a warning, one block at a time.
+function pageTheme() {
+  const root = document.documentElement;
+  return {dark: root.dataset.theme === "dark", ink: getComputedStyle(root).getPropertyValue("--st-ink").trim()};
+}
+function fillPreview(fr, scripts, blank) {
+  const box = fr.closest(".st-code");
+  const doc = blank ? null : StrataPreview.previewDoc(fr.dataset.lang, box.querySelector("pre").textContent, scripts, pageTheme(), window);
+  const nf = StrataPreview.makeFrame(doc, {scripts, title: fr.title, lang: fr.dataset.lang});
+  fr.replaceWith(nf);
+  box.classList.toggle("st-code--run", !!(doc && scripts));
+  const rb = box.querySelector("[data-preview-scripts]");
+  if (rb) {
+    rb.setAttribute("aria-pressed", String(!!(doc && scripts)));
+    rb.setAttribute("aria-label", doc && scripts ? tr("preview.stopScripts", "Stop scripts") : tr("preview.runScripts", "Run scripts"));
+  }
+}
+function refreshPreviews() { for (const fr of document.querySelectorAll("iframe[data-opened]")) fillPreview(fr, fr.dataset.scripts === "1"); }
+function codeBlock(lang, code, complete) {
+  const ok = complete && StrataPreview.canPreview(lang || "", code);
+  const kind = ok ? StrataPreview.kindOf(lang) : null;
+  const label = kind === "svg" ? tr("preview.showSvg", "Preview the picture") : tr("preview.showPage", "Preview the page");
+  const head = `<div class="st-code__head"><span>${esc(lang || tr("code.label", "code"))}</span><span class="st-code__btns">` +
+    (kind === "page" ? `<button class="st-btn st-btn--icon" data-preview-scripts aria-label="${esc(tr("preview.runScripts", "Run scripts"))}" aria-pressed="false" title="${esc(tr("preview.runScripts", "Run scripts"))}">${icon("warning")}</button>` : "") +
+    (ok ? `<button class="st-btn st-btn--icon" data-preview-toggle data-preview-label="${esc(label)}" aria-label="${esc(label)}" title="${esc(label)}" aria-pressed="false">${icon("image")}</button>` : "") +
+    `<button class="st-btn st-btn--icon" data-code-copy aria-label="${esc(tr("code.copy", "Copy code"))}">${icon("copy")}</button></span></div>`;
+  const prev = ok ? `<div class="st-code__preview"><iframe sandbox="" title="${esc(kind === "svg" ? tr("preview.titleSvg", "Picture preview") : tr("preview.titlePage", "Page preview"))}" data-lang="${esc(lang)}"></iframe></div>` : "";
+  return `<div class="st-code">${head}<pre><code>${esc(code)}</code></pre>${prev}</div>`;
 }
 function blocks(text) {
   const out = [], lines = text.split("\n");
@@ -794,8 +779,8 @@ function markdown(text) {
     html += blocks(rest.slice(0, m.index));
     rest = rest.slice(m.index + m[0].length);
     const end = rest.match(/(^|\n)```[ \t]*(\n|$)/);
-    if (!end) { html += codeBlock(m[2].trim(), rest); break; }         // still streaming
-    html += codeBlock(m[2].trim(), rest.slice(0, end.index));
+    if (!end) { html += codeBlock(m[2].trim(), rest, false); break; }  // still streaming: no preview of a half-written block
+    html += codeBlock(m[2].trim(), rest.slice(0, end.index), true);
     rest = rest.slice(end.index + end[0].length);
   }
   return html;
@@ -806,7 +791,8 @@ function markdown(text) {
 // fields: the server picks the card's set for the request's thinking state (thinking 1.0 / 0.95 / 20, not thinking
 // 0.7 / 0.8 / 20 with a presence penalty). Before 0.1.45 the page sent 0.6 itself; a stored 0.6 with the other two
 // values untouched counts as "not set" too.
-const DEFAULTS = {thinking: "high", temperature: 1.0, top_p: 0.95, top_k: 20, max: "", seed: "", show: true, esp: true, mcp: true};
+const DEFAULTS = {thinking: "high", temperature: 1.0, top_p: 0.95, top_k: 20, max: "", seed: "", show: true, esp: true, mcp: true, math: false,
+                  chatList: false, chatEdit: false, whileBusy: "wait"};
 const OLD_DEFAULT_TEMPERATURE = 0.6;
 function samplingUntouched(s) {
   const t = +s.temperature;
@@ -814,14 +800,10 @@ function samplingUntouched(s) {
 }
 let settings = {...DEFAULTS, ...store.get("sampling", {})};
 if (samplingUntouched(settings)) settings.temperature = DEFAULTS.temperature;
-let messages = store.get("chat", []);
+let messages = store.get("chat", []);   // the open chat's messages (chats-ui.js: with the saved-chats list on, also that chat's own)
 let attachments = [];                 // {name, url}
-let busy = null;                      // {controller, msg}
-
-function saveChat() {
-  store.set("chat", messages.map((m) => ({...m, images: (m.images || []).map((i) => ({name: i.name})),
-                                           files: (m.files || []).map((f) => ({name: f.name}))})));
-}
+let busy = null;                      // {controller, msg, cut, cutAfterTool}
+let pending = null;                   // a message parked while an answer is written: {text, images, files, mode}
 function timeStr(t) { return new Date(t).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}); }
 
 function msgEl(m, i) {
@@ -845,8 +827,8 @@ function msgEl(m, i) {
       const wrap = document.createElement("div");
       wrap.className = "msg-images";
       for (const im of m.images) {
-        if (im.url) { const img = document.createElement("img"); img.src = im.url; img.alt = im.name || "image"; wrap.appendChild(img); }
-        else { const c = document.createElement("span"); c.className = "chip"; c.innerHTML = icon("image", "st-icon st-icon--sm"); c.append(im.name || "image"); wrap.appendChild(c); }
+        if (im.url) { const img = document.createElement("img"); img.src = im.url; img.alt = im.name || tr("chat.image", "image"); wrap.appendChild(img); }
+        else { const c = document.createElement("span"); c.className = "chip"; c.innerHTML = icon("image", "st-icon st-icon--sm"); c.append(im.name || tr("chat.image", "image")); wrap.appendChild(c); }
       }
       el.appendChild(wrap);
     }
@@ -856,31 +838,35 @@ function msgEl(m, i) {
     el.appendChild(b);
     const meta = document.createElement("div");
     meta.className = "st-msg__meta";
-    meta.textContent = `You · ${timeStr(m.time)}`;
+    meta.textContent = `${tr("chat.you", "You")} · ${timeStr(m.time)}`;
     el.appendChild(meta);
   } else {
     el.innerHTML = `<details class="st-collapse think" hidden><summary>${icon("thinking", "st-icon st-icon--sm")}<span class="think-title"></span>` +
       `${icon("chevron", "st-icon st-icon--sm st-chev")}</summary><div class="st-collapse__body thinking"></div></details>` +
       `<div class="st-bubble"></div><div class="st-msg__meta"><span class="meta-text"></span>` +
-      `<button class="st-btn st-btn--icon" data-msg-copy aria-label="Copy the answer" title="Copy">${icon("copy")}</button></div>`;
+      `<button class="st-btn st-btn--icon" data-msg-copy aria-label="${esc(tr("chat.copyAnswer", "Copy the answer"))}" title="${esc(tr("chat.copy", "Copy"))}">${icon("copy")}</button></div>`;
     updateAssistant(el, m, false);
   }
+  const actions = msgActions(m, i);                 // edit / regenerate / rewind (chats-ui.js), when switched on
+  if (actions) el.appendChild(actions);
   return el;
 }
 // One MCP tool call in the answer: a compact block (name, state, a one-line preview) that opens to the arguments and
 // the result as the model read it.  Its body is built only while open: a result can be 20,000 characters.
-const TOOL_STATE = {writing: ["st-badge--reading", "Writing"], running: ["st-badge--generating", "Running"], done: ["", "Done"],
-                    error: ["st-badge--error", "Error"], skipped: ["st-badge--queued", "Not run"]};
+const TOOL_STATE = {writing: ["st-badge--reading", () => tr("tool.writing", "Writing")], running: ["st-badge--generating", () => tr("tool.running", "Running")],
+                    done: ["", () => tr("tool.done", "Done")], error: ["st-badge--error", () => tr("tool.error", "Error")],
+                    skipped: ["st-badge--queued", () => tr("tool.skipped", "Not run")]};
 function toolHtml(t, k) {
-  const [cls, label] = TOOL_STATE[t.state] || ["", t.state];
+  const [cls, labelOf] = TOOL_STATE[t.state] || ["", () => t.state];
+  const label = labelOf();
   const args = t.arguments == null ? "" : JSON.stringify(t.arguments, null, 2);
   const preview = t.result != null ? t.result : args.replace(/\s+/g, " ");
   let body = "";
   if (t.open) {
-    body = `<div class="tool-call__label">Arguments</div><pre class="tool-call__pre">${esc(args || "(being written)")}</pre>`;
+    body = `<div class="tool-call__label">${esc(tr("tool.arguments", "Arguments"))}</div><pre class="tool-call__pre">${esc(args || tr("tool.beingWritten", "(being written)"))}</pre>`;
     if (t.result != null) {
-      body += `<div class="tool-call__label">${t.ok ? "Result" : "Error"}${t.chars ? ` · ${fmt(t.chars)} characters` : ""}` +
-              `${t.truncated ? ", cut for the model" : ""}</div><pre class="tool-call__pre">${esc(t.result)}</pre>`;
+      body += `<div class="tool-call__label">${esc(t.ok ? tr("tool.result", "Result") : tr("tool.error", "Error"))}${t.chars ? ` · ${esc(tr("tool.chars", "{n} characters", {n: fmt(t.chars)}))}` : ""}` +
+              `${t.truncated ? esc(tr("tool.cut", ", cut for the model")) : ""}</div><pre class="tool-call__pre">${esc(t.result)}</pre>`;
     }
   }
   return `<details class="st-collapse tool-call" data-tool="${k}" data-state="${esc(t.state)}"${t.open ? " open" : ""}>` +
@@ -890,17 +876,53 @@ function toolHtml(t, k) {
     `<span class="st-badge ${cls}">${esc(label)}</span>${t.ms != null && t.state !== "skipped" ? `<span class="muted small">${fmt(t.ms / 1000, 1)} s</span>` : ""}` +
     `${icon("chevron", "st-icon st-icon--sm st-chev")}</summary><div class="st-collapse__body">${body}</div></details>`;
 }
+// Raster tool results are same-origin cached files; credentials stay in request headers.
+const mediaBlobs = new Map();
+let mediaEpoch = 0;
+function clearToolMedia() {
+  mediaEpoch++;
+  for (const pending of mediaBlobs.values()) pending.then((url) => URL.revokeObjectURL(url), () => {});
+  mediaBlobs.clear();
+}
+window.addEventListener("pagehide", clearToolMedia);
+window.addEventListener("pageshow", (event) => { if (event.persisted) hydrateToolImages(document); });
+function safeToolMedia(url) { return typeof url === "string" && /^tool-media\/[0-9a-f]{64}\.(png|jpg|webp)$/.test(url); }
+function toolImages(t) {
+  return (t.images || []).filter((im) => safeToolMedia(im.url)).map((im) =>
+    `<figure class="tool-image"><img data-tool-image="${esc(im.url)}" alt="Tool image" loading="lazy">` +
+    `<figcaption><a class="st-btn" data-tool-download="${esc(im.url)}" download="${esc(im.name || "generated-image.png")}">Download image</a></figcaption></figure>`).join("");
+}
+function hydrateToolImages(root) {
+  root.querySelectorAll("[data-tool-image]").forEach((img) => {
+    const url = img.dataset.toolImage, epoch = mediaEpoch;
+    if (!safeToolMedia(url)) return;
+    if (!mediaBlobs.has(url)) mediaBlobs.set(url, fetch(url, {headers: headers()}).then((r) => {
+      if (!r.ok) throw new Error("Image unavailable");
+      return r.blob();
+    }).then((b) => URL.createObjectURL(b)).catch((e) => {if (epoch === mediaEpoch) mediaBlobs.delete(url); throw e;}));
+    mediaBlobs.get(url).then((blob) => {
+      if (epoch !== mediaEpoch || !img.isConnected) return;
+      img.src = blob;
+      const a = img.closest("figure").querySelector("[data-tool-download]");
+      a.href = blob;
+    }).catch(() => { img.alt = "Image unavailable; try refreshing"; });
+  });
+}
 // the answer's text with the tool blocks where the model called them
+// math (opt-in, serve/web/math.js): formulas become placeholders before the Markdown runs and are drawn after it
+function answerMarkdown(text) {
+  return settings.math ? StrataMath.markdown(text, markdown) : markdown(text);
+}
 function answerHtml(m) {
-  if (!m.tools || !m.tools.length) return markdown(m.text || "");
+  if (!m.tools || !m.tools.length) return answerMarkdown(m.text || "");
   let html = "", pos = 0;
   m.tools.forEach((t, k) => {
     const at = Math.min(Math.max(t.at || 0, pos), m.text.length);
-    if (at > pos) html += markdown(m.text.slice(pos, at));
+    if (at > pos) html += answerMarkdown(m.text.slice(pos, at));
     pos = at;
-    html += toolHtml(t, k);
+    html += toolHtml(t, k) + toolImages(t);
   });
-  return html + markdown(m.text.slice(pos));
+  return html + answerMarkdown(m.text.slice(pos));
 }
 // a tool event from the stream (the `strata_mcp` field of a chunk)
 function onTool(m, x) {
@@ -911,7 +933,7 @@ function onTool(m, x) {
   if (x.event === "call") {
     Object.assign(t, {name: x.name, server: x.server, tool: x.tool, arguments: x.arguments, round: x.round, state: "running"});
   } else if (x.event === "result") {
-    Object.assign(t, {result: x.text, ok: x.ok, chars: x.chars, truncated: x.truncated, ms: x.ms,
+    Object.assign(t, {result: x.text, ok: x.ok, chars: x.chars, truncated: x.truncated, ms: x.ms, images: x.images || [], vision: x.vision === true,
                       state: x.skipped ? "skipped" : x.ok ? "done" : "error"});
   }
 }
@@ -920,8 +942,8 @@ function updateAssistant(el, m, streaming) {
   if (m.reasoning) {
     det.hidden = false;
     const thinkingNow = streaming && !m.text;
-    el.querySelector(".think-title").textContent = thinkingNow ? "Thinking…" :
-      m.thinkSecs != null ? `Thought for ${fmt(m.thinkSecs, 1)} s` : "Thoughts";
+    el.querySelector(".think-title").textContent = thinkingNow ? tr("think.now", "Thinking…") :
+      m.thinkSecs != null ? tr("think.for", "Thought for {s} s", {s: fmt(m.thinkSecs, 1)}) : tr("think.done", "Thoughts");
     const body = el.querySelector(".thinking");
     if (det.open || thinkingNow) body.textContent = m.reasoning;
     else body.dataset.pending = "1";
@@ -937,9 +959,11 @@ function updateAssistant(el, m, streaming) {
     bubble.innerHTML = m.reasoning ? `<span class="muted cursor">Writing</span>` : `<span class="cursor"></span>`;
   } else {
     bubble.innerHTML = answerHtml(m);
+    hydrateToolImages(bubble);
+    if (settings.math) StrataMath.hydrate(bubble);
     if (streaming) bubble.classList.add("cursor"); else bubble.classList.remove("cursor");
   }
-  el.querySelector(".meta-text").textContent = m.meta || (streaming ? "" : m.stopped ? "Stopped" : "");
+  el.querySelector(".meta-text").textContent = m.meta || (streaming ? "" : m.stopped ? tr("chat.stopped", "Stopped") : "");
   el.querySelector("[data-msg-copy]").hidden = streaming || !m.text;
 }
 function renderChat() {
@@ -947,14 +971,66 @@ function renderChat() {
   chat.querySelectorAll(".st-msg").forEach((e) => e.remove());
   $("chat-empty").hidden = messages.length > 0;
   messages.forEach((m, i) => chat.appendChild(msgEl(m, i)));
+  renderSidebar();
+  renderParent();
+  renderUndoBar();
   scrollDown(true);
 }
-function nearBottom() { const s = $("chat-scroll"); return s.scrollHeight - s.scrollTop - s.clientHeight < 120; }
-function scrollDown(force) { const s = $("chat-scroll"); if (force || nearBottom()) s.scrollTop = s.scrollHeight; }
+// Follow the answer while the reader has not left (#4014). Asking "am I within 120 px of the bottom?" on every frame pulled
+// the view back after every wheel notch (a notch is about 100 px), so scrolling up during a long answer only worked by
+// dragging the scrollbar. Now the reader's own input lets go (wheel up, a finger or a key moving up, the scrollbar), and a
+// scroll back to the bottom follows again.
+let stickToBottom = true, lastReaderInput = 0;
+const FOLLOW_SLACK = 24, FAR_AWAY = 400, INPUT_WINDOW_MS = 400;
+function followAfterScroll(distance, wasFollowing, msSinceInput) {
+  if (distance <= FOLLOW_SLACK) return true;
+  if (msSinceInput <= INPUT_WINDOW_MS || distance > FAR_AWAY) return false;
+  return wasFollowing;
+}
+function scrollDown(force) {
+  const s = $("chat-scroll");
+  if (force) stickToBottom = true;
+  if (stickToBottom) s.scrollTop = s.scrollHeight;
+}
+(function watchReader() {
+  const s = $("chat-scroll");
+  const touch = () => { lastReaderInput = Date.now(); };
+  s.addEventListener("wheel", (e) => { touch(); if (e.deltaY < 0 && s.scrollTop > 0) stickToBottom = false; }, {passive: true});
+  s.addEventListener("touchmove", touch, {passive: true});
+  s.addEventListener("pointerdown", touch, {passive: true});
+  s.addEventListener("keydown", (e) => {
+    touch();
+    if (["PageUp", "ArrowUp", "Home"].includes(e.key) && e.target === s && s.scrollTop > 0) stickToBottom = false;
+  });
+  s.addEventListener("scroll", () => {
+    stickToBottom = followAfterScroll(s.scrollHeight - s.scrollTop - s.clientHeight, stickToBottom, Date.now() - lastReaderInput);
+  }, {passive: true});
+})();
 
 $("chat").addEventListener("click", (e) => {
   const cc = e.target.closest("[data-code-copy]");
   if (cc) { copyText(cc.closest(".st-code").querySelector("pre").textContent, cc); return; }
+  // an svg/html block: flip between its code and its sandboxed preview. Closing the preview also turns scripts off.
+  const pv = e.target.closest("[data-preview-toggle]");
+  if (pv) {
+    const box = pv.closest(".st-code");
+    const on = box.dataset.preview === "true";
+    if (on) delete box.dataset.preview; else box.dataset.preview = "true";
+    pv.setAttribute("aria-pressed", String(!on));
+    pv.setAttribute("aria-label", on ? pv.dataset.previewLabel : tr("preview.showCode", "Show the code"));
+    const fr = box.querySelector("iframe");
+    if (on) fillPreview(fr, false, true);
+    else if (!fr.dataset.opened) fillPreview(fr, false);
+    return;
+  }
+  const rs = e.target.closest("[data-preview-scripts]");
+  if (rs) {
+    const fr = rs.closest(".st-code").querySelector("iframe");
+    const run = fr.dataset.scripts !== "1";
+    if (run && !confirm(tr("preview.confirm", "Run this code with scripts?\n\nIt runs in your browser, cut off from this chat and from the network, but it can still freeze the tab, and it is code the model wrote.\n\nOnly this block, and only until you close the preview."))) return;
+    fillPreview(fr, run);
+    return;
+  }
   const mc = e.target.closest("[data-msg-copy]");
   if (mc) { const i = +mc.closest(".st-msg").dataset.i; copyText(messages[i].text, mc); return; }
   // a tool block: its open state lives in the message (the answer is rebuilt while it streams), so the click sets it
@@ -1009,7 +1085,12 @@ function assistantMessages(m) {
     const at = Math.min(Math.max(pos, calls[0].at || 0), m.text.length);
     out.push({role: "assistant", content: m.text.slice(pos, at).trim(),
               tool_calls: calls.map((t) => ({id: t.id, type: "function", function: {name: t.name, arguments: JSON.stringify(t.arguments || {})}}))});
-    for (const t of calls) out.push({role: "tool", tool_call_id: t.id, content: t.result});
+    for (const t of calls) {
+      const pictures = t.vision ? (t.images || []).filter((im) => safeToolMedia(im.url)) : [];
+      const content = pictures.length ? [{type: "text", text: t.result}, ...pictures.map((im) =>
+        ({type: "image_url", image_url: {url: "strata-tool-media:" + im.url.split("/").pop()}}))] : t.result;
+      out.push({role: "tool", tool_call_id: t.id, content});
+    }
     pos = at;
   }
   const rest = m.text.slice(pos).trim();
@@ -1017,28 +1098,124 @@ function assistantMessages(m) {
   return out;
 }
 
+function busyHint() {
+  const mode = settings.whileBusy;
+  return mode === "queue" ? tr("composer.hintQueue", "Enter sends when the answer is done")
+       : mode === "interject" ? tr("composer.hintInterject", "Enter stops the answer here and sends now") : "";
+}
+// While an answer is written, Send is off ("wait", as always) or parks the message ("queue", "interject": Chat settings)
+const parksWhileBusy = () => settings.whileBusy === "queue" || settings.whileBusy === "interject";
 function setBusy(on) {
   $("stop-btn").hidden = !on;
-  $("send-btn").disabled = on;
-  $("composer-hint").textContent = on ? "" : "Shift+Enter: new line";
+  $("send-btn").disabled = (on && !parksWhileBusy()) || !!panel;
+  $("input").disabled = !!panel;
+  $("composer-hint").textContent = panel ? tr("composer.finishOpen", "Save or cancel what is open above to continue")
+                                         : on ? busyHint() : tr("composer.newline", "Shift+Enter: new line");
+  if (settings.chatEdit) syncActions();                 // the buttons follow the state: none under the answer being written
+  $("s-list").disabled = $("s-edit").disabled = !!busy || !!panel;      // they change the messages on the screen
+  renderUndoBar();
+  renderPending();
 }
 
-async function send() {
-  const text = $("input").value.trim();
-  if ((!text && !attachments.length) || busy) return;
-  messages.push({role: "user", text, images: attachments.filter((a) => a.kind !== "file"),
-                 files: attachments.filter((a) => a.kind === "file"), time: Date.now()});
-  attachments = [];
-  renderAttachments();
-  $("input").value = "";
-  autosize();
+// A message sent while an answer is being written (#4004). "queue": it waits and goes when the answer is done. "interject": the
+// answer stops where it is (what is written stays, marked interrupted) and the message goes at once; if a tool is running, the
+// tool finishes first. Only one message waits. Off by default: with "wait" the page does nothing, as before.
+function park(p, own) {
+  if (!parksWhileBusy()) return;
+  if (pending) { toast("warn", tr("pending.one", "A message is already waiting"), tr("pending.oneText", "Take it back or wait until it is sent.")); return; }
+  pending = {...p, mode: settings.whileBusy};
+  if (own) { attachments = []; renderAttachments(); $("input").value = ""; autosize(); }
+  if (pending.mode === "interject") requestCut();
+  setBusy(!!busy);
+}
+function requestCut() {
+  if (!busy || busy.cut) return;
+  if ((busy.msg.tools || []).some((t) => t.state === "running")) { busy.cutAfterTool = true; return; }   // let the tool finish
+  busy.cut = true;
+  busy.controller.abort();
+}
+function renderPending() {
+  let el = $("pending");
+  if (!pending) { if (el) el.remove(); return; }
+  if (!el) {
+    el = node("div", "pending");
+    el.id = "pending";
+    el.setAttribute("role", "status");
+    el.innerHTML = "<span class=\"pending__text\"></span><span class=\"pending__actions\"><button type=\"button\" class=\"st-btn st-btn--secondary\" data-pending-now></button>" +
+      "<button type=\"button\" class=\"st-btn st-btn--secondary\" data-pending-back></button></span>";
+    el.querySelector("[data-pending-now]").onclick = pendingNow;
+    el.querySelector("[data-pending-back]").onclick = releasePending;
+    $("composer").before(el);
+  }
+  const quote = (pending.text || (pending.files[0] || pending.images[0] || {}).name || "").replace(/\s+/g, " ").slice(0, 70);
+  const text = !busy ? tr("pending.ready", "Not sent yet: “{text}”", {text: quote})
+    : pending.mode === "queue" ? tr("pending.queued", "Sends when this answer is done: “{text}”", {text: quote})
+    : busy.cutAfterTool ? tr("pending.afterTool", "Waiting for the tool to finish, then sending: “{text}”", {text: quote})
+    : tr("pending.cutting", "Stopping the answer, then sending: “{text}”", {text: quote});
+  el.querySelector(".pending__text").textContent = text;
+  const now = el.querySelector("[data-pending-now]");
+  now.textContent = busy ? tr("pending.sendNow", "Send now") : tr("pending.send", "Send");
+  now.hidden = !!busy && pending.mode === "interject";            // already on its way
+  el.querySelector("[data-pending-back]").textContent = tr("pending.takeBack", "Take back");
+}
+function pendingNow() {
+  if (!pending) return;
+  if (busy) { pending.mode = "interject"; requestCut(); setBusy(true); return; }
+  const p = pending;
+  pending = null;
+  setBusy(false);
+  send(p);
+}
+// the waiting message goes back into the message box (a chat switch or a new chat must not lose it)
+function releasePending() {
+  if (!pending) return;
+  const p = pending;
+  pending = null;
+  if (!$("input").value.trim()) $("input").value = p.text;
+  else $("input").value = `${p.text}\n\n${$("input").value}`;
+  attachments = [...p.images, ...p.files, ...attachments];
+  renderAttachments(); autosize();
+  setBusy(!!busy);
+}
+// after an answer: an interrupted one sends an interjection, a finished one sends a queued message
+function settlePending(cut, finished) {
+  if (!pending) return;
+  if ((pending.mode === "interject" && cut) || (pending.mode === "queue" && finished)) {
+    const p = pending;
+    pending = null;
+    setBusy(false);
+    send(p);
+  }
+}
+
+// the message box (or a parked message, `payload`) becomes a user turn and a reply is asked for
+async function send(payload) {
+  const own = !payload;
+  const p = payload || {text: $("input").value.trim(), images: attachments.filter((a) => a.kind !== "file"),
+                        files: attachments.filter((a) => a.kind === "file")};
+  if (!p.text && !p.images.length && !p.files.length) return;
+  if (panel) return;                                  // something is open above (an edit): finish it first
+  if (busy) { park(p, own); return; }
+  clearUndo();
+  messages.push({role: "user", text: p.text, images: p.images, files: p.files, time: Date.now()});
+  if (own) {
+    attachments = [];
+    renderAttachments();
+    $("input").value = "";
+    autosize();
+  }
+  return generateReply();
+}
+// an answer for the messages as they are: the last one is a user turn
+async function generateReply() {
   const m = {role: "assistant", text: "", reasoning: "", time: Date.now()};
   messages.push(m);
   renderChat();
   const el = $("chat").lastElementChild;
   const controller = new AbortController();
-  busy = {controller, msg: m};
+  busy = {controller, msg: m, cut: false, cutAfterTool: false};
   setBusy(true);
+  paintLive();
 
   const body = {model: health.model, messages: apiMessages(), stream: true,
                 reasoning_effort: settings.thinking};
@@ -1060,7 +1237,7 @@ async function send() {
     if (!r.ok) {
       let msg = `HTTP ${r.status}`;
       try { msg = (await r.json()).error.message || msg; } catch (e) { /* not json */ }
-      if (r.status === 401) msg = "This server needs an API key: add it under About > Settings.";
+      if (r.status === 401) msg = tr("toast.keyNeeded", "This server needs an API key: add it under About > Settings.");
       throw new Error(msg);
     }
     const reader = r.body.getReader(), dec = new TextDecoder();
@@ -1078,9 +1255,13 @@ async function send() {
         if (data === "[DONE]") continue;
         let j;
         try { j = JSON.parse(data); } catch (e) { continue; }
-        if (j.error) throw new Error(j.error.message || "the engine reported an error");
+        if (j.error) throw new Error(j.error.message || tr("toast.engineError", "the engine reported an error"));
         if (j.usage) usage = j.usage;
-        if (j.strata_mcp) onTool(m, j.strata_mcp);
+        if (j.strata_mcp) {
+          onTool(m, j.strata_mcp);
+          // an interjection waited for a running tool: it has its result now, so the answer can stop
+          if (busy.cutAfterTool && !busy.cut && !(m.tools || []).some((t) => t.state === "running")) { busy.cut = true; controller.abort(); }
+        }
         const d = (j.choices && j.choices[0] && j.choices[0].delta) || {};
         const lastTool = m.tools && m.tools.length ? m.tools[m.tools.length - 1] : null;   // a new round after a tool
         if (d.reasoning_content) {
@@ -1100,27 +1281,32 @@ async function send() {
     }
   } catch (e) {
     if (e.name === "AbortError") m.stopped = true;
-    else { m.error = e.message || String(e); toast("error", "The request failed", m.error, 6000); }
+    else { m.error = e.message || String(e); toast("error", tr("toast.requestFailed", "The request failed"), m.error, 6000); }
   }
+  const cut = busy.cut;                                      // an interjection ended it: kept as written, marked interrupted
+  if (cut) m.interrupted = true;
   if (thinkStart && m.thinkSecs == null) m.thinkSecs = (performance.now() - thinkStart) / 1000;
   const n = usage ? usage.completion_tokens : null;
+  const ended = cut ? tr("chat.interruptedLower", "interrupted") : tr("chat.stoppedLower", "stopped");
   if (n && firstAt) {
     const secs = (performance.now() - firstAt) / 1000;
-    m.meta = `${fmt(n)} tokens${secs > 0.25 ? ` · ${fmt(n / secs, 1)} tok/s` : ""}${m.stopped ? " · stopped" : ""}` +
-             (projectionLoaded() ? (settings.esp ? " · projection on" : " · projection off") : "");
+    m.meta = tr("chat.tokens", "{n} tokens", {n: fmt(n)}) + (secs > 0.25 ? ` · ${fmt(n / secs, 1)} tok/s` : "") + (m.stopped ? ` · ${ended}` : "") +
+             (projectionLoaded() ? (settings.esp ? ` · ${tr("chat.projectionOn", "projection on")}` : ` · ${tr("chat.projectionOff", "projection off")}`) : "");
   } else if (m.stopped) {
-    m.meta = "Stopped";
+    m.meta = cut ? tr("chat.interrupted", "Interrupted") : tr("chat.stopped", "Stopped");
   }
   for (const t of m.tools || []) if (t.state === "writing" || t.state === "running") { t.state = "skipped"; t.ms = null; }
   const ran = (m.tools || []).filter((t) => t.state === "done" || t.state === "error").length;
-  if (ran) m.meta = `${m.meta ? `${m.meta} · ` : ""}${ran} tool call${ran > 1 ? "s" : ""}`;
-  if (m.limit) m.meta = `${m.meta || ""} · stopped at the limit of ${m.limit} tool rounds (mcp.max_rounds)`;
+  if (ran) m.meta = `${m.meta ? `${m.meta} · ` : ""}${tr("chat.toolCalls", {one: "{n} tool call", other: "{n} tool calls"}, {n: ran})}`;
+  if (m.limit) m.meta = `${m.meta || ""} · ${tr("chat.toolLimit", "stopped at the limit of {n} tool rounds (mcp.max_rounds)", {n: m.limit})}`;
   busy = null;
   setBusy(false);
+  paintLive();
   if (frame) cancelAnimationFrame(frame);
   updateAssistant(el, m, false);
   saveChat();
   scrollDown();
+  settlePending(cut, !m.stopped && !m.error);
 }
 
 $("composer").onsubmit = (e) => { e.preventDefault(); send(); };
@@ -1131,17 +1317,25 @@ $("input").addEventListener("keydown", (e) => {
 function autosize() { const t = $("input"); t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, innerHeight * 0.4)}px`; }
 $("input").addEventListener("input", autosize);
 
+// one chat, as before: New chat clears it, with an Undo (with the saved-chats list on, its own New chat button does this job)
 $("new-btn").onclick = () => {
-  if (busy) { toast("warn", "Still writing", "Stop the answer first."); return; }
+  if (busy) { stillWriting(); return; }
+  if (panel) { closePanel(); }
+  clearUndo();
+  releasePending();
   if (!messages.length) return;
   const backup = messages;
+  clearToolMedia();
   messages = [];
   saveChat();
   renderChat();
-  toast("info", "New chat", "The last one was cleared.", 6000, {label: "Undo", run: () => { messages = backup; saveChat(); renderChat(); }});
+  toast("info", tr("chat.newToast", "New chat"), tr("chat.clearedToast", "The last one was cleared."), 6000, {label: tr("undo", "Undo"), run: () => {
+    if (busy || messages.length) return;                         // a new question since: the cleared chat is not put back over it
+    messages = backup; saveChat(); renderChat();
+  }});
 };
 $("export-btn").onclick = () => {
-  if (!messages.length) { toast("info", "Nothing to save yet"); return; }
+  if (!messages.length) { toast("info", tr("export.nothing", "Nothing to save yet")); return; }
   const tools = (m) => (m.tools || []).filter((t) => t.result != null).map((t) =>
     `<details><summary>Tool ${t.server ? `${t.server} / ` : ""}${t.tool || t.name}${t.ok ? "" : " (error)"}</summary>\n\n` +
     `\`\`\`json\n${JSON.stringify(t.arguments || {}, null, 2)}\n\`\`\`\n\n\`\`\`\n${t.result}\n\`\`\`\n\n</details>\n\n`).join("");
@@ -1164,19 +1358,20 @@ function isTextFile(f) {
 function addFiles(files) {
   for (const f of files) {
     if (f.type.startsWith("image/")) {
-      if (!health.images) { toast("warn", "Pictures are off", "This model was set up for text only."); continue; }
-      if (f.size > 20e6) { toast("warn", "Picture too large", `${f.name} is over 20 MB.`); continue; }
+      if (!health.images) { toast("warn", tr("file.picturesOff", "Pictures are off"), tr("file.picturesOffText", "This model was set up for text only.")); continue; }
+      if (f.size > 20e6) { toast("warn", tr("file.pictureBig", "Picture too large"), tr("file.pictureBigText", "{name} is over 20 MB.", {name: f.name})); continue; }
       const r = new FileReader();
-      r.onload = () => { attachments.push({kind: "image", name: f.name || "pasted image", url: r.result}); renderAttachments(); };
+      r.onload = () => { attachments.push({kind: "image", name: f.name || tr("file.pasted", "pasted image"), url: r.result}); renderAttachments(); };
       r.readAsDataURL(f);
       continue;
     }
-    if (!isTextFile(f)) { toast("warn", "Not a text file", `${f.name}: attach text files (code, notes, logs, data)${health.images ? " or pictures" : ""}.`); continue; }
-    if (f.size > MAX_TEXT_FILE) { toast("warn", "File too large", `${f.name} is over 512 KB.`); continue; }
+    if (!isTextFile(f)) { toast("warn", tr("file.notText", "Not a text file"), health.images ? tr("file.notTextPictures", "{name}: attach text files (code, notes, logs, data) or pictures.", {name: f.name})
+                                                              : tr("file.notTextOnly", "{name}: attach text files (code, notes, logs, data).", {name: f.name})); continue; }
+    if (f.size > MAX_TEXT_FILE) { toast("warn", tr("file.big", "File too large"), tr("file.bigText", "{name} is over 512 KB.", {name: f.name})); continue; }
     const r = new FileReader();
     r.onload = () => {
       const text = String(r.result);
-      if (text.includes("\u0000")) { toast("warn", "Not a text file", `${f.name} looks like a binary file.`); return; }
+      if (text.includes("\u0000")) { toast("warn", tr("file.notText", "Not a text file"), tr("file.binaryText", "{name} looks like a binary file.", {name: f.name})); return; }
       attachments.push({kind: "file", name: f.name, text});
       renderAttachments();
     };
@@ -1203,7 +1398,7 @@ function renderAttachments() {
     c.innerHTML = icon(a.kind === "file" ? "attach" : "image", "st-icon st-icon--sm");
     c.append(a.name);
     const x = document.createElement("button");
-    x.type = "button"; x.className = "st-btn st-btn--icon"; x.setAttribute("aria-label", "Remove");
+    x.type = "button"; x.className = "st-btn st-btn--icon"; x.setAttribute("aria-label", tr("file.remove", "Remove"));
     x.innerHTML = icon("trash");
     x.onclick = () => { attachments.splice(i, 1); renderAttachments(); };
     c.appendChild(x);
@@ -1235,22 +1430,28 @@ $("input").addEventListener("paste", (e) => {
   if (files.length) { e.preventDefault(); addFiles(files); }
 });
 
-// ------------------------------------------------------------------ the sampling drawer
+// ------------------------------------------------------------------ the chat settings drawer
 function openDrawer(open) {
   $("drawer").dataset.open = String(open);
   $("drawer").setAttribute("aria-hidden", String(!open));
   $("scrim").hidden = !open;
   if (open) { loadDrawer(); loadShared(); loadMcp(); }
 }
+const checked = (id) => $(id).getAttribute("aria-checked") === "true";
+const segValue = (id) => { const b = [...$(id).children].find((x) => x.getAttribute("aria-checked") === "true"); return b ? b.dataset.v : null; };
 function loadDrawer(s = settings) {
   for (const b of $("s-thinking").children) b.setAttribute("aria-checked", String(b.dataset.v === s.thinking));
   $("s-temp").value = s.temperature; $("s-topp").value = s.top_p; $("s-topk").value = s.top_k;
   $("s-max").value = s.max; $("s-seed").value = s.seed;
+  $("s-math").setAttribute("aria-checked", String(!!s.math));
   $("s-show").setAttribute("aria-checked", String(!!s.show));
   $("s-esp").setAttribute("aria-checked", String(s.esp !== false));
   $("esp-row").hidden = !projectionLoaded();
   $("s-mcp").setAttribute("aria-checked", String(s.mcp !== false));
   $("s-share").setAttribute("aria-checked", String(sharedOn));
+  $("s-list").setAttribute("aria-checked", String(!!s.chatList));
+  $("s-edit").setAttribute("aria-checked", String(!!s.chatEdit));
+  for (const b of $("s-busy").children) b.setAttribute("aria-checked", String(b.dataset.v === (s.whileBusy || "wait")));
   outputs();
 }
 // "Use for other apps too": the server keeps these settings as every client's defaults (GET/POST /settings)
@@ -1288,55 +1489,106 @@ function projectionLoaded() {
 }
 function outputs() {
   const t = +$("s-temp").value;
-  $("o-temp").textContent = t === 0 ? "0 · greedy" : t.toFixed(2);
+  $("o-temp").textContent = t === 0 ? tr("drawer.greedy", "0 · greedy") : t.toFixed(2);
   $("o-topp").textContent = (+$("s-topp").value).toFixed(2);
   $("o-topk").textContent = $("s-topk").value;
-  const sel = [...$("s-thinking").children].find((b) => b.getAttribute("aria-checked") === "true");
-  $("o-thinking").textContent = sel ? {none: "answers right away", low: "short", medium: "medium", high: "thorough (default)"}[sel.dataset.v] : "";
+  const sel = segValue("s-thinking");
+  $("o-thinking").textContent = sel ? {none: tr("drawer.thinkNone", "answers right away"), low: tr("drawer.thinkLow", "short"),
+    medium: tr("drawer.thinkMedium", "medium"), high: tr("drawer.thinkHigh", "thorough (default)")}[sel] : "";
+  const busyMode = segValue("s-busy");
+  $("o-busy").textContent = {wait: tr("drawer.busyWaitNote", "Send is off until the answer is done, as before."),
+    queue: tr("drawer.busyQueueNote", "Your message waits and goes as soon as the answer is done."),
+    interject: tr("drawer.busyInterjectNote", "The answer stops where it is (what is written stays) and your message goes at once. A tool that is running finishes first.")}[busyMode] || "";
   for (const id of ["s-topp", "s-topk"]) $(id).disabled = t === 0;
 }
 for (const b of $("s-thinking").children) b.onclick = () => { for (const x of $("s-thinking").children) x.setAttribute("aria-checked", String(x === b)); outputs(); };
+for (const b of $("s-busy").children) b.onclick = () => { for (const x of $("s-busy").children) x.setAttribute("aria-checked", String(x === b)); outputs(); };
 for (const id of ["s-temp", "s-topp", "s-topk"]) $(id).oninput = outputs;
-$("s-show").onclick = () => $("s-show").setAttribute("aria-checked", String($("s-show").getAttribute("aria-checked") !== "true"));
-$("s-esp").onclick = () => $("s-esp").setAttribute("aria-checked", String($("s-esp").getAttribute("aria-checked") !== "true"));
-$("s-mcp").onclick = () => $("s-mcp").setAttribute("aria-checked", String($("s-mcp").getAttribute("aria-checked") !== "true"));
-$("s-share").onclick = () => $("s-share").setAttribute("aria-checked", String($("s-share").getAttribute("aria-checked") !== "true"));
+for (const id of ["s-math", "s-show", "s-esp", "s-mcp", "s-share", "s-list", "s-edit"]) {
+  $(id).onclick = () => $(id).setAttribute("aria-checked", String($(id).getAttribute("aria-checked") !== "true"));
+}
 $("s-reset").onclick = () => loadDrawer(DEFAULTS);
 $("s-apply").onclick = async () => {
-  const sel = [...$("s-thinking").children].find((b) => b.getAttribute("aria-checked") === "true");
-  settings = {thinking: sel ? sel.dataset.v : "high", temperature: +$("s-temp").value, top_p: +$("s-topp").value,
+  const prev = settings;
+  // the list and the edit controls change the messages on the screen: not while an answer is written or something is open
+  const locked = !!busy || !!panel;
+  settings = {thinking: segValue("s-thinking") || "high", temperature: +$("s-temp").value, top_p: +$("s-topp").value,
               top_k: +$("s-topk").value, max: $("s-max").value.trim(), seed: $("s-seed").value.trim(),
-              show: $("s-show").getAttribute("aria-checked") === "true",
-              esp: $("s-esp").getAttribute("aria-checked") === "true",
-              mcp: $("s-mcp").getAttribute("aria-checked") === "true"};
+              math: checked("s-math"), show: checked("s-show"), esp: checked("s-esp"), mcp: checked("s-mcp"),
+              chatList: locked ? !!prev.chatList : checked("s-list"), chatEdit: locked ? !!prev.chatEdit : checked("s-edit"),
+              whileBusy: segValue("s-busy") || "wait"};
   store.set("sampling", settings);
-  const share = $("s-share").getAttribute("aria-checked") === "true";
+  StrataMath.reset();                                  // math on or off: every answer is drawn again
+  if (settings.chatList !== !!prev.chatList) await setChatList(settings.chatList, true);
+  if (settings.chatEdit !== !!prev.chatEdit) { clearUndo(); syncActions(); }
+  if (settings.whileBusy === "wait" && pending) releasePending();    // "wait" parks nothing: a waiting message goes back to the box
+  setBusy(!!busy);
+  for (const el of $("chat").querySelectorAll(".st-msg--assistant")) {
+    const m = messages[+el.dataset.i];
+    updateAssistant(el, m, !!busy && busy.msg === m);  // the element send() holds stays the same while an answer streams
+  }
+  const share = checked("s-share");
   openDrawer(false);
   if (share || sharedOn) {
     try {
       await saveShared(share, settings);
-      toast("success", "Sampling saved", share ? "Other apps (omp, API clients) use these settings from their next request."
-                                               : "Other apps use their own settings again.");
+      toast("success", tr("drawer.saved", "Chat settings saved"), share ? tr("drawer.savedShared", "Other apps (omp, API clients) use these settings from their next request.")
+                                                                         : tr("drawer.savedOwn", "Other apps use their own settings again."));
     } catch (e) {
-      toast("error", "Saved here, but not for other apps", e.message, 6000);
+      toast("error", tr("drawer.savedHere", "Saved here, but not for other apps"), e.message, 6000);
     }
     return;
   }
-  toast("success", "Sampling saved", settings.temperature === 0 ? "Greedy: the same question gives the same answer." : "");
+  toast("success", tr("drawer.saved", "Chat settings saved"), settings.temperature === 0 ? tr("drawer.savedGreedy", "Greedy: the same question gives the same answer.") : "");
 };
 $("sampling-btn").onclick = () => openDrawer(true);
 $("drawer-close").onclick = () => openDrawer(false);
 $("scrim").onclick = () => openDrawer(false);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("drawer").dataset.open === "true") openDrawer(false); });
 
+// ------------------------------------------------------------------ language (serve/web/i18n.js)
+// The user's own choice, kept in this browser: English until they pick another. /?lang=de shows one for this visit only.
+const urlLang = new URLSearchParams(location.search).get("lang");
+$("lang").innerHTML = StrataI18n.LANGUAGES.map(([code, name]) => `<option value="${esc(code)}">${esc(name)}</option>`).join("");
+function showLanguage() {
+  $("lang").value = StrataI18n.lang;
+  renderEmptyChat();
+  setSidebar(sidebarOpen, false);
+  outputs();
+  renderChat();
+  setBusy(!!busy);
+  if (lastMetrics) render(lastMetrics);
+}
+$("lang").onchange = async () => {
+  store.set("lang", $("lang").value);
+  await StrataI18n.setLanguage($("lang").value);
+  showLanguage();
+};
+
 // ------------------------------------------------------------------ start
-setBusy(false);
-renderChat();
-const startQuestion = new URLSearchParams(location.search).get("q");   // /?q=... starts a chat (a shortcut)
-if (startQuestion) history.replaceState(null, "", location.pathname + location.hash);
-loadHealth().then(loadMcp).then(() => { if (startQuestion) { $("input").value = startQuestion; send(); } });
-showTab(location.hash.slice(1) || "chat");
-poll();
+async function start() {
+  await StrataI18n.setLanguage(urlLang || store.get("lang", "en"));
+  $("lang").value = StrataI18n.lang;
+  renderEmptyChat();
+  initChats();
+  if (settings.chatList) await setChatList(true, false);       // the saved-chats list is read before the first draw
+  setBusy(false);
+  renderChat();
+  // /?q=... fills the question in and focuses the box; it is never sent from the address (#4221): any page can link here,
+  // and a send would go out with the API key and the MCP tools saved in this browser. The person presses Send.
+  const startQuestion = new URLSearchParams(location.search).get("q");
+  if (startQuestion) {
+    history.replaceState(null, "", location.pathname + location.hash);
+    $("input").value = startQuestion;
+    autosize();
+  }
+  loadHealth().then(loadMcp);
+  showTab(location.hash.slice(1) || "chat");
+  if (startQuestion && tab === "chat") $("input").focus();
+  poll();
+  requestAnimationFrame(fitHeader);
+}
+start();
 
 // ------------------------------------------------------------------ images (POST /v1/images/generations)
 $("img-form").onsubmit = async (ev) => {
@@ -1345,7 +1597,9 @@ $("img-form").onsubmit = async (ev) => {
   if (!prompt) return;
   const body = {prompt, size: $("img-size").value, response_format: "b64_json"};
   if ($("img-seed").value !== "") body.seed = Number($("img-seed").value);
+  imageBusy = true;
   $("img-go").disabled = true;
+  paintLive();
   const t0 = performance.now();
   $("img-hint").textContent = "Generating\u2026 (a minute or more on a small GPU)";
   try {
@@ -1367,6 +1621,8 @@ $("img-form").onsubmit = async (ev) => {
     $("img-hint").textContent = "";
     toast("error", "No image", String(e.message || e), 8000);
   } finally {
+    imageBusy = false;
     $("img-go").disabled = false;
+    paintLive();
   }
 };

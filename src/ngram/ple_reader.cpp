@@ -27,75 +27,47 @@ double ReaderStats::percentile(double q) const {
 }
 
 namespace {
+
 constexpr size_t LATENCY_RING = 65536;
 constexpr uint32_t WAYS = 8;
 constexpr uint32_t EMPTY = 0xFFFFFFFFu;
 
-/// Page-granular cache: keyed by 4 KiB page, holding the whole page.
-///
-/// This replaces the row cache for the reason above - a row cache throws away 44 of every 45 rows it pays
-/// to read. Memory is still expressed in ROWS by the CLI, so a configured budget reserves the same bytes;
-/// what those bytes buy is pages instead of individual rows.
-///
-/// `copy_row` serves a row only when every page it touches is cached. Pages can
-/// occupy unrelated cache slots, so a boundary row needs two separate copies.
-struct PageCache {
+/// Set-associative row cache: 8 ways per set, round-robin replacement inside a set. Bounded by construction.
+struct RowCache {
     uint64_t sets = 0;
-    std::vector<uint32_t> keys;     ///< sets * WAYS, EMPTY = vacant
-    std::vector<uint8_t> data;      ///< sets * WAYS * PAGE
-    std::vector<uint8_t> next;
+    uint32_t rb = ROW_BYTES;        // bytes per row
+    std::vector<uint32_t> keys;     // sets * WAYS
+    std::vector<uint8_t> data;      // sets * WAYS * rb
+    std::vector<uint8_t> next;      // per-set replacement pointer
     uint64_t used = 0;
-    uint32_t row_bytes = ROW_BYTES;
-    uint64_t table_offset = 0;
 
-    void init(uint64_t pages, uint32_t rb, uint64_t toff) {
-        sets = pages / WAYS;
-        row_bytes = rb;
-        table_offset = toff;
+    void init(uint64_t rows, uint32_t row_bytes = ROW_BYTES) {
+        sets = rows / WAYS;
+        rb = row_bytes;
         keys.assign(sets * WAYS, EMPTY);
-        data.assign(sets * WAYS * PAGE, 0);
+        data.assign(sets * WAYS * rb, 0);
         next.assign(sets, 0);
         used = 0;
     }
-    static uint64_t mix(uint64_t r) {
+    static uint64_t mix(uint32_t r) {
         uint64_t x = r * 0x9E3779B97F4A7C15ull;
         return x ^ (x >> 29);
     }
-    const uint8_t* page(uint64_t p) const {
+    const uint8_t* find(uint32_t row) const {
         if (sets == 0) return nullptr;
-        const uint64_t s = mix(p) % sets;
+        const uint64_t s = mix(row) % sets;
         for (uint32_t w = 0; w < WAYS; ++w)
-            if (keys[s * WAYS + w] == p) return &data[(size_t)(s * WAYS + w) * PAGE];
+            if (keys[s * WAYS + w] == row) return &data[(s * WAYS + w) * rb];
         return nullptr;
     }
-    /// Copy the complete row, or leave the destination unchanged on a miss.
-    bool copy_row(uint32_t row, uint8_t* dst) const {
-        if (sets == 0) return false;
-        const uint64_t at = table_offset + (uint64_t) row * row_bytes;
-        const uint64_t first = at / PAGE;
-        const uint32_t offset = (uint32_t) (at - first * PAGE);
-        const uint8_t* head = page(first);
-        if (!head) return false;
-        const uint32_t head_bytes = std::min(row_bytes, PAGE - offset);
-        const uint8_t* tail = nullptr;
-        if (head_bytes < row_bytes) {
-            tail = page(first + 1);
-            if (!tail) return false;
-        }
-        std::memcpy(dst, head + offset, head_bytes);
-        if (tail) std::memcpy(dst + head_bytes, tail, row_bytes - head_bytes);
-        return true;
-    }
-    void insert_page(uint64_t p, const uint8_t* bytes) {
-        if (sets == 0) return;
-        const uint64_t s = mix(p) % sets;
-        for (uint32_t w = 0; w < WAYS; ++w)
-            if (keys[s * WAYS + w] == p) return;
-        const uint32_t w = next[s];
+    void insert(uint32_t row, const uint8_t* bytes) {
+        if (sets == 0 || find(row) != nullptr) return;
+        const uint64_t s = mix(row) % sets;
+        uint32_t w = next[s];
         next[s] = (uint8_t) ((w + 1) % WAYS);
         if (keys[s * WAYS + w] == EMPTY) ++used;
-        keys[s * WAYS + w] = (uint32_t) p;
-        std::memcpy(&data[(size_t)(s * WAYS + w) * PAGE], bytes, PAGE);
+        keys[s * WAYS + w] = row;
+        std::memcpy(&data[(s * WAYS + w) * rb], bytes, rb);
     }
 };
 
@@ -107,7 +79,7 @@ struct Use {
 
 struct Job {
     uint64_t offset = 0;   // aligned file offset
-    uint32_t length = 0;   // PAGE, or 2 * PAGE for a row that straddles a page boundary
+    uint32_t length = 0;   // PAGE or 2 * PAGE (a row that straddles a page boundary)
     uint32_t ticket = 0;
     std::vector<Use> uses;
     double issued_us = 0;
@@ -136,19 +108,17 @@ struct TicketState {
 struct PleReader::Impl {
     DirectFile file;
     uint64_t table_offset = 0;
-    uint64_t size = 0;
     uint64_t n_rows = 0;
     uint32_t row_bytes = ROW_BYTES;
     uint32_t max_inflight = 0;
-    uint8_t* slab = nullptr;              // max_inflight slots of two pages
+    uint8_t* slab = nullptr;              // max_inflight slots of 2 pages
     std::vector<uint32_t> free_slots;
     std::vector<Job> inflight;            // indexed by slot
     std::vector<Completion> delayed;      // completed but held back by fault injection
     std::deque<Job> queue;                // not yet submitted
     std::unordered_map<uint32_t, TicketState> tickets;
-    std::vector<Miss> miss_scratch;       // reused across large (>64 row) issue() calls
     uint32_t next_ticket = 1;
-    PageCache cache;
+    RowCache cache;
     ReaderStats stats;
     size_t ring_pos = 0;
     double delay_us = 0;
@@ -165,9 +135,9 @@ struct PleReader::Impl {
     std::mutex mu;
     std::condition_variable cv_work;      // worker: there is something to submit
     std::condition_variable cv_done;      // collectors: a ticket may have completed
-    uint8_t* slot_buf(uint32_t s) { return slab + (size_t) s * 2 * PAGE; }
     std::thread worker;
 
+    uint8_t* slot_buf(uint32_t s) { return slab + (size_t) s * 2 * PAGE; }
     bool busy() const { return free_slots.size() < max_inflight || !delayed.empty(); }
 
     void cancel_queued() {
@@ -278,12 +248,10 @@ struct PleReader::Impl {
                 return false;
             }
         }
-        for (const Use& u : j.uses) std::memcpy(u.dst, buf + u.in_page, row_bytes);
-        // Retain every page the read touched, not just the rows that were asked for. j.offset is an
-        // ALIGNED FILE offset and c.bytes is PAGE or 2*PAGE, so this walks the pages the job covered -
-        // which is what makes a later request for a DIFFERENT row of the same page a hit.
-        for (uint32_t off = 0; off < c.bytes; off += PAGE)
-            cache.insert_page((j.offset + off) / PAGE, buf + off);
+        for (const Use& u : j.uses) {
+            std::memcpy(u.dst, buf + u.in_page, row_bytes);
+            cache.insert(u.row, buf + u.in_page);
+        }
         auto it = tickets.find(j.ticket);
         if (it != tickets.end() && it->second.pending > 0) --it->second.pending;
         j.uses.clear();
@@ -387,19 +355,14 @@ bool PleReader::open(const std::string& path, uint64_t table_offset, uint64_t n_
         return false;
     }
     impl_->table_offset = table_offset;
-    impl_->n_rows = n_rows;                        // issue() zero-fills rows >= this
-    impl_->slab = (uint8_t*) DirectFile::alloc_aligned((size_t) max_inflight * 2 * PAGE);
+    impl_->n_rows = n_rows;
     impl_->max_inflight = max_inflight;
+    impl_->slab = (uint8_t*) DirectFile::alloc_aligned((size_t) max_inflight * 2 * PAGE);
     if (impl_->slab == nullptr) { err = "PleReader: cannot allocate read buffers"; close(); return false; }
     impl_->inflight.assign(max_inflight, Job{});
     impl_->free_slots.clear();
     for (uint32_t s = max_inflight; s-- > 0;) impl_->free_slots.push_back(s);
-    impl_->size = impl_->file.size();
-    // The budget is in ROWS (--ple-row-cache), but the cache is now page-granular, so convert. Same bytes
-    // reserved, different thing bought: ~23k pages holding ~1.05M rows, instead of ~1M rows reached one
-    // 4 KiB read at a time.
-    const uint64_t cache_pages = cache_rows * row_bytes / PAGE;
-    impl_->cache.init(cache_pages, row_bytes, table_offset);
+    impl_->cache.init(cache_rows, row_bytes);
     impl_->error.clear();
     impl_->keep_us = 0;
     impl_->last_issue_us = impl_->last_read_us = 0;
@@ -423,6 +386,7 @@ bool PleReader::open(const std::string& path, uint64_t table_offset, uint64_t n_
     }
     return true;
 }
+
 void PleReader::close() {
     Impl& m = *impl_;
     if (m.worker.joinable()) {
@@ -454,9 +418,7 @@ void PleReader::close() {
     m.delayed.clear();
     m.inflight.clear();
     m.free_slots.clear();
-    // m.row_bytes, not the bare name: close() is a member function, so `row_bytes` resolves to the class's
-    // `row_bytes()` member function rather than the opened reader's per-table row width.
-    m.cache.init(0, m.row_bytes, m.table_offset);
+    m.cache.init(0);
     m.threaded = false;
     m.stop = false;
     m.keep_us = 0;
@@ -476,55 +438,110 @@ PleReader::Ticket PleReader::issue(const uint32_t* rows, size_t n, uint8_t* out_
     const bool rearm = m.keep_us > 0 && (m.last_issue_us <= 0 || now - m.last_issue_us > m.keep_window_us);
     m.last_issue_us = now;
     TicketState& ts = m.tickets[id];
-    Miss stack_misses[64];
-    Miss* misses = stack_misses;
-    size_t n_miss = 0;
-    const uint32_t rb = m.row_bytes;
-    for (size_t i = 0; i < n; ++i) {
-        uint8_t* dst = out_raw + i * rb;
-        ++m.stats.requests;
-        if (rows[i] >= m.n_rows) {
-            std::memset(dst, 0, rb);
-            continue;
-        }
-        if (m.cache.copy_row(rows[i], dst)) {
-            ++m.stats.cache_hits;
-            continue;
-        }
-        const uint64_t at = m.table_offset + (uint64_t) rows[i] * rb;
-        const uint64_t first = at / PAGE * PAGE;
-        const uint32_t length = (uint32_t) ((at + rb - 1) / PAGE * PAGE - first + PAGE);
-        if (n > 64 && n_miss == 0) {
-            if (m.miss_scratch.size() < n) m.miss_scratch.resize(n);
-            misses = m.miss_scratch.data();
-        }
-        misses[n_miss++] = Miss{first, length, rows[i], (uint32_t) (at - first), (uint32_t) i, dst};
+    // After a failed read the reader stays failed (`collect` reports `error` until the next `open`) and its worker has
+    // parked (worker_loop). A ticket queued now would never be read and `collect` would wait for it for ever, so it
+    // is not queued: it has no jobs, and `collect` returns the error at once.
+    if (!m.error.empty()) {
+        ts.pending = 0;
+        return Ticket{id};
     }
-    // Equal pages sit adjacent; preserve the original row order within each page.
-    if (n_miss > 1) {
-        std::sort(misses, misses + n_miss, [](const Miss& a, const Miss& b) {
-            return a.first != b.first ? a.first < b.first : a.order < b.order;
-        });
+    // The common batches -- a decode step's 1..16 rows, the prefetch of PLE_N_HEADS = 16 -- are folded in a fixed stack
+    // buffer: no hash table, no temporary job vector, sorted by page offset and merged in one pass straight into the
+    // queue.  A batch above kStackMisses (a prompt chunk's thousands of rows) takes the general path below: a hash by page,
+    // as before.  Measured, the sort of every miss loses to the hash there when many rows share a page, so the stack path is
+    // kept to the size it wins at.  Nothing here outlives the call, so concurrent issuers (they hold m.mu when threaded)
+    // share no scratch.
+    if (n > UINT32_MAX) {
+        m.error = "PleReader: more than 2^32 rows in one issue";
+        ts.pending = 0;
+        return Ticket{id};
     }
+    constexpr size_t kStackMisses = 64;
     uint32_t n_jobs = 0;
-    for (size_t k = 0; k < n_miss;) {
-        const uint64_t first = misses[k].first;
-        size_t end = k + 1;
-        uint32_t length = misses[k].length;
-        while (end < n_miss && misses[end].first == first) {
-            length = std::max(length, misses[end].length);
-            ++m.stats.dedup_rows;
-            ++end;
+    if (n <= kStackMisses) {
+        Miss misses[kStackMisses];
+        size_t n_miss = 0;
+        const uint32_t rb = m.row_bytes;
+        for (size_t i = 0; i < n; ++i) {
+            uint8_t* dst = out_raw + i * rb;
+            ++m.stats.requests;
+            if (rows[i] >= m.n_rows) {
+                std::memset(dst, 0, rb);
+                continue;
+            }
+            if (const uint8_t* hit = m.cache.find(rows[i])) {
+                std::memcpy(dst, hit, rb);
+                ++m.stats.cache_hits;
+                continue;
+            }
+            const uint64_t at = m.table_offset + (uint64_t) rows[i] * rb;
+            const uint64_t first = at / PAGE * PAGE;
+            const uint32_t length = (uint32_t) ((at + rb - 1) / PAGE * PAGE - first + PAGE);
+            misses[n_miss++] = Miss{first, length, rows[i], (uint32_t) (at - first), (uint32_t) i, dst};
         }
-        Job j;
-        j.offset = first;
-        j.length = length;
-        j.ticket = id;
-        j.uses.reserve(end - k);
-        for (; k < end; ++k)
-            j.uses.push_back(Use{misses[k].row, misses[k].in_page, misses[k].dst});
-        m.queue.push_back(std::move(j));
-        ++n_jobs;
+        // Sorted by offset: prefill chunks then read the SSD in near-sequential order, and equal pages sit adjacent.
+        if (n_miss > 1) {
+            std::sort(misses, misses + n_miss, [](const Miss& a, const Miss& b) {
+                return a.first != b.first ? a.first < b.first : a.order < b.order;
+            });
+        }
+        for (size_t k = 0; k < n_miss;) {
+            const uint64_t first = misses[k].first;
+            size_t end = k + 1;
+            uint32_t length = misses[k].length;
+            while (end < n_miss && misses[end].first == first) {
+                length = std::max(length, misses[end].length);
+                ++m.stats.dedup_rows;
+                ++end;
+            }
+            Job j;
+            j.offset = first;
+            j.length = length;
+            j.ticket = id;
+            j.uses.reserve(end - k);
+            for (; k < end; ++k) j.uses.push_back(Use{misses[k].row, misses[k].in_page, misses[k].dst});
+            m.queue.push_back(std::move(j));
+            ++n_jobs;
+        }
+    } else {
+        std::unordered_map<uint64_t, size_t> by_page;     // aligned offset -> index in `jobs`
+        std::vector<Job> jobs;
+        for (size_t i = 0; i < n; ++i) {
+            const uint32_t rb = m.row_bytes;
+            uint8_t* dst = out_raw + i * rb;
+            ++m.stats.requests;
+            if (rows[i] >= m.n_rows) {
+                std::memset(dst, 0, rb);
+                continue;
+            }
+            if (const uint8_t* hit = m.cache.find(rows[i])) {
+                std::memcpy(dst, hit, rb);
+                ++m.stats.cache_hits;
+                continue;
+            }
+            const uint64_t at = m.table_offset + (uint64_t) rows[i] * rb;
+            const uint64_t first = at / PAGE * PAGE;
+            const uint32_t length = (uint32_t) ((at + rb - 1) / PAGE * PAGE - first + PAGE);
+            auto f = by_page.find(first);
+            if (f != by_page.end()) {
+                Job& j = jobs[f->second];
+                j.length = std::max(j.length, length);
+                j.uses.push_back(Use{rows[i], (uint32_t) (at - first), dst});
+                ++m.stats.dedup_rows;
+                continue;
+            }
+            by_page.emplace(first, jobs.size());
+            Job j;
+            j.offset = first;
+            j.length = length;
+            j.ticket = id;
+            j.uses.push_back(Use{rows[i], (uint32_t) (at - first), dst});
+            jobs.push_back(std::move(j));
+        }
+        // Sorted by offset: prefill chunks then read the SSD in near-sequential order.
+        std::sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.offset < b.offset; });
+        n_jobs = (uint32_t) jobs.size();
+        for (Job& j : jobs) m.queue.push_back(std::move(j));
     }
     ts.pending = n_jobs;
     const bool has_jobs = ts.pending > 0;
@@ -555,7 +572,7 @@ bool PleReader::collect(Ticket t, std::string& err) {
         });
         it = m.tickets.find(t.id);
         if (it == m.tickets.end()) { err = "PleReader: unknown ticket"; return false; }
-        if (!m.error.empty()) { err = m.error; return false; }
+        if (!m.error.empty()) { err = m.error; m.tickets.erase(it); return false; }
         m.stats.wait_us += now_us() - start;
         m.tickets.erase(it);
         return true;
@@ -568,7 +585,7 @@ bool PleReader::collect(Ticket t, std::string& err) {
         it = m.tickets.find(t.id);
         if (it == m.tickets.end()) { err = "PleReader: unknown ticket"; return false; }
     }
-    if (!m.error.empty()) { err = m.error; return false; }
+    if (!m.error.empty()) { err = m.error; m.tickets.erase(it); return false; }
     m.stats.wait_us += now_us() - start;
     m.tickets.erase(it);
     return true;
