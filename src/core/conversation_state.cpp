@@ -84,11 +84,14 @@ bool view_validate(const ConversationView& view, const SessionState& ss,
     if (view.ids.empty() || !image_keys(view.images, view.ids.size()) ||
         std::any_of(view.ids.begin(), view.ids.end(), [](int32_t id) { return id < 0; }))
         return fail(error, "invalid live token/image metadata");
+    if (view.live_state && (view.live_state->ids != view.ids || view.live_state->imgs != view.images ||
+        !conversation_checkpoint_validate(*view.live_state, ss, g, error)))
+        return fail(error, "invalid saved live checkpoint");
     for (const auto& c : view.checkpoints) {
         if (!c.stage_parts.empty() || c.ids.empty() || c.ids.size() > view.ids.size() ||
             !std::equal(c.ids.begin(), c.ids.end(), view.ids.begin()))
             return fail(error, "checkpoint is not a live token prefix");
-        if (!conversation_checkpoint_validate(c, ss, g, error)) return false;
+        if (c.has_state() && !conversation_checkpoint_validate(c, ss, g, error)) return false;
         size_t image = 0;
         for (const auto& key : view.images) {
             if ((uint64_t) key.start >= c.ids.size()) break;
@@ -104,7 +107,8 @@ bool metadata_bytes(const ConversationCheckpoint& c, size_t& total) {
     size_t ids = 0, images = 0;
     if (!product(ids, {c.ids.size(), sizeof(int32_t)}) ||
         !product(images, {c.imgs.size(), sizeof(ConversationImageKey)})) return false;
-    for (size_t n : {ids, images, c.gdn.size(), c.ple.size(), c.tails.size(), c.dead.size(), c.block_pos.size()})
+    // Checkpoint copies share their immutable payloads. Only metadata is new.
+    for (size_t n : {ids, images})
         if (!add(total, n)) return false;
     return true;
 }
@@ -501,7 +505,9 @@ bool conversation_snapshot_capture_bytes(const ConversationKvReuse& reuse, const
         if (!conversation_kv_validate(reuse.kv[i], st, g, reuse.captured_tokens, index, error)) return false;
         const size_t fresh = conversation_kv_bytes(st, g, int64_t(view.ids.size()), index);
         size_t retained = 0;
-        if (!conversation_kv_capture_bytes(reuse.kv[i], st, g, int64_t(view.ids.size()), index, retained, error)) return false;
+        const int64_t unchanged = index ? reuse.unchanged_tokens : std::max<int64_t>(0, reuse.unchanged_tokens - 1);
+        if (!conversation_kv_capture_bytes(reuse.kv[i], st, g, int64_t(view.ids.size()), index, retained,
+                                           error, unchanged)) return false;
         bytes -= fresh;
         if (!add(bytes, retained)) return fail(error, "retained K/V allocation overflow");
     }
@@ -539,7 +545,8 @@ bool conversation_snapshot_save(SavedConversation& image, const ConversationView
         storage->pop_back();
         captured.live.stage_parts.clear();
     }
-    captured.live.ids = view.ids; captured.live.imgs = view.images;
+    if (view.live_state) captured.live = *view.live_state;
+    else { captured.live.ids = view.ids; captured.live.imgs = view.images; }
     const auto p1 = now();
     captured.cvec = view.cvec; captured.checkpoints = conversation_detail::copy_checkpoints_beating(view.checkpoints, storage);
     if (moved != nullptr)
@@ -556,7 +563,7 @@ bool conversation_snapshot_save(SavedConversation& image, const ConversationView
     // their replacement would join the copy just launched
     for (auto& k : captured.kv) k.pending.reset();
     bool live_staged = false;
-    const bool live_saved = checkpoint_save(captured.live, ss, g, error, live_staged);
+    const bool live_saved = view.live_state || checkpoint_save(captured.live, ss, g, error, live_staged);
     // STRATA_CKPT_ASYNC: the running state lands in live.gdn after the save returns; the image waits for that copy
     // before the vector is freed (an eviction within the copy's ~70 ms), as `pending` does for the K/V.  The join is
     // selective: a no-op once the copy has landed or another checkpoint's is in flight.
