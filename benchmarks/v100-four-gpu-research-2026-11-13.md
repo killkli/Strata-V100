@@ -1,8 +1,8 @@
 # Four V100 deployment review and optimization research
 
-Checked on 13 November 2026. The installed engine has useful Volta changes, but it does not include all current fork changes. The first candidates are the split HC_Q8 memory fix, stage-local host memory, and sufficient VRAM headroom. New drafting and tensor-parallel engines need separate workload and quality comparisons.
+Initial review on 13 November 2026. At inspection, the installed engine had useful Volta changes but lacked newer fork changes. The first candidates were the split HC_Q8 memory fix, stage-local host memory, and sufficient VRAM headroom. New drafting and tensor-parallel engines need separate workload and quality comparisons.
 
-This table records the deployment before the integration work on 13 November. See the [external research update](v100-external-optimization-research-2026-11-13.md) for newer papers, other V100 implementations, and the next experiment plan.
+This review records the deployment and source before the integration work on 13 November. References to the local or current source below describe that snapshot. See the [external research update](v100-external-optimization-research-2026-11-13.md) for newer papers, other V100 implementations, and the next experiment plan. The [integration report](v100-upstream-perf-2026-11-13.md) records the later changes and measurements.
 
 This review covers the local deployment, recent Strata discussions, other V100 projects, and NVIDIA guidance. It does not change the installed engine, model, server configuration, or operating-system settings. Machine-readable evidence and the transfer probe are in [the audit directory](../bench/results/2026-11-13-four-v100-audit/).
 

@@ -1,0 +1,107 @@
+[
+  {
+    "title": "Bevy",
+    "url": "https://arxiv.org/html/2611.04794v1",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "LayerScope v2",
+    "url": "https://arxiv.org/abs/2509.23638v2",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "DraftExpert",
+    "url": "https://arxiv.org/abs/2607.24434",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "TurboQuant",
+    "url": "https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "OmniKVQuant",
+    "url": "https://arxiv.org/abs/2609.11582",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "llama.cpp PR 29753",
+    "url": "https://github.com/ggml-org/llama.cpp/pull/29753",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "llama.cpp issue 20605",
+    "url": "https://github.com/ggml-org/llama.cpp/issues/20605",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "anyei V100 fork",
+    "url": "https://github.com/anyei/llamacpp-v100/blob/master/README.md",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "Wyvern four-V100 offload design",
+    "url": "https://github.com/WyvernTKC/llama.cpp-4xV100/blob/sm-tensor-4xv100/docs/moe-offload.md",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "Flash-Next Volta fork",
+    "url": "https://github.com/jackjusko/jusko-llama-volta-qwen3flash/blob/main/README-FORK.md",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "Strata issue 5063",
+    "url": "https://github.com/Niko1221/Strata/issues/5063",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "Strata issue 606",
+    "url": "https://github.com/Niko1221/Strata/issues/606",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "three-stage V100 handoff waits",
+    "url": "https://github.com/Niko1221/Strata/issues/5538",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "layer-major prompt processing",
+    "url": "https://github.com/Niko1221/Strata/issues/3976",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "prompt-aware stage splits",
+    "url": "https://github.com/Niko1221/Strata/issues/5265",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "NVIDIA architecture support",
+    "url": "https://developer.nvidia.com/blog/navigating-gpu-architecture-support-a-guide-for-nvidia-cuda-developers",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "CUDA 13 release notes",
+    "url": "https://docs.nvidia.com/cuda/archive/13.0.0/cuda-toolkit-release-notes/",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "Volta tuning guide for CUDA 12.9",
+    "url": "https://docs.nvidia.com/cuda/archive/12.9.1/volta-tuning-guide/index.html",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "Linux NUMA memory policy",
+    "url": "https://www.kernel.org/doc/html/latest/admin-guide/mm/numa_memory_policy.html",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "NVIDIA NUMA guidance",
+    "url": "https://docs.nvidia.com/cuda/archive/12.9.1/cuda-c-best-practices-guide/index.html",
+    "checked_on": "2026-11-13"
+  },
+  {
+    "title": "vLLM tuning documentation",
+    "url": "https://docs.vllm.ai/en/stable/configuration/optimization/",
+    "checked_on": "2026-11-13"
+  }
+]
