@@ -28,6 +28,7 @@ This directory is the contributor-facing index for Strata benchmark results acro
 
 ## Research and deployment audits
 
+- [External optimization research for four V100 GPUs, 13 November 2026](v100-external-optimization-research-2026-11-13.md): current papers, independent V100 engines, NVIDIA and Linux guidance, and experiments tied to this host's transfer and serving limits.
 - [Four V100 deployment review, 13 November 2026](v100-four-gpu-research-2026-11-13.md): current source and configuration, recent discussions and other engines, measured NUMA transfer costs, and prioritized experiments. This is not a new full-model throughput comparison.
 
 ## Contributing results
