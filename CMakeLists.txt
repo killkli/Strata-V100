@@ -415,6 +415,7 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
                           src/kernels/cuda/qsa_select.cu
                           src/kernels/cuda/verify_kernels.cu
                           src/kernels/cuda/iq_kernels.cu
+                          src/kernels/cuda/qpn2_nvfp4.cu
                           src/kernels/ngram.cpp
                           src/ngram/ple_reader.cpp
                           src/platform/direct_file.cpp)
@@ -751,6 +752,15 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_include_directories(prefill_gemm_parity PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(prefill_gemm_parity PRIVATE strata_prefill ${_strata_gpu_runtime_target})
   add_test(NAME prefill_gemm_parity COMMAND prefill_gemm_parity)
+
+  if(STRATA_BUILD_TESTS)
+    # FP16 fallback expert slices, including out-of-order nonzero offsets; no model required (#100).
+    add_executable(prefill_fp16_expert_test tests/prefill/prefill_fp16_expert_test.cpp)
+    target_include_directories(prefill_fp16_expert_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/prefill")
+    target_link_libraries(prefill_fp16_expert_test PRIVATE strata_prefill ${_strata_gpu_runtime_target})
+    add_test(NAME prefill_fp16_expert_test COMMAND prefill_fp16_expert_test)
+    set_tests_properties(prefill_fp16_expert_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+  endif()
 
   if(STRATA_BUILD_TESTS AND STRATA_ENABLE_CUDA)
     # the GDN prompt recurrence: the fast four-accumulator chain split (STRATA_GDN_REC_FAST=1) against the baseline
@@ -1288,6 +1298,12 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   # the register kernel from the smallest prompt batch (the line gfx1151 moves to 4096 blocks): same ids at every case
   add_test(NAME qsa_topk_parity_reg_always COMMAND qsa_topk_parity --selftest)
   set_tests_properties(qsa_topk_parity_reg_always PROPERTIES ENVIRONMENT "STRATA_TOPK_REG_MIN_BLOCKS=0")
+  # STRATA_TOPK_COMPACT=1 (opt-in CUDA narrowing): the same ids on every case, including the signed-zero/infinity and
+  # NaN score rows the harness now builds
+  if(NOT STRATA_ENABLE_HIP AND NOT STRATA_HIP_GFX906)
+    add_test(NAME qsa_topk_parity_compact COMMAND qsa_topk_parity --selftest)
+    set_tests_properties(qsa_topk_parity_compact PROPERTIES ENVIRONMENT "STRATA_TOPK_COMPACT=1")
+  endif()
 
   # ---- P2.S4: the PLE n-gram hash, the IQ4_NL table read, and the PLE block ----
   # `ngram.cpp` is host-only but lives in `strata_kernels` because `ple.cu` shares its geometry constants, and

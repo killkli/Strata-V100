@@ -8,6 +8,31 @@ Strata is an open-source local runtime for [Qwen3.8-Flash-Next](https://huggingf
 
 [Upstream Strata](https://github.com/Niko1221/Strata) · [Issues](https://github.com/jmnargi/Strata-V100/issues) · [Pull requests](https://github.com/jmnargi/Strata-V100/pulls) · [Discussions](https://github.com/jmnargi/Strata-V100/discussions)
 
+## Models and quants that run here
+
+Strata runs **Qwen3.8-Flash-Next** from seven families of quantized releases, plus a smaller **Qwen3.6-35B-A3B**. Every
+row below is supported by this fork's engine and setup; the last column says what has actually been run end to end on
+the V100 pair here. Sizes, quality and per-size speeds: [docs/MODELS.md](docs/MODELS.md).
+
+| Model / quant | Routed experts | Where the weights come from | Download | Run on this V100 pair |
+| --- | --- | --- | ---: | --- |
+| **NVFP4 — `local-inference-lab` (QAD)** | NVFP4, group 16; MXFP8 attention and shared experts; NVFP4 n-gram table | [`local-inference-lab/Qwen3.8-Flash-Next-NVFP4`](https://huggingface.co/local-inference-lab/Qwen3.8-Flash-Next-NVFP4), converted on your PC ([NVFP4.md](docs/NVFP4.md#the-qad-distillation-local-inference-labqwen38-flash-next-nvfp4)) | 106 GB | yes — 62.3 tokens/s decode |
+| **NVFP4 — NVIDIA, trained for FP4 (`FP4-Local`, QAD)** | NVFP4, group 16 (scales in NVIDIA's CSF form) | [`nvidia/Qwen3.8-Flash-Next-FP4-Local`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local), converted on your PC ([NVFP4.md](docs/NVFP4.md#nvidias-fp4-local-checkpoint)) | 102 GB (+110 GB while preparing) | supported; not run here |
+| **NVFP4 — NVIDIA's version** | NVFP4, group 16 | [`Maximilian228/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Strata`](https://huggingface.co/Maximilian228/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Strata) (ready-made pack) | 128 GB | supported; not run here |
+| **NVFP4 — Strata's version** | NVFP4, group 16 | [`Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata`](https://huggingface.co/Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata) (ready-made pack, GPTQ) | 128 GB | supported; not run here |
+| **Unsloth Dynamic v3.1 (1-4 bit)** | UD-IQ1_M, UD-Q2_0, UD-IQ2_XS, UD-Q2_K_XL, UD-IQ3_XXS, UD-Q3_K_XL, UD-IQ4_XS-v31 | [`unsloth/Qwen3.8-Flash-Next-GGUF`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF), revision of 2026-11-04 | 68-94 GB | yes — UD-IQ4_XS-v31, 81 tokens/s |
+| **Unsloth Dynamic (earlier revision)** | UD-IQ4_XS, UD-Q4_K_XL, UD-Q5_K_XL, UD-Q6_K_XL, Q8_0 | [`unsloth/Qwen3.8-Flash-Next-GGUF`](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF) | 94-188 GB | supported; not run here |
+| **ISTA-DASLab i-quants and Q2_0 (2-3.5 bit)** | Q2_0, IQ2_XS, IQ3_XXS, IQ3_S | [`ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF`](https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF) | 66-84 GB | yes — IQ3_S, the earlier daily profile |
+| **Gyro (agentionai), trellis** | Gyro-S TQ1_0, Gyro-M TQ2_0 (pair trellis) | [`agentionai/Qwen3.8-Flash-Next-Gyro-GGUF`](https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF) ([GYRO.md](docs/GYRO.md)) | 58.5 / 92 GB | yes — Gyro-M, about 70 tokens/s |
+| **Coder (ISTA-DASLab), half the experts** | IQ1_M, IQ2_S-IQ4_XS like IQ3_S | [`ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF`](https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF) | 58 GB | supported; not run here |
+| **OrcaRouter Uncensored** | IQ3_XXS | `OrcaRouter`'s Flash-Next Uncensored ([ORCA.md](docs/ORCA.md); a manual packing step, not an installer option) | 84 GB | supported; not run here |
+| **Qwen3.6-35B-A3B** (a smaller model) | Unsloth's UD-Q4_K_XL, UD-Q6_K_XL and Q8_0, with the MTP draft layer | [`unsloth/Qwen3.6-35B-A3B-MTP-GGUF`](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF) ([MODELS.md](docs/MODELS.md#qwen36-35b-a3b)) | 23-38 GB | supported; not run here |
+
+The NVFP4 rows need NVIDIA cards (RTX 50 cards multiply at FP4 width; older cards, including the V100, at 8-bit
+precision), and the two QAD rows are prepared on your PC from the authors' safetensors — no quantized weights of theirs
+are redistributed here. The Gyro and trellis rows need engine 0.1.45.1 or newer, the Unsloth Q5_0-down rows 0.1.45.7.
+
+
 ## What this fork focuses on
 
 - **Tesla V100 / Volta support (`sm_70`)**: preserve normal V100 builds and runtime support. V100 builds use a CUDA 12.x toolkit; CUDA 13 does not compile `sm_70` code.
@@ -16,6 +41,72 @@ Strata is an open-source local runtime for [Qwen3.8-Flash-Next](https://huggingf
 - **The wider Strata community**: improvements, bug reports, testing, documentation, and contributions for other supported platforms are welcome.
 
 Support for V100 does not imply that every upstream feature or every other GPU configuration has been tested on V100. Check the relevant code, release notes, and measurement reports before relying on a hardware-specific feature.
+
+## Unsloth Dynamic v3.1 sets (1-4 bit) — 8 November 2026
+
+Resolves [#95](https://github.com/jmnargi/Strata-V100/issues/95): setup's `--family unsloth` menu used to stop at
+UD-IQ4_XS (about 4 bits). It now offers Unsloth's Dynamic v3.1 files as well, from ~1 to ~4 bits, at the revision
+Unsloth published on 2026-11-04 (commit `d9620119`):
+
+| Size | Download | Routed experts | RAM with every expert in RAM | Notes |
+| --- | ---: | ---: | ---: | --- |
+| UD-IQ1_M | 68.0 GB | 32.4 GiB | ~48 GB | the smallest; weakest on careful or long work |
+| UD-Q2_0 | 70.5 GB | 34.8 GiB | ~51 GB | Q2_0 experts, like the fastest 2-bit pack |
+| UD-IQ2_XS | 75.8 GB | 39.4 GiB | ~55 GB | 1 layer with Q5_0 downs |
+| UD-Q2_K_XL | 79.6 GB | 42.8 GiB | ~59 GB | 1 layer with Q5_0 downs |
+| UD-IQ3_XXS | 83.6 GB | 46.8 GiB | ~63 GB | no Q5_0 |
+| UD-Q3_K_XL | 89.5 GB | 52.3 GiB | ~68 GB | 20 layers with Q5_0 downs |
+| UD-IQ4_XS-v31 | 93.7 GB | 56.2 GiB | ~72 GB | 33 layers with Q5_0 downs; its own catalog name, because its Hub files are named UD-IQ4_XS |
+
+The five files that were already offered (UD-IQ4_XS, UD-Q4_K_XL, UD-Q5_K_XL, UD-Q6_K_XL, Q8_0) stay pinned at the
+previous commit, and UD-Q4_K_XL's second (four-shard, n-gram table last) layout at the new commit is accepted from
+files already on disk. UD-IQ1_S stays refused: it mixes two expert formats in one layer.
+
+Engine work this needed: the Q5_0 expert dot product. Its -16 per-weight offset was applied to the sum of the original
+activations (llama.cpp's CUDA form), so a layer whose down projection is Q5_0 came out 2-3% less accurate per expert
+than any other down format. It now multiplies the quantized activation sum, like the Q5_1 and Q4_0 paths and ggml-cpu
+(CUDA and SYCL). Measured on this box with the synthetic expert parity (`native_expert_parity --synthetic`, IQ2_XXS /
+IQ2_S / IQ2_XS / IQ3_XXS / IQ4_XS gate-up with Q5_0 downs, relative L1 error against a float reference): **2.40e-2 ..
+3.18e-2 before, 1.25e-2 .. 1.30e-2 after**, the same as IQ4_NL and Q2_0 downs (1.29e-2 .. 1.31e-2) on the same seeds.
+The grouped-expert launches stay bitwise equal to the pre-window launches (`native_grouped_parity`: Q5_0 added to every
+gate/up format, and the Flash-Next shapes that these files use, 0 failures). Engine version: 0.1.45.7; setup refuses an
+older engine for these seven sets before downloading anything.
+
+The five pinned files, their bytes and every other format are unchanged: only Q5_0 *expert* weights read this kernel
+(the dense Q5_0 path is `native_mmvq`, untouched), and their whole-expert error against the float reference moves from
+2.4-3.2e-2 to 1.25-1.30e-2.
+
+## Selected upstream v0.2.11 performance ports — 5 November 2026
+
+This update selectively ports upstream optimizations; it is not a full
+v0.2.11 merge. It adds faster trellis expert kernels, smaller prompt scratch
+buffers, fewer PLE disk-reader allocations, and a Linux CPU/CUDA zero-spin
+fix. The engine version remains 0.1.45.6.
+
+**Measured on this fork's dual-V100 machine:** two V100-PCIE-16GB cards at
+175 W (GPU0 Gen3 x4, GPU1 x16), Ryzen 5 3600, and Gyro-M abliterated Huihui
+TQ2_0. The profile used split 16, two pipeline windows, MTP 4, int8 KV,
+and 524,288-token context with YaRN 2.
+
+| Prompt tokens | Control prompt time | Group scratch + WMMA off |
+| ---: | ---: | ---: |
+| 2,048 | 2,360.8 ms | 2,214.3 ms |
+| 8,192 | 6,932.7 ms | 6,541.0 ms |
+| 32,768 | 18,008.6 ms | 17,636.7 ms |
+
+These are means from cold, interleaved A-B-A-B runs, four requests per size
+and arm. Both arms already included the trellis, HC and PLE ports. This is
+not a measured gain at every context size or a whole-request speed guarantee.
+
+The measured opt-in combination is `STRATA_TQ_SUB8=1 STRATA_EXPERT_PAIR=0
+STRATA_PF_HC_REGION=1 STRATA_PF_GROUP_SCRATCH=1 STRATA_PF_WMMA=0`.
+Group scratch can change floating-point rounding. The PLE allocation change
+needs no flag. The zero-spin fix applies at `STRATA_POOL_SPIN_US=0`; it does
+not establish a saving at the daily setting of 100.
+
+See the [V100 port report](docs/NVIDIA_V100.md#selected-upstream-0211-ports-gyro-m-2026-11-05)
+for individual measurements, option guards, numerical checks, build limits,
+and tested candidates that were not retained. No service defaults are changed.
 
 ## Selected upstream sync — 19 October 2026
 
@@ -126,6 +217,93 @@ See the [evaluation report](benchmarks/v100-upstream-pr-evaluation-2026-10-15.md
 for exact timings, build provenance, rejected trials, and reproduction
 commands. See the [service profile guide](docs/NVIDIA_V100.md#dual-pcie-pipeline-service-profile)
 before enabling the option on another installation.
+
+## TurboQuant KV cache — 25 October 2026
+
+TurboQuant is an opt-in KV cache format. It rotates each 256-value head with a Hadamard transform, then
+quantizes the rotated values against a Lloyd-Max codebook. Each head keeps one FP16 norm. The widths are
+3, 4, 6 and 8 bits per value. The fit is minimum squared error only; this cut has no QJL residual.
+
+Use `--kv tq6` (or `tq3`, `tq4`, `tq8`). The cache is resident only: it stays in VRAM, there is no host
+copy, and `--kv-resident` is refused. The MTP draft layer keeps its INT8 cache. Setup does not offer these
+values. Nothing is a default, and the daily service stays on int8.
+
+At the configured 524,288-token capacity, with the model's 12 attention layers, the KV cache is:
+
+| `--kv` | Bytes per cell, one layer | Full-capacity KV, 12 layers | Change from int8 |
+| --- | ---: | ---: | ---: |
+| int8 | 1,056 | 6.1875 GiB | — |
+| tq8 | 1,032 | 6.046875 GiB | −0.14 GiB |
+| tq6 | 776 | 4.546875 GiB | −1.64 GiB |
+| tq4 | 520 | 3.046875 GiB | −3.14 GiB |
+| tq3 | 392 | 2.296875 GiB | −3.89 GiB |
+
+The tq6 main saving is 1.64 GiB at full capacity. These are calculated capacities, not measured
+`nvidia-smi` reductions: the expert cache fills the freed VRAM, so total GPU memory stays near 15,600 MiB.
+
+The V100 prompt reader is a second opt-in: `STRATA_PROMPT_ATTN_TQ=1` on sm_70. It decodes compressed tiles
+for the prompt path; unset or `0` keeps the decode-attention fallback. It does not change the KV bytes.
+
+Measured on two Tesla V100 16 GB cards at 175 W with IQ3_S, `--spec 4`, `--layer-split 16`,
+`--pipeline-windows 2`, a cold 2,048-token output cap, and one run per size per arm. The tq6 arm had
+the prompt reader on. At 32,768 prompt tokens, tq6 prefilled at 1,687 tokens/s against int8's 2,117,
+and decoded at 120.2 tokens/s against 125.5. With the reader on, tq6's 51,746-token request wall time
+fell from 40.3–40.4 s to 31.7–31.9 s, still slower than int8's 25.8 s. These measurements do not show a
+speed gain. A needle test found 15 of 15 cells in both arms through 122,289 prompt tokens; that is not a
+general quality result.
+
+See the [full report](benchmarks/v100-turboquant-2026-10-25.md) and
+[details](docs/DETAILS.md#tesla-v100-fork-benchmark).
+
+## Gyro-L pair trellis on two V100 — 31 October 2026
+
+This branch reads agentionai's `Qwen3.8-Flash-Next-Gyro-L-TQ3_0.gguf` (108,323,559,808 bytes, Hugging Face
+revision `05892758a67efff0895d23c6df10a6fdb6be8cf4`). Its routed experts are stored as the pair trellis types
+TQP5, TQP6 and TQP7 (ggml types 147 to 149) in a Hadamard-rotated basis. The pack step
+(`tools/iq_pack.py --compat-bf16`) and the kernels are described in [docs/GYRO.md](docs/GYRO.md). CPU and CUDA
+are supported; Metal and SYCL have no pair-trellis kernels. This needs engine 0.1.45.6 or newer.
+
+Two engine defects had to be repaired first. The expert kernels themselves were already bit-exact against the
+authors' ggml:
+
+- **The decode window lost the rotation.** For a folded pack the window rotated the expert input, then
+  overwrote that rotated copy with the unrotated one before the experts read it, so the gate/up projections
+  ran in the wrong basis on every decoded token. One-shot output looked plausible and then looped; the
+  server was wrong from the first token. The window now keeps one "image written" mark per layer.
+- **The layer split's prompt helper** (opt-in) rotated only its SwiGLU output and wrote a group's rows into a
+  buffer laid out for the stage's WMMA tiles. It now rotates the input it is given and owns its H.
+
+Measured on this fork's pair: two Tesla V100-PCIE-16GB (GPU 0 on PCIe Gen3 x4, GPU 1 on x16) at 175 W, a
+Ryzen 5 3600, layer split 14, `--spec 4 --spec-min-p 0.70`, int8 KV with KV grow, `--pipeline-windows 2`,
+262,144-token context, the service's own environment, interleaved repeats:
+
+| Prompt tokens | Prefill (tokens/s) |
+| ---: | ---: |
+| 2,328 | 632 |
+| 8,199 | 1,036-1,084 |
+| 16,371 | 1,344-1,411 |
+| 32,679 | 1,597-1,642 |
+
+Replies decode at 68 to 75 tokens/s from 2K to 32K context (medians of repeated 520-token replies); the split
+point does not move that beyond run-to-run noise. A read is limited by the experts that are not in VRAM: the
+x16 card streams 15.01 GiB over PCIe for a 2.3K-token read (profile at layer split 16) and the two stages run
+one after the other, so the x4 card idles about 700 ms of every read.
+
+The pack serves through the OpenAI-compatible API: "Paris" for the capital question, a follow-up turn that
+reuses 86 prompt tokens, a code request, a `get_weather` tool call and a correct answer from a tool result,
+and a 442-token passage question answered from the passage.
+
+**Layer split 14 instead of 16.** Fourteen layers on the x4 card and 34 on the x16 card read 7.9% faster at
+2.3K tokens (632 against 586 tokens/s) and 6% faster at 8.2K, the same at 16.3K, and 1.5% slower at 32.7K.
+15 and 13 sit between, and 20 is 23% slower at 2.3K and 13% at 8.2K. A read is what an agentic turn spends
+its time on, so this profile uses 14.
+
+**What was measured and did not pay on this pair:** `--spec 6` and `--spec 8`, `--spec-min-p 0.50` and
+`0.85`, a fixed `STRATA_PREFILL_CPU_SHARE`, `STRATA_PREFILL_CPU_SHARE_MAX` above 6,144, `--prefill-pipe`,
+`--max-context 131072`, `STRATA_HC_Q8=1`, and a larger `--vram-reserve-mib`. The prompt helper itself is
+slower here (484 against 583 tokens/s at 2.3K): it can only take the first stage's experts, and on this pair
+that stage is the x4 card, which streams 1.77 GiB of the 16.8 GiB a read moves. `--mtp` and the default
+`STRATA_ROUTE_TAIL_SKIP=7` are worth keeping: decode falls to 35.5 and 48 tokens/s without them.
 
 ## V100 benchmark
 
@@ -283,6 +461,7 @@ This fork develops V100 support and V100-specific work while retaining Strata's 
 - [#15 — Port measured V100 KV gather and GDN recurrence changes from upstream PR #627](https://github.com/jmnargi/Strata-V100/pull/15)
 - [#16 — Reduce V100 decode-attention shuffles and shared-memory traffic](https://github.com/jmnargi/Strata-V100/pull/16)
 - [#17 — Port upstream PR #600's Volta prompt-attention kernel](https://github.com/jmnargi/Strata-V100/pull/17)
+- [#88 — Read Gyro-L's pair-trellis experts (TQP5/6/7), fix the folded decode window and the layer split's prompt helper, and move the V100 profile to `layer_split 14`](https://github.com/jmnargi/Strata-V100/pull/88)
 
 These reports describe specific tested changes; they are not a blanket claim of faster performance across models or GPUs. For more detail, browse the [complete pull request history](https://github.com/jmnargi/Strata-V100/pulls?q=is%3Apr+is%3Amerged) and [commit history](https://github.com/jmnargi/Strata-V100/commits/main).
 

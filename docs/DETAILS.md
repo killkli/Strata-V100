@@ -507,6 +507,91 @@ VRAM. RTX 3090, the Coder at 198K context: 99 instead of 85 tokens/s output, the
 slower. It streams its KV cache like the other formats (`--kv-resident N`): on an RTX 2060 SUPER 8 GB at 128K with
 20,480 resident cells, +780 expert slots over resident K8V4, and it scores better than 4-bit KV on long documents.
 
+**TurboQuant KV cache (opt-in, `--kv tq3|tq4|tq6|tq8`):** each 256-value head is rotated with a Hadamard
+transform and quantized against a Lloyd-Max codebook fitted to the rotated coordinates, with one FP16 norm per head;
+the width is 3, 4, 6 or 8 bits per value; the fit is minimum squared error only (this cut has no QJL residual).
+It is a resident format: the K/V stays in VRAM (mode 0, no host copy), so it does not stream, and `--kv-resident` is
+refused. The main layers use it; the MTP draft layer keeps its plain INT8 windowed ring, as it does under
+K8V4 (its attention and verify paths handle whole formats only), so `--mtp`/`--spec` keep an INT8 draft cache.
+Setup does not offer these values yet.
+
+| `--kv` | Bytes/cell | 524,288-token KV, 12 layers |
+|---|---:|---:|
+| int8 | 1,056 | 6.1875 GiB |
+| tq8 | 1,032 | 6.046875 GiB |
+| tq6 | 776 | 4.546875 GiB |
+| tq4 | 520 | 3.046875 GiB |
+| tq3 | 392 | 2.296875 GiB |
+
+Those are calculated capacities (524,288 cells x 12 layers), not measured savings; a smaller cache only becomes more
+expert slots with the elastic K/V (`--kv-grow`), which gives the free VRAM to the expert cache. The context capacity
+and the CPU memory defaults do not change; only the bytes per KV cell change.
+
+Measured (before the opt-in tensor reader below, 2026-10-25): two Tesla V100 16 GB cards at 175 W, Ryzen 5 3600, IQ3_S, `--mtp --spec 4`,
+`--layer-split 16`, `--pipeline-windows 2`, one run per format, prompts of 2,071 and 51,746 tokens (the "2K"/"49K"
+labels were nominal). Wall seconds for the prompt request: int8 2.926 / 24.289, tq4 3.297 / 35.190, tq8 3.401 /
+41.085, tq6 3.431 / 39.272, tq3 3.173 / 33.643. Every arm ran without a crash. These runs show a prompt slowdown,
+not a speed win. Static analysis attributes the long-prompt cost to the prompt path using the decode-attention
+fallback (the batched reader below is off by default). Total GPU memory stayed near 15,656/15,684 MiB:
+the expert cache fills the freed space, so total GPU usage is not a measurement of KV savings. This exploratory
+five-format run is not part of the published evidence file.
+
+All five formats pass the four OpenAI-style recall and native-tool scenarios. The old fifth check required the
+literal word "tool" in a plain answer; it was removed because that tests wording, not tool behavior. Hermes passes
+for int8, tq4, tq8 and tq6; tq3 still calls the nonexistent `list_jobs` instead of `list_scheduled_jobs`.
+An earlier int8 run also made that error, so these small checks do not establish quality parity or a TQ-specific
+regression. Perplexity was not measured. A needle test (`tools/needle_bench.py`, unmodified) found 15 of 15 cells for
+both int8 and tq6 at 3 lengths and 5 depths, up to an actual 122,289 prompt tokens (the "128K" labels are nominal).
+The daily configuration hash was identical before and after. This is one synthetic retrieval test, not a general
+quality result. The final tq6 log confirms conversation parking at 2,071 and 51,746 tokens and checkpoint-archive
+parking, without the earlier draft-ring snapshot refusal. The GPU layout/append/gather/attention regression
+(`kv_tq_parity`) passes, including under CUDA Compute Sanitizer with zero memory errors. The
+[full report](../benchmarks/v100-turboquant-2026-10-25.md) and its
+[sanitized evidence](../bench/results/2026-10-25-turboquant-published/v100-turboquant-2026-10-25.json) hold the
+measured rows and settings.
+
+**Volta TQ prompt attention (experimental, off by default):** `STRATA_PROMPT_ATTN_TQ=1` enables a tensor-core
+prompt reader for `tq3`, `tq4`, `tq6` and `tq8` on sm_70. Unset or `0` keeps the existing decode fallback;
+other GPU architectures are unchanged. It decodes selected compressed tiles into shared memory, not a persistent
+FP16 cache. The per-head norm is applied once in FP32. KV allocation and stored bytes do not change.
+
+Same-day measurements on the two V100s above, with `STRATA_PREFILL_TIMING=1`, fresh service per arm:
+
+| Arm | 2,071-token request | 51,746-token request |
+|---|---:|---:|
+| tq6, reader off (baseline) | 3.400 s | 40.357 s |
+| tq6, reader on | 3.194 s | 31.721 s |
+| tq6, reader off (control) | 3.549 s | 40.253 s |
+| tq6, reader on again | 3.105 s | 31.852 s |
+| int8 control | 3.025 s | 25.827 s |
+
+The new reader cuts tq6's long-request wall time by 20.9–21.4% (about 1.27x throughput), but remains 22.8–23.3%
+slower than int8. CUDA0's long-prompt attention phase falls from 8,238–8,246 ms to 4,308/4,325 ms; the inter-stage
+wait reported under `embed+steps` also falls from 12,768–12,821 ms to 9,640/9,712 ms. Total GPU memory is unchanged
+between the tq6 arms (15,618/15,608 MiB). These are limited measurements, not a general speed guarantee. The report
+has the tq8 reader measurements and the qsa-attention totals.
+
+The GPU parity checks pass for all four widths, including causal tails and shuffled pages, with zero Compute
+Sanitizer memory errors. `conversation_snapshot_test` passes 6,709 checks and also has zero Compute Sanitizer
+errors: real state allocation at every width (3, 4, 6 and 8 bits), a snapshot A/B/A round trip, a restore from
+another width rejected on payload size, and the mixed INT8 draft layer. Both live opt-in runs pass the four
+OpenAI scenarios; Hermes fails once on `list_jobs` and passes once. Quality parity is therefore not established,
+and this remains opt-in. The daily service stays on int8. The CUDA full build passes; the CPU-only build passes
+with 55 CTest targets passing and 4 skipping (59 in total). The full HIP build passes with hipcc 7.2.4 for
+gfx1100, as a compile and link check: there is no AMD device here, so `kv_tq_parity` skips, the host-side
+conversation validation passes, and no HIP TQ run was measured. `kv_tq_parity` passes on the CUDA build, and
+its no-device exit code 77 is recorded as a skip in both builds. The HIP build needed four build fixes: a
+backend-neutral runtime target instead of `CUDA::cudart` in CMake, a portable `std::bit_cast` half bit read in
+the GEMM parity test, the test reference arm's stale warp launch replaced with the production scorer's grid,
+and a per-device VMM record (the device id and allocation granularity are captured with the range; HIP uses
+`hipMemCreate`/`hipMemMap`, and `STRATA_HIP_VMM=0` turns it off). Eighteen CUDA target regression tests ran
+while the live int8 service held the cards: 12 passed and 6 ended on out-of-memory errors
+(`qsa_slots_parity`, `qsa_slots_parity_lanecell`, `qsa_merge_daily_parity_default`,
+`qsa_merge_daily_parity_daily`, `kv_stream_parity`, `kv_window_parity`). Those six failed at allocation and
+do not establish a regression verdict; they are not claimed as passes. The SYCL compiler is not installed here, SYCL has no TurboQuant
+implementation (its separate port is unchanged), and no AMD hardware was available for a validation run. Other
+GPU architectures were not tested.
+
 **Reproducible greedy output (0.1.30, opt-in, `STRATA_IQ_MT_MIN=1`):** with the IQ models, the CPU computes an
 expert for one token with ggml's dot product and for several tokens with Strata's multi-token kernels, which round
 slightly differently. How many tokens share an expert depends on the drafts in a verify window, so the same prompt
@@ -1374,6 +1459,25 @@ print(r.choices[0].message.content)
   end-of-turn token with no `</think>`: the content is empty and an agent stops. `"reasoning_close_retry": true` in
   `strata-<model>.json` closes the thinking once (as the thinking budget does) and continues, once per request, only for
   a reply that ended that way with no answer and no tool call. Off by default.
+  This is separate from `tool_call_recovery`: a sentence such as "Let me look at the file" is not a tool call.
+  The continuation lets the model produce an answer or a call; it does not guess a tool name or arguments from
+  that sentence. It does not retry a normal answer that merely promises more work.
+- **An action preamble with no tool call (opt-in).** `"tool_call_continuation": true` handles a narrower kind of
+  early stop in the visible answer: an immediate action preamble ending in a colon, such as "Writing minimal
+  and validating immediately:", or an explicit first-person action promise ending in a period, such as
+  "Let me verify properly and add the `--lr-floor` flag." Inline code naming a flag or path is allowed.
+  Concrete actions include checking, verifying, looking, copying and rewriting. A bare instruction ending
+  in a period, such as "Check the logs.", is not enough. With tools available, no call already started,
+  and room for at least 64 more tokens after the opening, the server opens the native tool envelope and
+  continues once within the same request.
+  The model supplies the tool and arguments (the normal required-tool opening names it when only one is available).
+  This is a heuristic, not proof of intent: it can mistake prose for an action. Leave it off when that trade-off
+  is not wanted. Known code fences, quoted examples, negative or conditional phrases, ordinary final answers,
+  requests with stop strings, token-limited turns and cancellations do not trigger it. The extra call is buffered
+  until complete, so an interrupted attempt is not announced as an executable call.
+  `/api-monitor` shows **Action-preamble continuations**; `/metrics` counts attempts in
+  `totals.tool_call_continuations`, not successful tool executions. Counts reset on server restart.
+  This does not validate generated source code, finish the agent's task, or restart an already completed client turn.
 - **A reply stuck on one token is ended (0.1.39, #606).** When a reply repeats the same token 256 times in a row, the
   server ends it there with `finish_reason` `"length"` and says so in its window: a model in a loop, or a broken
   state that answers one token forever (#606 saw 36,689 tokens of `!`). `"repeat_stop_tokens": N` in
@@ -1445,6 +1549,19 @@ print(r.choices[0].message.content)
   second call's parameters merge into the first). Anything else in those forms stays the text it is. Measured on
   1,462 agent turns (Qwen3.8 under Claude Code, from signalnine/q27's drift corpus): 98.3% read as intended with it,
   92.9% without. Off by default, so what a client gets back is unchanged unless you turn it on.
+  This also repairs consecutive `<tool_call>` openers before a complete function call inside the thinking.
+  The call must name a declared tool, start on its own line outside code, and be followed only by whitespace
+  or more calls up to `</think>` or a natural stop. A quoted call or one cut by a token limit, cancellation,
+  or error stays text. Parameter values are not rewritten.
+- **Generation safeguard counters.** With `"api_monitor": true`, open `/api-monitor` to see calls recovered from
+  thinking, duplicate openers repaired, candidate calls kept as thinking, passage-loop stops, repeated-token stops,
+  and reasoning retries. The same counters are in `/metrics` under `totals`: `tool_calls_from_reasoning`,
+  `tool_call_openers_repaired`, `tool_calls_kept_as_reasoning`, `reasoning_loop_stops`, `repeated_token_stops`,
+  and `reasoning_recoveries`. Counts reset when the server starts. Categories overlap: a repaired opener also
+  counts as a recovered call. Calls kept as thinking counts recognized candidates rejected at settlement,
+  not every tag in quoted code. These are intervention counts, not a measured model error rate.
+  For request-level passage-loop stopping, set `"reasoning_loop_recovery": "stop"`; it ends that reply as
+  `"length"` and leaves the server available for the next request. This switch remains off by default.
 - **opencode's environment block in the user turn (opt-in).** opencode writes an `<env>` block (working directory,
   today's date) near the start of its system message, ahead of ~40K characters of instructions and tool definitions that
   are the same in every session. The prefix cache only reuses a prompt's start, so every new folder and every new day
@@ -2684,6 +2801,82 @@ median over the rounds (ratio of tokens/s, default over `=0`; rounds in which th
 The gain follows how much of a token is spent waiting for missed experts (hit rate 75-90% on the single cards in the profile); a 2-GPU
 split that holds nearly every expert (hit rate 99.7%) gains nothing. It does not touch prompt reading. Switches that stay opt-in and are not part of this:
 `STRATA_ROUTE_PRIOR` (adds speed, doubles the KL), `STRATA_ROUTE_RESIDENT` and `STRATA_ROUTE_RESIDENT_MTP` (the latter is not faster than the former).
+
+## A verify window's expert set can be capped (opt-in, `STRATA_VERIFY_ECAP`)
+
+`STRATA_VERIFY_ECAP=N` (off by default) caps the experts a speculative verify window reads. Token 0 keeps all K picks.
+The speculative tail (rows 1..T-1) keeps the top `N-K` entries by routing weight; every other entry joins a kept expert
+round-robin with weight 0, so the plan reads no expert for it and every combine path (each multiplies by the routing
+weight) adds exactly zero. Rank is weight descending, then index ascending, so the result is deterministic.
+
+One expert holds at most `T` rows, the window's own token count. That is what the uncapped window gives it, because a
+token's top-K names different experts. Two kept entries can name the same expert, so the keep list holds different
+experts only and the fold skips an expert that is full; if no expert has room, the entry keeps its id and only the
+weight becomes 0. The limit matters: the CPU expert pool keeps `MAXT` rows per expert (`cpu/expert.hpp`,
+`ExpertJobMulti::act/out/nact`), and the engine already refuses a window wider than `MAXT` at start-up.
+
+The cap has a width floor too, checked at start-up against the draft window (`--spec` after the suffix/lookup
+adjustment - the widest window the drafter can offer, not the pipeline buffer's capacity): `N` keeps `N-K` tail
+entries for `spec-1` draft rows, so a configuration under one entry per draft row (`N < K + spec - 1`) is refused,
+and one under two per row prints a warning naming both numbers. This check also applies to suffix and oracle drafts
+without an MTP head. Below that floor a draft row's picks are all folded
+to weight 0, so the row is computed from a fraction of its experts and the window's output changes far beyond the
+low-weight flip above. `--spec 8` with `N=16` is such a configuration: 6 tail entries for 7 draft rows (70 picks).
+In a paired agentic A/B on two V100s (same 448de7bb binary and prompt, only this option changed, 5 seeds x 4 turns),
+the capped arm finished 12 of 20 turns as truncated reasoning with no tool call and no text, against 0 of 20
+uncapped; the capped arm also accepted more drafts (62.3% against 56.7%).
+
+The cost is graded by the per-draft-row budget, not by `--spec` alone. The same loop at `--spec 4` (`spec` 6 after the
+suffix adjustment) finished 7 of 20 turns truncated with `N=16` (1.20 per row) and 4 of 20 with `N=20` (2.00 per row),
+against 0 of 20 with the option off. `N=20` at `--spec 4` is the width the measurements above used, so even the
+documented setting changes an agentic turn's course; this rig's daily service keeps the option off.
+
+The option applies to decode windows only (a window no wider than `kVerifyMaxT`). A prompt read through wider windows
+commits every row, so a cap there would drop real experts with no draft to save. `N <= K` and a one-token window are
+no-ops, and the default path is unchanged.
+
+**The cap only acts when the window's tail is longer than `N-K`.** The keep list is token 0's K picks plus the best
+`N-K` tail entries; when the tail holds `N-K` entries or fewer, nothing is dropped and the option is a no-op. The
+window's width is not fixed: `--spec` sets a ceiling and `--spec-min-p` trims it per token. On this rig's daily
+service (the server's default sampling, temperature 1.0) the engine offers `avg T` 1.82, 1.84 and 2.01 over three
+512-token requests, so with K=10 the tail holds 8-10 entries and **`N=20` keeps all of them and does nothing**.
+`N=16` keeps 6 and drops 2-4. Choose `N` from the workload's measured `avg T`, not from the `--spec` ceiling.
+
+Measured on the live service at that window width, `bench/run_v100_bench.py --only 32K --seed 42 --max-tokens 256
+--repeats 4`, the service restarted per arm:
+
+| Arm | decode, four 32K requests (tok/s) | mean |
+|---|---:|---:|
+| off | 63.2 / 72.4 / 75.9 / 74.3 | 71.5 |
+| `=16` | 99.9 / 79.9 / 74.3 / 64.5 | 79.7 |
+| off again | 60.2 / 63.6 / 72.4 / 68.8 | 66.2 |
+| `=16` again | 67.7 / 68.8 / 65.7 / 93.4 | 73.9 |
+
+The two drift-paired comparisons give +11.5 % and +11.5 %. The two control arms drifted 8 % apart over the run and
+the per-request spread is 60 to 100 tok/s, so read that as about +11 % with a wide error bar: the pooled medians of
+the same eight samples move only +2.8 %. The prompt path is unchanged in every arm.
+[The rows](../benchmarks/v100-verify-ecap-window-width-2026-10-29.json) hold both sets.
+
+**It changes the output.** A dropped low-weight expert of a draft row can flip that row, and a flipped row can accept a
+draft the exact model would have rejected. Measured on 2026-10-29 on two Tesla V100-PCIE-16GB (GPU0 on PCIe Gen3 x4,
+GPU1 on x16, Ryzen 5 3600), IQ3_S, INT8 KV, 524288-token capacity, `--layer-split 16`, `--spec 4`,
+`--pipeline-windows 2`, the daily service environment, one fresh server per arm and the same binary.
+
+End to end, three independent 32K prompts per arm and 512 greedy tokens each (`bench/run_v100_prefill.py`):
+
+| Arm | decode, three prompts (tok/s) | median | paired change |
+|---|---:|---:|---:|
+| off | 90.1 / 115.1 / 91.8 | 91.8 | - |
+| `=20` | 110.5 / 118.1 / 121.5 | 118.1 | +20.4 / +3.0 / +29.7 % |
+| `=16` | 105.7 / 127.9 / 111.9 | 111.9 | +15.6 / +12.8 / +20.1 % |
+
+The mean paired change is +17.7 % at `=20` and +16.2 % at `=16`; the same arms read their prompts in 14051, 14071 and
+14048 ms, so the prompt path does not move. The engine's own per-window report over a 32K read and a 256-token output
+shows where the gain comes from: the window's own time does not fall (35.50, 36.06 and 36.88 ms/window) while the
+committed tokens per window rise (2.49, 2.81 and 3.24), because the cap relaxes the verification of the draft rows.
+The window's missed-expert PCIe wait does fall with it (3.92 to 2.47 and 2.19 ms/window on the second stage's GDN
+layers). The end-to-end rows of `bench/run_v100_bench.py` are too noisy at 256 output tokens to separate a 17 % effect:
+one arm's own repeats span 59 to 94 tok/s at 32K.
 
 ## The PCIe share of the missed experts is set from the CPU's speed (CUDA, single GPU, no `--pcie-frac`)
 

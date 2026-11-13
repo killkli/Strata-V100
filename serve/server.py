@@ -181,6 +181,58 @@ ANSWER_RESERVE_MIN = 512      # #984: the tokens kept for the answer when a thin
 # and no call, is continued once with the thinking closed (the same way the budget's wrap-up closes it)
 REASONING_CLOSE = "\n</think>\n\n"
 REASONING_WRAP_UP = "\n\nI have thought about this long enough; time to give my answer.\n</think>\n\n"
+
+_TOOL_ACTIONS = frozenset((
+    "write writing rewrite rewriting read reading run running check checking inspect inspecting "
+    "edit editing update updating apply applying validate validating verify verifying look looking "
+    "copy copying move moving save saving execute executing promote promoting"
+).split())
+_TOOL_TASKS = frozenset((
+    "command commands copy copies check checks test tests validation edit edits update updates "
+    "rewrite read write move save execution"
+).split())
+# An explicit first-person promise of work is the only shape allowed to end in a period: "Let me verify ... flag."
+# A bare imperative ("Check the logs for errors.") or a statement is a possible final answer, so it needs the colon.
+_TOOL_INTENT = re.compile(r"^(?:I will|I'll|I am going to|I'm going to|I am|I'm|Let me)\s+", re.I)
+# Inline code naming a flag, path or value is part of an action sentence ("add the `--lr-floor` flag"). Fenced blocks
+# are rejected above; an unpaired backtick still reads as quoted material.
+_INLINE_CODE = re.compile(r"`[^`\n]{1,120}`")
+
+
+def _ends_in_tool_preamble(text: str) -> bool:
+    """A narrow action preamble, not a final answer or a quoted example. Only used by the opt-in continuation."""
+    if "```" in text or "~~~" in text:
+        return False
+    tail = text[-512:]
+    if re.search(r"\b(?:example|quoted|format)\b", tail, re.I):
+        return False
+    tail = _INLINE_CODE.sub(" ", tail).replace("**", "").rstrip("*_").rstrip()
+    if not tail or "`" in tail:
+        return False
+    # A colon is the strongest opening; a period only counts with the explicit first-person promise below.
+    colon = tail.endswith(":")
+    if not colon and not tail.endswith("."):
+        return False
+    # Examine the final sentence/line, not earlier rationale. Dots inside file names are not sentence boundaries.
+    phrase = re.split(r"[.!?]\s+|\n", tail[:-1])[-1].strip()
+    if len(phrase) > 256 or not re.match(r"[a-z]", phrase, re.I):
+        return False
+    if re.search(r"[\">]|\b(?:if|not|never|could|would|should|cannot|is|are|was|were)\b|"
+                 r"\b(?:don't|won't|can't)\b", phrase, re.I):
+        return False
+    phrase = re.sub(r"^(?:first|next|now)[, ]+\s*", "", phrase, flags=re.I)
+    intent = _TOOL_INTENT.match(phrase) is not None
+    if not (colon or intent):
+        return False
+    phrase = _TOOL_INTENT.sub("", phrase, count=1).strip()
+    words = re.findall(r"[a-z]+(?:'[a-z]+)?", phrase.lower())
+    if not words:
+        return False
+    if words[0] in ("do", "doing"):
+        # "Doing well:" is not a tool action. A light verb must name a concrete operation as well.
+        return bool(_TOOL_TASKS.intersection(words[1:]))
+    return words[0] in _TOOL_ACTIONS
+
 # #728: opt-in handling of reasoning that repeats whole passages (which the single-token guard above cannot see).
 # "reasoning_loop_recovery": "stop" ends the reply there; "recover" (or true) goes on from the same output with the
 # low-effort instruction in place of the xhigh one.  Both off by default.
@@ -3631,6 +3683,7 @@ class Service:
         self.aliases: list[str] = []                  # #297: other names of the model (the config's `aliases`)
         self.answer_room = True                       # 0.1.45: see ANSWER_ROOM_MIN_CAP (the config's "answer_room": false turns it off)
         self.reasoning_close_retry = False            # #1053 (opt-in): close the thinking once when a reply ends inside it
+        self.tool_call_continuation = False           # opt-in: one tool opening after an abandoned action preamble
         self.codex_compaction_cache = False           # #924 (opt-in): a Codex compaction is rendered with its conversation's tools
         self.codex_thread_titles = False              # #923 (opt-in): answer Codex's thread-title turns without the engine
         self.sampling_defaults = dict(sampling_defaults or {})   # the run config's `sampling` block
@@ -5227,6 +5280,7 @@ class Service:
             opening, force = parser.feed(force), None
         tail = ""                                       # the last characters written (the newlines before a call)
         answered, close_retried = False, False          # #1053: content or a call came out; the thinking was closed
+        tool_continued = False                        # never more than one action-preamble continuation per request
         nf_retried = False                              # #879: the request was sent again after non-finite logits
         timings, before = None, None                    # this request's timings; the engine's `last` before it
         recovery_count, reasoning_text, repeat_coverage = 0, "", 0.0
@@ -5535,6 +5589,34 @@ class Service:
                                 prompt = prompt + seg + extra
                                 finish = "length"
                                 continue
+                        if (self.tool_call_continuation and not tool_continued and tools and finish == "stop"
+                                and not calls and not announced and parser.state == "content"
+                                and not parser.buf and not parser.pending
+                                and not detok.pending() and stops is None and not cancel.is_set()
+                                and _ends_in_tool_preamble("".join(answer))):
+                            # The model ended after announcing an immediate action. Open the native tool envelope
+                            # once; the model still writes the tool and its arguments. Nothing is inferred from prose.
+                            extra = self.tok.encode("\n\n" + forced_call("required", tools), parse_special=True)
+                            if max_new - n - len(extra) >= 64:
+                                # Recovery must not announce an incomplete call to the client. Ordinary model calls
+                                # still stream their arguments; this extra attempt is delivered only when complete.
+                                parser.stream_tools = False
+                                tool_continued = True
+                                with self.status_lock:
+                                    self.totals["tool_call_continuations"] = self.totals.get("tool_call_continuations", 0) + 1
+                                print("[strata] reply ended on an action preamble without a call: opening a tool "
+                                      "call once and continuing (tool_call_continuation)", flush=True)
+                                for t in extra:
+                                    n += 1
+                                    raw_ids.append(t)
+                                    evs = cut(parser.feed(detok.push(t)))
+                                    collect_reply(evs, answer, calls, announced)
+                                    self._note(n, evs, st, rate)
+                                    for ev in evs:
+                                        yield "event", ev
+                                prompt = prompt + seg + extra
+                                finish = "length"
+                                continue
                         if not (wrap or opens) or cancel.is_set():
                             break
                         # #123: the thinking reached reasoning_budget_tokens.  Close it the way the model would (a
@@ -5571,10 +5653,14 @@ class Service:
                     if cancel.is_set():
                         finish = "cancel"
                     elif looped:
+                        with self.status_lock:
+                            self.totals["reasoning_loop_stops"] = self.totals.get("reasoning_loop_stops", 0) + 1
                         print(f"[strata] the thinking repeated the same passages (coverage={repeat_coverage:.3f}) at "
                               f"{n} tokens: ended as \"length\" (reasoning_loop_recovery: \"stop\" in "
                               "strata-<model>.json; remove it to turn this off)", flush=True)
                     elif repeated:
+                        with self.status_lock:
+                            self.totals["repeated_token_stops"] = self.totals.get("repeated_token_stops", 0) + 1
                         print(f"[strata] the reply repeated one token ({self.tok.decode([run_tok])!r}) "
                               f"{run_len} times in a row: ended as \"length\" (repeat_stop_tokens in "
                               "strata-<model>.json; 0 turns this off). If a new request with a short prompt does the "
@@ -5699,8 +5785,15 @@ class Service:
                 Path(emb).unlink(missing_ok=True)
         for ev in cut(tail_events):
             yield "event", ev
+        with self.status_lock:
+            for key, value in (
+                ("tool_calls_from_reasoning", parser.rescued),
+                ("tool_calls_kept_as_reasoning", parser.refused),
+                ("tool_call_openers_repaired", getattr(parser, "repaired_openers", 0)),
+                ("reasoning_recoveries", recovery_count),
+            ):
+                self.totals[key] = self.totals.get(key, 0) + value
         if parser.rescued or parser.refused:
-            self.totals["tool_calls_from_reasoning"] = self.totals.get("tool_calls_from_reasoning", 0) + parser.rescued
             print(f"[strata] tool calls inside the thinking: {parser.rescued} read as calls, {parser.refused} kept as "
                   f"reasoning (quoted, or the turn did not end on a stop)", flush=True)
         if stops is not None and stops.hit is None and stops.held:
@@ -8546,6 +8639,7 @@ def main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> in
         svc.requested_slots = per_replica * len(groups) if groups else per_replica
     svc.answer_room = cfg.get("answer_room") is not False
     svc.reasoning_close_retry = cfg.get("reasoning_close_retry") is True    # #1053: opt-in, off by default
+    svc.tool_call_continuation = cfg.get("tool_call_continuation") is True
     if cfg.get("images"):                               # image generation (serve/images.py), set up by setup --images
         icfg = {k: (os.path.abspath(os.path.join(cfg.get("cwd") or ".", v))
                     if k in ("exe", "diffusion_model", "vae", "llm", "out_dir") and isinstance(v, str)
