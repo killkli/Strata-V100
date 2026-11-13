@@ -38,10 +38,14 @@ STATE_KEYS = ('L', 'gdn', 'ple', 'tail', 'dead', 'pooled', 'pooled_full', 'kv', 
 RESIDENCY_KEYS = ('expert_slots', 'kv', 'kv_resident', 'context', 'spec', 'mtp_max', 'lookup', 'cvec')
 DISK_PREFIX = 'strata serve: conversation disk: '
 
-# conversation_disk.cpp's file format: a fixed 96-byte header, then metadata, then the payload.
+# Version 1 is a historical full record. Version 2 is an append-only chain:
+# a 128-byte chain header followed by 56-byte panel headers and their sections.
 DISK_MAGIC = 0x4B53494443525453
 DISK_HEADER_BYTES = 96
-DISK_FORMAT_VERSION = 1
+DISK_FORMAT_VERSION = 2
+DISK_CHAIN_HEADER_BYTES = 128
+DISK_PANEL_HEADER_BYTES = 56
+DISK_PANEL_MAGIC = 0x53444B4C454E4150
 DISK_RECORD_SUFFIX = '.conversation'
 
 # Every conversation-disk log line the engine writes.  The parser fails closed on any other line
@@ -49,9 +53,9 @@ DISK_RECORD_SUFFIX = '.conversation'
 _DISK_PATTERNS = (
     ('startups', r'(?P<directory>.*) budget=(?P<gib>\d+) GiB recovered=(?P<recovered>\d+) '
                  r'bytes=(?P<bytes>\d+) evictions=(?P<evictions>\d+) corruptions=(?P<corruptions>\d+)'),
-    ('parked', r'parked (?P<tokens>\d+) tokens in (?P<ms>[0-9.]+) ms; records=(?P<records>\d+) '
+    ('parked', r'(?:root )?parked (?P<tokens>\d+) tokens(?: \(\+\d+\))? in (?P<ms>[0-9.]+) ms; records=(?P<records>\d+) '
                r'bytes=(?P<bytes>\d+) evictions=(?P<evictions>\d+) corruptions=(?P<corruptions>\d+) '
-               r'snapshot_bytes=(?P<snapshot_bytes>\d+)'),
+               r'snapshot_bytes=(?P<snapshot_bytes>\d+)(?: source=l2-spill)?'),
     ('reads', r'read (?P<name>\S+) (?P<stages>\d+) stages in (?P<ms>[0-9.]+) ms; hit (?P<tokens>\d+) tokens '
               r'records=(?P<records>\d+) bytes=(?P<bytes>\d+) hits=(?P<hits>\d+) misses=(?P<misses>\d+)'),
     ('restored', r'restored (?P<tokens>\d+) tokens \((?P<source>live|checkpoint)\) in (?P<ms>[0-9.]+) ms; '
@@ -60,7 +64,7 @@ _DISK_PATTERNS = (
                r'misses=(?P<misses>\d+) records=(?P<records>\d+) bytes=(?P<bytes>\d+) '
                r'evictions=(?P<evictions>\d+) corruptions=(?P<corruptions>\d+)'),
     ('corrupt', r'corrupt record (?P<name>\S+) removed \((?P<reason>.*)\); corruptions=(?P<corruptions>\d+)'),
-    ('discarded', r'discard invalid record (?P<name>\S+) \((?P<reason>.*)\)'),
+    ('discarded', r'(?:discard invalid record|skip invalid state in) (?P<name>\S+) \((?P<reason>.*)\)'),
     ('shape_discards', r'record (?P<name>\S+) holds (?P<stages>\d+) stages, not (?P<expected>\d+); discarded'),
     ('read_failures', r'read (?P<name>\S+) failed in (?P<ms>[0-9.]+) ms \((?P<reason>.*)\)'),
     ('skips', r'skip parking \((?P<reason>.*)\)'),
@@ -106,13 +110,36 @@ def parse_disk_log(text):
 
 
 def read_record_header(data):
-    """The fixed 96-byte header of a .conversation record, with the payload's offset."""
+    """Locate a real payload in a legacy record or the first panel of a v2 chain."""
     require(len(data) >= DISK_HEADER_BYTES, 'disk record is shorter than its header')
     magic, version, header_bytes = struct.unpack_from('<QII', data, 0)
     record_bytes, metadata_bytes, _ = struct.unpack_from('<QQQ', data, 16)
     payload_bytes, payload_checksum = struct.unpack_from('<QQ', data, 40)
     require(magic == DISK_MAGIC, 'disk record magic differs')
-    require(version == DISK_FORMAT_VERSION, 'disk record format version differs')
+    require(version in (1, DISK_FORMAT_VERSION), 'disk record format version differs')
+    if version == DISK_FORMAT_VERSION:
+        require(header_bytes == 0, 'disk chain reserved field is not zero')
+        require(len(data) >= DISK_CHAIN_HEADER_BYTES + DISK_PANEL_HEADER_BYTES,
+                'disk chain is shorter than its first panel')
+        _, panel_count = struct.unpack_from('<QQ', data, 16)
+        require(0 < panel_count <= len(data) // DISK_PANEL_HEADER_BYTES, 'invalid panel count')
+        at = DISK_CHAIN_HEADER_BYTES
+        first = None
+        for _ in range(panel_count):
+            require(at + DISK_PANEL_HEADER_BYTES <= len(data), 'truncated panel header')
+            panel_magic, _, _, metadata_bytes, _, payload_bytes, checksum = struct.unpack_from('<7Q', data, at)
+            require(panel_magic == DISK_PANEL_MAGIC, 'disk panel magic differs')
+            payload_at = at + DISK_PANEL_HEADER_BYTES + metadata_bytes
+            require(payload_at <= len(data) and payload_bytes <= len(data) - payload_at,
+                    'disk panel sections exceed the file')
+            if first is None:
+                require(payload_bytes > 0, 'disk record has an empty payload')
+                first = {'magic': magic, 'version': version, 'record_bytes': len(data),
+                         'metadata_bytes': metadata_bytes, 'payload_bytes': payload_bytes,
+                         'payload_offset': payload_at, 'payload_checksum': checksum}
+            at = payload_at + payload_bytes
+        require(at == len(data), 'disk chain length differs from its panels')
+        return first
     require(header_bytes == DISK_HEADER_BYTES, 'disk record header size differs')
     require(record_bytes == len(data), 'disk record length differs from its header')
     require(record_bytes == DISK_HEADER_BYTES + metadata_bytes + payload_bytes,

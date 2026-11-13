@@ -145,6 +145,18 @@ class DiskLogParsing(unittest.TestCase):
 
 
 class DiskRecordFormat(unittest.TestCase):
+    def test_chain_payload_location_and_truncated_tail(self):
+        from tools.conversation_cache_disk import DISK_PANEL_MAGIC
+        chain = struct.pack('<QIIQQ', DISK_MAGIC, 2, 0, 17, 1) + b'\0' * 96
+        panel = struct.pack('<7Q', DISK_PANEL_MAGIC, 0, 17, 8, 0, 16, 0)
+        data = chain + panel + b'm' * 8 + b'p' * 16
+        header = read_record_header(data)
+        self.assertEqual(header['payload_offset'], 192)
+        self.assertEqual(header['payload_bytes'], 16)
+        self.assertEqual(header['version'], 2)
+        with self.assertRaises(AssertionError):
+            read_record_header(data[:-1])
+
     def test_header_and_payload_offsets(self):
         header = read_record_header(synthetic_record())
         self.assertEqual(header['magic'], DISK_MAGIC)
