@@ -619,7 +619,31 @@ struct NumaComplementPlacement {
 
     /// Decides from the live pool's plan; false with a logged reason when the split is on but placement cannot run.
     void init(const std::vector<uint64_t>& offsets, int64_t n_expert, const std::vector<uint64_t>& blob_bytes,
-              const std::vector<uint64_t>& role_bytes) {
+              const std::vector<uint64_t>& role_bytes,
+              const std::vector<detail::NumaLayerLocation>& stage_locations) {
+        if (!stage_locations.empty()) {
+            auto stage = detail::make_stage_numa_plan(offsets, n_expert, blob_bytes, stage_locations);
+            if (!stage.ready) {
+                std::fprintf(stderr, "FileExpertSource: stage-local NUMA placement unavailable: %s; keeping the normal placement\n",
+                             stage.reason.c_str());
+                return;
+            }
+            for (int k = 0; k < 2; ++k) {
+                if (stage.cores[k] >= CPU_SETSIZE) return;
+                nodes[k] = stage.nodes[k];
+                core[k] = stage.cores[k];
+                ranges[k] = std::move(stage.ranges[k]);
+                slice_bytes[k] = stage.bytes[k];
+            }
+            free_before = node_free();
+            place = true;
+            t0 = std::chrono::steady_clock::now();
+            std::fprintf(stderr, "FileExpertSource: stage-local NUMA complement: node %d %.2f GiB (CPU %d), "
+                                 "node %d %.2f GiB (CPU %d); favors each GPU's local reads; CPU row slices may read remotely\n",
+                         nodes[0], (double) slice_bytes[0] / 1073741824.0, core[0],
+                         nodes[1], (double) slice_bytes[1] / 1073741824.0, core[1]);
+            return;
+        }
         // relies on the pool being built first (generate.cpp: the ExpertPool at ~5632, the complement at ~7690)
         const auto& plan = strata::kernels::cpu::active_numa_split();
         if (!plan.on || plan.test) return;
@@ -764,6 +788,7 @@ struct NumaComplementPlacement {
         if (pin_failed)
             std::fprintf(stderr, "FileExpertSource: WARNING: NUMA placement: a toucher could not be pinned to its core\n");
         for (int k = 0; k < 2; ++k) {
+            if (slice_bytes[k] == 0) continue;
             if (batches[k] > 0 && failed[k] == batches[k]) {
                 std::fprintf(stderr, "FileExpertSource: WARNING: NUMA placement could not be verified: move_pages failed "
                                      "(errno %d: %s) for slice %d (node %d)\n", sys_errno[k], std::strerror(sys_errno[k]), k, nodes[k]);
@@ -3807,7 +3832,7 @@ bool FileExpertSource::pin_cache_complement(
                 return v == nullptr ? 1 : std::atoi(v);
             }();
             uint64_t free_now = 0;
-            numa.init(offsets, n_expert_, layer_blob_bytes_, role_bytes_);   // STRATA_NUMA_SPLIT: placed by the paced loop
+            numa.init(offsets, n_expert_, layer_blob_bytes_, role_bytes_, layer_numa_locations_);
             if (numa.place) {
                 // the engine's own mapped model pages sit on whichever node read them, and a toucher on a full node
                 // gets its pages from the other one (no local reclaim): give them back first, as the guard=1 path does

@@ -29,6 +29,23 @@ A source checkout can fetch or build its CUDA 12 engine; `--build` requests comp
 (`-DCMAKE_CUDA_ARCHITECTURES="70;86"`). A sm_70-only build has no code for a card such as a Quadro RTX 4000 (sm_75); hide it with
 `CUDA_VISIBLE_DEVICES`.
 
+### Two-socket hosts: optional GPU-local expert RAM
+
+This fork adds `STRATA_NUMA_STAGE_LOCAL=1` for Linux CUDA layer splits with pinned resident file experts
+(`--resident-experts`). Before the CPU pool pins its host thread, the engine reads each GPU's PCI NUMA node and
+selects an allowed CPU there. It first-touches the complete 4 KiB pages of each layer's RAM complement on that
+layer's GPU node, using the existing paced registration path. Shared boundary pages use the normal toucher.
+
+The option is off by default. Without it, the existing CPU-row NUMA placement applies. GPU-local placement can
+trade faster GPU uploads for remote CPU expert reads, so compare full requests before keeping it. It requires
+exactly two usable GPU NUMA nodes; missing topology, an unsuitable expert source, or no allowed CPU leaves the
+normal path in place and logs the reason. It does not move the model files or change expert bytes.
+
+The startup log reports intended bytes per node and the existing `move_pages` sample check. Verify the actual
+placement and whether registration finished; a failed query is reported as unverified. The planning test is
+`ctest --test-dir build -R numa_stage_test --output-on-failure`. The hardware and motivation for this experiment
+are in the [four-V100 research report](../benchmarks/v100-four-gpu-research-2026-11-13.md).
+
 ## What runs on Volta
 
 The flag lowers the floor (CMake and the runtime device check) and replaces two intrinsics Volta lacks. Which kernel runs is

@@ -7876,6 +7876,40 @@ int main(int argc, char** argv) {
         }
     }
 #endif
+    // Capture the process's allowed CPUs before ExpertPool narrows the host thread's affinity.
+    // Default off: CPU-row placement remains the normal path on dual-socket hosts.
+#if defined(__linux__) && !defined(STRATA_USE_HIP)
+    if (const char* v = std::getenv("STRATA_NUMA_STAGE_LOCAL"); v && v[0] == '1') {
+        if (multi_gpu && srcp == &src && o.resident_cpu_experts && o.resident_pin) {
+            cpu_set_t allowed;
+            CPU_ZERO(&allowed);
+            std::vector<strata::core::detail::NumaLayerLocation> locations((size_t) g.n_layers);
+            bool ok = sched_getaffinity(0, sizeof allowed, &allowed) == 0;
+            auto assign = [&](int gpu, int64_t lb, int64_t le) {
+                char bus[32] = {};
+                int node = -1, cpu = -1;
+                if (cudaDeviceGetPCIBusId(bus, sizeof bus, gpu) == cudaSuccess) {
+                    for (char* c = bus; *c; ++c) if (*c >= 'A' && *c <= 'F') *c += 'a' - 'A';
+                    std::ifstream f(std::string("/sys/bus/pci/devices/") + bus + "/numa_node");
+                    f >> node;
+                }
+                if (node >= 0 && node < 64)
+                    for (int c = 0; c < CPU_SETSIZE; ++c)
+                        if (CPU_ISSET(c, &allowed) && std::filesystem::exists(
+                                "/sys/devices/system/node/node" + std::to_string(node) + "/cpu" + std::to_string(c))) {
+                            cpu = c;
+                            break;
+                        }
+                ok = ok && node >= 0 && cpu >= 0;
+                for (int64_t l = lb; l < le; ++l) locations[(size_t) l] = {node, cpu};
+            };
+            assign(0, 0, stages.front()->lb);
+            for (const auto& st : stages) assign(st->dev, st->lb, st->le);
+            if (ok) src.set_layer_numa_locations(std::move(locations));
+            else std::fprintf(stderr, "strata generate: stage-local NUMA placement unavailable: GPU node or allowed CPU missing\n");
+        } else std::fprintf(stderr, "strata generate: stage-local NUMA placement needs a GPU split and pinned resident file experts\n");
+    }
+#endif
     if (o.pool_measure)
         o.pool_affinity = measure_pool_affinity(srcp, o.pool_workers, !o.no_host_worker, o.pool_tasks);
     strata::kernels::cpu::ExpertPool pool(o.pool_workers, /*pin=*/true, /*host_works=*/!o.no_host_worker,

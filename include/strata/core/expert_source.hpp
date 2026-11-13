@@ -23,6 +23,7 @@
 
 #include "strata/core/expert_cache.hpp"
 #include "strata/core/pinned.hpp"
+#include "strata/core/numa_stage.hpp"
 #include "strata/core/exchange_storage.hpp"
 #include "strata/core/hit_hook.hpp"
 #include "strata/kernels/cpu/pool.hpp"
@@ -759,6 +760,10 @@ public:
     /// STRATA_NUMA_SPLIT: files the engine read at start outside this source (the pack's dense.bin, the MTP head),
     /// whose cached pages the placement's drop gives back too.  Set BEFORE `pin_cache_complement`.
     void set_extra_drop_files(std::vector<std::string> paths) { extra_drop_files_ = std::move(paths); }
+    /// Optional Linux first-touch plan for the pinned RAM complement, captured before the pool pins the host.
+    void set_layer_numa_locations(std::vector<detail::NumaLayerLocation> locations) {
+        layer_numa_locations_ = std::move(locations);
+    }
     /// Whether the experts are read from the GGUF shards in place (no experts.bin).
     bool gguf_mode() const { return !role_ptr_.empty(); }
     /// Pin a compact host mirror of experts absent from a fully filled static GPU cache. The mmap remains open
@@ -1114,6 +1119,7 @@ private:
     // ---- CS-T: the GGUF shards in place
     std::string gguf_;
     std::vector<std::string> extra_drop_files_;   ///< set_extra_drop_files
+    std::vector<detail::NumaLayerLocation> layer_numa_locations_;
     struct Map {
         const uint8_t* base = nullptr;
         uint64_t bytes = 0;

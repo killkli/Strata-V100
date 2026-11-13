@@ -217,6 +217,13 @@ if(STRATA_BUILD_CONVERSATION_TESTS)
   add_test(NAME session_save_reclaim_test COMMAND session_save_reclaim_test)
 endif()
 
+if(STRATA_BUILD_TESTS)
+  enable_testing()
+  add_executable(numa_stage_test tests/core/numa_stage_test.cpp)
+  target_include_directories(numa_stage_test PRIVATE include)
+  add_test(NAME numa_stage_test COMMAND numa_stage_test)
+endif()
+
 if(STRATA_HIP_GFX906)
   strata_hip_gfx906_toolchain()
 elseif(STRATA_ENABLE_CUDA)
