@@ -1,0 +1,20 @@
+{
+  "checked_utc": "2026-11-13T05:08:41.111990+00:00",
+  "passed": true,
+  "installed_component_sha256": {
+    "strata": "18bd898bc700b786d09c2c7814d36ca7a0c0018609a85e9d1c5dd35674dbc910",
+    "libstrata_kq.so": "945561aa715d31dc88f90bc1cf3fdca751495d4a53607e20c3471879f6272003",
+    "strata-vision": "2e2f9dc2bc64e2efe9b247cc3536a862097f1c2c164216d9d81e73fa5d7099be",
+    "BUILD.json": "03b7e851784ac4a5cd4daceb23cd1364d234e9167b9fe4e9b24f9be74ae3960d"
+  },
+  "configuration_equals_original_plus_two_numa_settings": true,
+  "original_backup_hashes_unchanged": true,
+  "final_api_checks_passed": 11,
+  "longest_retrieval_prompt_tokens": 66444,
+  "configured_context_tokens": 262144,
+  "cache_isolation_rounds_passed": 3,
+  "gpu_compute_processes_remaining": 0,
+  "service_left_stopped": true,
+  "public_evidence_secret_and_home_path_scan_passed": true,
+  "report_local_links_exist": true
+}

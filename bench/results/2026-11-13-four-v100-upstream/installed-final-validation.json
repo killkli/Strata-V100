@@ -1,0 +1,27 @@
+{
+  "label": "final-installed",
+  "checks": {
+    "api": {
+      "exit": 0,
+      "file": "installed-final-api.json"
+    },
+    "long-vision": {
+      "exit": 0,
+      "file": "installed-final-long-vision.json"
+    },
+    "bench": {
+      "exit": 0,
+      "file": "installed-final-initial.json"
+    },
+    "warm-bench": {
+      "exit": 0,
+      "file": "installed-final-warmed.json"
+    },
+    "cache-isolation": {
+      "exit": 0,
+      "file": "installed-final-cache-isolation.json"
+    }
+  },
+  "resumed_ready_server": true,
+  "passed": true
+}

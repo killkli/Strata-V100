@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "components_restored": [
+    "strata",
+    "libstrata_kq.so",
+    "strata-vision",
+    "BUILD.json"
+  ],
+  "configuration_restored_semantically": true,
+  "api_key_preserved": true,
+  "reinstalled_sha256": {
+    "strata": "18bd898bc700b786d09c2c7814d36ca7a0c0018609a85e9d1c5dd35674dbc910",
+    "libstrata_kq.so": "945561aa715d31dc88f90bc1cf3fdca751495d4a53607e20c3471879f6272003",
+    "strata-vision": "2e2f9dc2bc64e2efe9b247cc3536a862097f1c2c164216d9d81e73fa5d7099be",
+    "BUILD.json": "03b7e851784ac4a5cd4daceb23cd1364d234e9167b9fe4e9b24f9be74ae3960d"
+  }
+}

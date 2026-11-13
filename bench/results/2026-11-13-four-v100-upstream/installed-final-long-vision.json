@@ -1,0 +1,86 @@
+[
+  {
+    "name": "long_context_needle_over_60k",
+    "passed": true,
+    "seconds": 20.314,
+    "response": {
+      "id": "chatcmpl-74c63e0751da4cffa11bb0d9",
+      "object": "chat.completion",
+      "created": 1794546169,
+      "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "C7K9P2"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 66444,
+        "completion_tokens": 7,
+        "total_tokens": 66451,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 66444,
+        "prompt_ms": 20096.3,
+        "prompt_per_token_ms": 0.302,
+        "prompt_per_second": 3306.3,
+        "predicted_n": 7,
+        "predicted_ms": 134.6,
+        "predicted_per_token_ms": 19.229,
+        "predicted_per_second": 52.0,
+        "draft_n": 6,
+        "draft_n_accepted": 4
+      }
+    }
+  },
+  {
+    "name": "existing_vision_encoder_via_openai_api",
+    "passed": true,
+    "seconds": 2.162,
+    "response": {
+      "id": "chatcmpl-720873406903431f8e054ff4",
+      "object": "chat.completion",
+      "created": 1794546190,
+      "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": " red"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 79,
+        "completion_tokens": 2,
+        "total_tokens": 81,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 79,
+        "prompt_ms": 1605.0,
+        "prompt_per_token_ms": 20.316,
+        "prompt_per_second": 49.2,
+        "predicted_n": 2,
+        "predicted_ms": 63.5,
+        "predicted_per_token_ms": 31.75,
+        "predicted_per_second": 31.5,
+        "draft_n": 3,
+        "draft_n_accepted": 0
+      }
+    }
+  }
+]

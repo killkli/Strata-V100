@@ -85,7 +85,7 @@
   },
   "official_upstream": "13eedf552417a6a791a7d13c6597e24300ee3a09",
   "v100_fork": "ee96b35efdf7ddf3626f74c09c1d448be1479e77",
-  "engine_change_commit": "506a3b825",
+  "engine_change_commit": "22a07ca38",
   "package": {
     "source": "local",
     "version": "0.1.59.1",
@@ -98,13 +98,13 @@
       "<cuda>/bin",
       "<cuda>/lib64"
     ],
-    "src": "55847e8df58f55e7",
+    "src": "cc16d1a9befc4cfc",
     "vision_src": "587022c4c655ad94",
-    "source_commit": "e28ddb718499da5519b3d7b8af8f32e1646a0e19",
+    "source_commit": "f271dbaebe405e7c38800127d4c7d8bbbe30bd9e",
     "source_dir": "<repo>",
     "build_dir": "<repo>/build-v100-20261113",
     "rollback_snapshot": "<private-state>",
-    "repository_head_at_packaging": "e28ddb718499da5519b3d7b8af8f32e1646a0e19",
+    "repository_head_at_packaging": "f271dbaebe405e7c38800127d4c7d8bbbe30bd9e",
     "vision_build_dir": "<repo>/build-vision-20261113",
     "upstream_commit": "13eedf552417a6a791a7d13c6597e24300ee3a09",
     "v100_fork_commit": "ee96b35efdf7ddf3626f74c09c1d448be1479e77",
@@ -113,7 +113,7 @@
       "STRATA_NUMA_STAGE_LOCAL": "1"
     },
     "binary_sha256": {
-      "strata": "c5bc3b737ecb3d243cc67adacd3f848b08e9714c62b181b4acdbf0fea69ad231",
+      "strata": "18bd898bc700b786d09c2c7814d36ca7a0c0018609a85e9d1c5dd35674dbc910",
       "libstrata_kq.so": "945561aa715d31dc88f90bc1cf3fdca751495d4a53607e20c3471879f6272003",
       "strata-vision": "2e2f9dc2bc64e2efe9b247cc3536a862097f1c2c164216d9d81e73fa5d7099be"
     },
@@ -131,19 +131,100 @@
     "Answers differ across engine revisions; this is a fixed output-length HTTP comparison, not a token-identical kernel gate.",
     "Decode changes of a few percent are not treated as a proven gain.",
     "Exhaustive Terminal UI walks were interrupted/omitted; targeted fixes and other collected tests are recorded separately.",
-    "CUDA sm70 on four homogeneous V100s and CPU vision tested. No HIP, SYCL, Windows or mixed-architecture runtime validation."
+    "CUDA sm70 on four homogeneous V100s and CPU vision tested. No HIP, SYCL, Metal, Windows or mixed-architecture runtime validation."
   ],
-  "installed_validation": "pending",
+  "installed_validation": {
+    "label": "final-installed",
+    "checks": {
+      "api": {
+        "exit": 0,
+        "file": "installed-final-api.json"
+      },
+      "long-vision": {
+        "exit": 0,
+        "file": "installed-final-long-vision.json"
+      },
+      "bench": {
+        "exit": 0,
+        "file": "installed-final-initial.json"
+      },
+      "warm-bench": {
+        "exit": 0,
+        "file": "installed-final-warmed.json"
+      },
+      "cache-isolation": {
+        "exit": 0,
+        "file": "installed-final-cache-isolation.json"
+      }
+    },
+    "resumed_ready_server": true,
+    "passed": true
+  },
   "experimental_compatibility": {
-    "resident_turboquant": "CLI and both prompt writers restored; no KV streaming",
+    "resident_turboquant": "CLI, both prompt writers, and serial/per-slot verify writers restored; no KV streaming",
     "native_disk_cache": "Opt-in append-only native tier restored; no DFlash2 state",
     "production_profile": "INT8 KV; native disk tier disabled"
   },
-  "final_installed_validation": "pending",
-  "tq6_compat_validation": "pending",
-  "native_l3_followon": {
-    "restart_passed": true
+  "final_installed_validation": {
+    "label": "final-installed",
+    "checks": {
+      "api": {
+        "exit": 0,
+        "file": "installed-final-api.json"
+      },
+      "long-vision": {
+        "exit": 0,
+        "file": "installed-final-long-vision.json"
+      },
+      "bench": {
+        "exit": 0,
+        "file": "installed-final-initial.json"
+      },
+      "warm-bench": {
+        "exit": 0,
+        "file": "installed-final-warmed.json"
+      },
+      "cache-isolation": {
+        "exit": 0,
+        "file": "installed-final-cache-isolation.json"
+      }
+    },
+    "resumed_ready_server": true,
+    "passed": true
   },
-  "timed_data_source_commit_before_compat": "1c387fe0e7799e66a94f10879d5620dc6fa04c5c",
-  "installed_before_compat_source_commit": "1c387fe0e7799e66a94f10879d5620dc6fa04c5c"
+  "tq6_compat_validation": {
+    "label": "tq6-compat",
+    "checks": {
+      "api": {
+        "exit": 0,
+        "file": "tq6-compat-api.json"
+      },
+      "cache-isolation": {
+        "exit": 0,
+        "file": "tq6-compat-cache-isolation.json"
+      }
+    },
+    "passed": true
+  },
+  "native_l3_followon": {
+    "restart_passed": true,
+    "corruption_passed": true
+  },
+  "installed_before_compat_source_commit": "1c387fe0e7799e66a94f10879d5620dc6fa04c5c",
+  "finalized_utc": "2026-11-13T05:05:16.029279+00:00",
+  "reported_warmed_comparisons_engine_source_before_compat": "1c387fe0e7799e66a94f10879d5620dc6fa04c5c",
+  "tq6_functional_profile": {
+    "kv": "tq6",
+    "max_context": 16384,
+    "kv_resident": 0,
+    "parallel": 2,
+    "gpu": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "layer_split": "11,24,36",
+    "scope": "Functional compatibility only; not a speed comparison with the INT8 profile"
+  }
 }

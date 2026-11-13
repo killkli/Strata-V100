@@ -1,0 +1,14 @@
+{
+  "label": "tq6-compat",
+  "checks": {
+    "api": {
+      "exit": 0,
+      "file": "tq6-compat-api.json"
+    },
+    "cache-isolation": {
+      "exit": 0,
+      "file": "tq6-compat-cache-isolation.json"
+    }
+  },
+  "passed": true
+}

@@ -1,0 +1,15 @@
+Test project <repo>/build-v100-20261113
+    Start 65: kv_tq_parity
+1/5 Test #65: kv_tq_parity .................................   Passed    0.85 sec
+    Start 66: conversation_snapshot_test
+2/5 Test #66: conversation_snapshot_test ...................   Passed    1.09 sec
+    Start 67: conversation_snapshot_test_ckpt_async
+3/5 Test #67: conversation_snapshot_test_ckpt_async ........   Passed    3.64 sec
+    Start 68: conversation_snapshot_test_ckpt_vram_slots
+4/5 Test #68: conversation_snapshot_test_ckpt_vram_slots ...   Passed    4.11 sec
+    Start 69: conversation_validation_test
+5/5 Test #69: conversation_validation_test .................   Passed    0.09 sec
+
+100% tests passed out of 5
+
+Total Test time (real) =   9.78 sec

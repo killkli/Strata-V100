@@ -1,0 +1,30 @@
+strata generate: new host allocations prefer NUMA node 0; complement touchers keep local policy
+strata generate: layer split: CUDA0 loads the dense weights of layers 0-10 only
+strata generate: layer split: CUDA1 loads the dense weights of layers 11-23 only
+strata generate: layer split: CUDA1 PCIe probe 10.2 GB/s (best of 10.1 10.2 10.2 10.2) -> pcie_frac 0.28
+strata generate: layer split: CUDA1 holds its weights; 14.18 GiB free (its session follows the split search)
+strata generate: layer split: CUDA2 loads the dense weights of layers 24-35 only
+strata generate: layer split: CUDA2 PCIe probe 6.0 GB/s (best of 6.0 6.0 6.0 6.0) -> pcie_frac 0.17
+strata generate: layer split: CUDA2 holds its weights; 14.26 GiB free (its session follows the split search)
+strata generate: layer split: CUDA3 loads the dense weights of layers 36-47 only
+strata generate: layer split: CUDA3 PCIe probe 9.0 GB/s (best of 8.9 9.0 8.9 8.9) -> pcie_frac 0.25
+strata generate: layer split: CUDA3 holds its weights; 14.26 GiB free (its session follows the split search)
+strata generate: layer split: CUDA1 holds its weights, session [11, 24); 13.82 GiB free
+strata generate: layer split: CUDA2 holds its weights, session [24, 36); 13.96 GiB free
+strata generate: layer split: CUDA3 holds its weights, session [36, 48) and the head; 13.48 GiB free
+strata generate: layer split: CUDA1 runs layers 11-23, expert cache 5562 slots (12.07 GiB), 5562 of its 6656 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA2 runs layers 24-35, expert cache 5521 slots (12.33 GiB), 5521 of its 6144 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA3 runs layers 36-47, expert cache 4818 slots (11.03 GiB), 4818 of its 6144 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-10
+strata serve: layer split: 87% of the experts resident, the prompt path's streamed ring 96 slots
+FileExpertSource: stage-local NUMA complement: node 0 10.41 GiB (CPU 0), node 1 11.96 GiB (CPU 14); favors each GPU's local reads; CPU row slices may read remotely
+FileExpertSource: NUMA placement: the model files' cached pages were released; free after the drop: node 0 24.38 GiB, node 1 24.05 GiB
+FileExpertSource: NUMA placement: node 0 10.41 GiB (100.0 % of its slices), node 1 11.96 GiB (100.0 % of its slices); free before: node 0 0.51 GiB, node 1 0.11 GiB; after the drop: node 0 24.38 GiB, node 1 24.05 GiB; pages taken and page-locked in 21.3 s since the placement started
+strata generate: resident RAM mode: 22.40 GiB of experts in RAM (page-locked), 5392 in the GPU cache; adaptive swaps exchange them with the GPU cache (no file reads)
+strata serve: prompt chunk auto: 8192 tokens, a 96-slot ring
+strata serve: the prompt path borrows 1607 CUDA0 cache slots (3.75 GiB)
+strata serve: layer split: layers 0-10 (CUDA0), 11-23 (CUDA1), 24-35 (CUDA2), 36-47 (CUDA3), one hand-off per window
+strata serve: 684 MiB of VRAM free with everything loaded
+strata serve: CUDA1: 778 MiB of VRAM free with everything loaded
+strata serve: CUDA2: 778 MiB of VRAM free with everything loaded
+strata serve: CUDA3: 558 MiB of VRAM free with everything loaded

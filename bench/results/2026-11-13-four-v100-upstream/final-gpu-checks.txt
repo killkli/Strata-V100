@@ -1,0 +1,23 @@
+Test project <repo>/build-v100-20261113
+    Start  8: numa_policy_test
+1/9 Test  #8: numa_policy_test .............................   Passed    0.02 sec
+    Start 64: vmm_device_local_test
+2/9 Test #64: vmm_device_local_test ........................   Passed    0.69 sec
+    Start 65: kv_tq_parity
+3/9 Test #65: kv_tq_parity .................................   Passed    1.27 sec
+    Start 66: conversation_snapshot_test
+4/9 Test #66: conversation_snapshot_test ...................   Passed    9.40 sec
+    Start 67: conversation_snapshot_test_ckpt_async
+5/9 Test #67: conversation_snapshot_test_ckpt_async ........   Passed   24.53 sec
+    Start 68: conversation_snapshot_test_ckpt_vram_slots
+6/9 Test #68: conversation_snapshot_test_ckpt_vram_slots ...   Passed   19.63 sec
+    Start 91: gemm_bf16_parity
+7/9 Test #91: gemm_bf16_parity .............................   Passed    4.61 sec
+    Start 93: gemm_w16_parity
+8/9 Test #93: gemm_w16_parity ..............................   Passed  178.14 sec
+    Start 99: pf_wmma_parity
+9/9 Test #99: pf_wmma_parity ...............................   Passed   29.83 sec
+
+100% tests passed out of 9
+
+Total Test time (real) = 268.13 sec
