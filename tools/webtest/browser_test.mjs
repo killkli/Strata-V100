@@ -77,6 +77,71 @@ test("monitor: four GPUs, throughput, request columns and cache and slot panels 
   } finally { delete mock.state.metricOverrides; await page.close(); }
 });
 
+test("monitor: desktop telemetry fits together and GPU layouts stay bounded on narrow screens", async ({ browser, mock }) => {
+  const series = Array.from({ length: 30 }, (_, i) => 60 + 8 * Math.sin(i / 3));
+  const gpu = index => ({ index, util: 65, mem_used: 12 * 2 ** 30, mem_total: 16 * 2 ** 30,
+    temp: 62, power: 150, power_limit: 300, energy_wh: 123, pcie_gen: 3, pcie_width: 16,
+    pcie_rx_mb: 1800, pcie_tx_mb: 120 });
+  const row = { time: 1, finish: "stop", prompt_tokens: 1000, reused: 200, prompt_ms: 2000,
+    output_tokens: 100, decode_ms: 2500, decode_tok_s: 40, ttft_ms: 120, duration_s: 5 };
+  try {
+    for (const [width, height, count] of [[1280, 800, 4], [1440, 900, 4], [1920, 1080, 8],
+                                         [1024, 768, 4], [1280, 800, 1], [1280, 800, 0], [390, 844, 4], [320, 740, 4]]) {
+      mock.state.metricOverrides = {
+        hardware: { cpu: 25, ram_used: 32 * 2 ** 30, ram_total: 64 * 2 ** 30,
+          gpus: Array.from({ length: count }, (_, i) => gpu(i)) },
+        hardware_static: { gpu_name: Array(count).fill("Tesla V100-SXM2-16GB").join(" + "),
+          cpu_name: "Intel Xeon Gold · 2 sockets", cores: 40, threads: 80 },
+        history: { tok_s: series, prefill_tok_s_mean: series, cpu: series,
+          ...Object.fromEntries(Array.from({ length: count }, (_, i) =>
+            ["util", "mem_used", "temp", "power"].map(k => [`gpu${i}_${k}`, series])).flat()) },
+        requests: Array.from({ length: 16 }, (_, i) => ({ ...row, time: i + 1 })), requests_kept: 16,
+      };
+      const page = await openPage(browser, mock, { width, height, hash: "#monitor", dark: width === 1280 });
+      try {
+        const bounds = await page.evaluate(() => {
+          const rect = s => {
+            const r = document.querySelector(s).getBoundingClientRect();
+            return { top: r.top, bottom: r.bottom, height: r.height };
+          };
+          return {
+            gpus: document.querySelectorAll(".gpu-card").length,
+            gpu: rect("#gpu-grid"), system: rect(".sys-card"), context: rect(".ctx-card"),
+            firstRequest: rect("#req-body tr"),
+            overflow: document.documentElement.scrollWidth > innerWidth ||
+              [...document.querySelectorAll(".kpi, .gpu-card, .sys-metric")].some(e => e.scrollWidth > e.clientWidth + 1),
+            maxGpuHeight: Math.max(0, ...[...document.querySelectorAll(".gpu-card")].map(e => e.getBoundingClientRect().height)),
+            maxSparkHeight: Math.max(...[...document.querySelectorAll(".kpi__spark, .gpu-spark, .sys-metric__spark")]
+              .map(e => e.getBoundingClientRect().height)),
+          };
+        });
+        const where = `${width}px, ${count} GPUs`;
+        assert.equal(bounds.gpus, count, where);
+        assert.equal(bounds.overflow, false, `${where}: telemetry must not overflow its cards or page`);
+        assert.ok(bounds.maxSparkHeight <= 32, `${where}: empty and populated SVGs need explicit bounds`);
+        if (width >= 1001) assert.ok(bounds.maxGpuHeight < 260, `${where}: GPU readings must remain compact`);
+        if (width >= 1280) {
+          assert.ok(bounds.gpu.bottom <= height, `${where}: every GPU is visible without scrolling`);
+          assert.ok(bounds.system.bottom <= height && bounds.context.bottom <= height,
+            `${where}: machine and context readings share the first screen`);
+        }
+        if (width === 1440) assert.ok(bounds.firstRequest.bottom <= height,
+          "the first request is visible alongside telemetry at 1440 × 900");
+        if (width === 1440) {
+          assert.equal(await page.$$eval("#req-body tr", e => e.length), 12);
+          await page.click("#req-all");
+          assert.equal(await page.$$eval("#req-body tr", e => e.length), 16);
+          assert.ok(await page.$eval("#req-wrap", e => e.clientHeight <= 420 && e.scrollHeight > e.clientHeight));
+          assert.equal(await page.$eval("#req-wrap th", e => getComputedStyle(e).position), "sticky");
+          await page.click("#req-all");
+          assert.equal(await page.$$eval("#req-body tr", e => e.length), 12);
+        }
+        assert.deepEqual(page.errors, []);
+      } finally { await page.close(); }
+    }
+  } finally { delete mock.state.metricOverrides; }
+});
+
 // serve/test_web_monitor.py starts the production HTTP handler with an in-memory engine; no model or GPU.
 if (process.env.WEBTEST_SERVER) test("monitor: authenticated Python server connects, controls the model and records a chat", async ({ browser }) => {
   const page = await openPage(browser, {url: process.env.WEBTEST_SERVER},

@@ -271,7 +271,7 @@ const kpiValue = (text, unit) => (text === "–" ? "–" : `${esc(text)}${unit ?
 function gpuCards(hw, h, st) {
   const cards = hw.gpus || [];
   const names = String(st.gpu_name || "").split(" + ");
-  const block = (label, value, note, path, bar, tone) => `<div class="gpu-block">
+  const block = (label, value, note, path, bar, tone) => `<div class="gpu-block${path ? "" : " gpu-block--plain"}">
     <div class="gpu-block__top"><span>${esc(label)}</span><span><b>${value}</b>${note ? ` <em>${esc(note)}</em>` : ""}</span></div>
     ${bar == null ? "" : `<div class="st-progress"${tone ? ` data-tone="${tone}"` : ""}><div class="st-progress__bar" style="width:${Math.max(0, Math.min(100, bar)).toFixed(1)}%"></div></div>`}
     ${path ? sparkSvg("gpu-spark", path, tone) : ""}

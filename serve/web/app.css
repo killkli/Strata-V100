@@ -124,6 +124,7 @@ main { flex: 1; min-height: 0; display: flex; }
 }
 .req-head { display: flex; align-items: center; justify-content: space-between; gap: var(--st-s-2); }
 .table-wrap.all { max-height: 420px; overflow-y: auto; }
+.table-wrap.all .st-table th { position: sticky; top: 0; z-index: 1; background: var(--st-surface); }
 .req-totals { margin: 0; font-size: var(--st-fs-sm); }
 .req-totals:empty { display: none; }
 .cc-card { display: flex; flex-direction: column; gap: var(--st-s-3); }
@@ -144,6 +145,145 @@ main { flex: 1; min-height: 0; display: flex; }
 .mcp-server__tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .mcp-server__tools .chip { height: 26px; padding: 0 10px; font-family: var(--st-font-mono); }
 .mcp-note { margin: 0; }
+
+/* Dashboard telemetry: bound every SVG, including when its series is empty. */
+.monitor { gap: var(--st-s-3); }
+.monitor > *, .monitor-overview > *, .sys-metric, .kpi { min-width: 0; }
+.monitor .st-card { border-radius: var(--st-r-md); }
+.state-card__live { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto; }
+.live-chip { color: var(--st-ink-muted); font-size: var(--st-fs-xs); font-variant-numeric: tabular-nums; }
+.live-chip b { color: var(--st-ink); font-weight: var(--st-fw-medium); }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--st-s-2); }
+.kpi { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 12px;
+       background: var(--st-surface); border: 1px solid var(--st-line); border-radius: var(--st-r-md); }
+.kpi__label, .sys-metric__label { display: flex; align-items: center; gap: 6px; color: var(--st-ink-muted); font-size: var(--st-fs-xs); }
+.kpi__value, .sys-metric__value { font-size: 24px; font-weight: var(--st-fw-bold); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kpi__value small, .sys-metric__value small { margin-left: 3px; font-size: var(--st-fs-xs); font-weight: var(--st-fw-medium); color: var(--st-ink-muted); }
+.kpi__sub, .sys-metric__sub { font-size: var(--st-fs-xs); color: var(--st-ink-muted); line-height: 1.4; overflow-wrap: anywhere; }
+.kpi__spark { display: block; width: 100%; height: 20px; color: var(--st-accent); }
+.monitor-overview { display: grid; gap: var(--st-s-3); }
+.chart-card { display: flex; flex-direction: column; gap: var(--st-s-2); }
+.chart { display: block; width: 100%; height: 160px; overflow: hidden; }
+.chart .grid { stroke: var(--st-line-soft); stroke-width: 1; }
+.chart .axis { font: 11px var(--st-font); fill: var(--st-ink-muted); }
+.chart-line { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.chart-area { fill: var(--st-accent); opacity: .08; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--st-fs-xs); }
+.legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 3px; border-radius: 2px; background: currentColor; }
+.legend b { color: var(--st-ink-soft); font-weight: var(--st-fw-medium); }
+.gpu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: var(--st-s-3); }
+.gpu-grid:empty { display: none; }
+.gpu-card { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.gpu-card__head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.gpu-card__index { flex: none; font-weight: var(--st-fw-bold); font-size: var(--st-fs-sm); }
+.gpu-card__name { min-width: 0; color: var(--st-ink-muted); font-size: var(--st-fs-xs); overflow-wrap: anywhere; }
+.gpu-block { min-width: 0; }
+.gpu-block__top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 8px;
+                  font-size: var(--st-fs-xs); font-variant-numeric: tabular-nums; }
+.gpu-block__top > span:first-child { color: var(--st-ink-muted); }
+.gpu-block__top > span:last-child { text-align: right; }
+.gpu-block__top b { font-weight: var(--st-fw-medium); }
+.gpu-block__top em { font-style: normal; color: var(--st-ink-muted); font-size: 11px; }
+.gpu-block > .st-progress { height: 4px; margin-top: 4px; }
+.gpu-spark, .sys-metric__spark { display: block; width: 100%; height: 24px; color: var(--st-accent); }
+.gpu-spark[data-tone="warn"] { color: var(--st-warn); }
+.gpu-pcie { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; padding-top: 6px;
+            border-top: 1px solid var(--st-line-soft); font-size: 11px; color: var(--st-ink-muted); font-variant-numeric: tabular-nums; }
+.gpu-pcie b { font-weight: var(--st-fw-medium); color: var(--st-ink-soft); }
+.monitor-row { gap: var(--st-s-3); }
+.sys-card { display: flex; flex-direction: column; gap: var(--st-s-3); min-width: 0; }
+.sys-grid, .l3-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--st-s-3); }
+.sys-metric { display: flex; flex-direction: column; gap: 4px; }
+.sys-metric__value { font-size: 22px; }
+.sys-metric__sub:empty { display: none; }
+.sys-metric > .st-progress { height: 4px; }
+.sys-metric__spark { margin-top: auto; }
+.req-head { flex-wrap: wrap; }
+.req-head__tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--st-s-2); }
+.slots-card { display: flex; flex-direction: column; gap: var(--st-s-2); }
+.slots-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 6px 16px; }
+.slot-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: var(--st-fs-xs); }
+.slot-row__n { font-weight: var(--st-fw-bold); }
+.slot-row__state { color: var(--st-accent-text); }
+.slot-row[data-state="idle"] .slot-row__state { color: var(--st-ink-muted); }
+.cc-l3 { border-top: 1px solid var(--st-line); padding-top: var(--st-s-3); display: flex; flex-direction: column; gap: var(--st-s-3); }
+.l3-note { margin: 0; overflow-wrap: anywhere; }
+#l3-sub { overflow-wrap: anywhere; }
+
+/* Desktop: keep the hardware, trends and request log close enough to scan together. */
+@media (min-width: 1001px) {
+  .monitor { padding: 16px; }
+  .monitor .st-card { padding: 12px 14px; }
+  .monitor .card-title { font-size: var(--st-fs-sm); }
+  .state-card { gap: 8px; }
+  .state-card__head { gap: 8px 16px; }
+  .state-card .st-progress { height: 4px; }
+  .badges { gap: 4px; }
+  .badges .st-badge { height: 21px; padding-inline: 7px; font-size: 11px; }
+  .kpi__label { font-size: 11px; gap: 4px; }
+  .kpi__label .st-icon { width: 13px; height: 13px; }
+  .kpi__spark { position: absolute; top: 35px; right: 10px; width: 42px; height: 18px; }
+  .kpi:has(.kpi__spark) .kpi__value { padding-right: 44px; }
+  .kpi__sub { font-size: 11px; }
+  .gpu-card { gap: 5px; }
+  .gpu-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .gpu-grid:has(> .gpu-card:nth-child(4)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .gpu-card__head { padding-bottom: 5px; border-bottom: 1px solid var(--st-line-soft); }
+  .gpu-block { display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 6px; align-items: center; }
+  .gpu-block--plain { display: block; }
+  .gpu-block > .st-progress { display: none; }
+  .gpu-spark { height: 20px; }
+  .gpu-pcie { margin-top: auto; }
+  .gpu-card:only-child { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 20px; }
+  .gpu-card:only-child .gpu-card__head, .gpu-card:only-child .gpu-pcie { grid-column: 1 / -1; }
+  .gpu-card:only-child .gpu-block { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+  .monitor-overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); align-items: stretch; }
+  .monitor-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+  .chart { flex: 1; height: 130px; min-height: 120px; }
+  .chart-card .req-head { align-items: baseline; }
+  .chart-card #chart-note { font-size: 11px; }
+  .ctx-card { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-content: start; gap: 6px 10px; }
+  .ctx-card > .card-title { grid-column: 1 / -1; }
+  .ctx-gauge { width: 80px; margin: 8px 0 0; grid-column: 1; grid-row: 2 / span 5; }
+  .ctx-gauge__pct { font-size: 20px; }
+  .ctx-gauge__label { font-size: 10px; }
+  .ctx-card .bar-row { grid-column: 2; font-size: 11px; margin: 0; flex-wrap: wrap; gap: 0 8px; }
+  .ctx-card > .st-progress { grid-column: 2; height: 4px; }
+  .sys-card { gap: 8px; }
+  .sys-card .req-head { gap: 2px; }
+  .sys-card #sys-sub { font-size: 11px; }
+  .sys-grid { gap: 10px 12px; }
+  .sys-metric__label, .sys-metric__sub { font-size: 11px; }
+  .sys-metric__value { font-size: 20px; }
+  .sys-metric__spark { height: 16px; }
+  .sys-card .st-progress { display: none; }
+  .req-card { gap: 8px; }
+  .req-head__tools .st-btn { height: 30px; padding-inline: 10px; font-size: var(--st-fs-xs); }
+  .req-card .st-badge { height: 20px; padding-inline: 7px; font-size: 11px; }
+  .monitor .st-table { font-size: var(--st-fs-xs); }
+  .monitor .st-table th { padding-block: 7px; font-size: 10px; }
+  .monitor .st-table td { padding-block: 7px; }
+  .monitor .facts { font-size: var(--st-fs-xs); gap: 5px 16px; }
+  .l3-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (min-width: 1200px) {
+  .kpis { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .kpi { padding: 10px; }
+}
+@media (min-width: 1001px) and (max-width: 1399px) {
+  .monitor-overview { grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr); }
+}
+@media (min-width: 1001px) and (max-width: 1199px) {
+  .gpu-block { grid-template-columns: minmax(0, 1fr) 28px; }
+}
+@media (max-width: 640px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .state-card__live { margin-left: 0; }
+  .state-card__row { flex-wrap: wrap; gap: 4px 12px; }
+  .chart-card #chart-note { flex-basis: 100%; }
+  .l3-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* ---------------------------------------------------------------- about */
 .about { max-width: min(100%, 1100px); }

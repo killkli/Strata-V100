@@ -135,35 +135,37 @@
 
       <div class="kpis" id="kpis"><!-- averages and session totals, filled by app.js --></div>
 
-      <div class="st-card chart-card">
-        <div class="req-head"><span class="card-title">Throughput</span><span class="muted small" id="chart-note"></span></div>
-        <svg class="chart" id="chart-speed" role="img" aria-label="Decode and prefill speed over the recent past"></svg>
-        <div class="legend" id="legend-speed"></div>
-      </div>
-
       <div class="gpu-grid" id="gpu-grid"><!-- one card per GPU, filled by app.js --></div>
 
-      <div class="monitor-row">
-        <div class="st-card ctx-card">
-          <span class="card-title">Context fill</span>
-          <div class="ctx-gauge">
-            <svg class="st-gauge" viewBox="0 0 120 120" aria-hidden="true">
-              <circle class="st-gauge__track" cx="60" cy="60" r="50" fill="none" stroke-width="10" stroke-linecap="round"
-                      stroke-dasharray="235.6 314.2" transform="rotate(135 60 60)"/>
-              <circle class="st-gauge__fill" id="ctx-fill" cx="60" cy="60" r="50" fill="none" stroke-width="10"
-                      stroke-linecap="round" stroke-dasharray="0 314.2" transform="rotate(135 60 60)"/>
-            </svg>
-            <div class="ctx-gauge__label"><span class="ctx-gauge__pct" id="ctx-pct">0%</span><span class="muted" id="ctx-sub">&ndash;</span></div>
-          </div>
-          <div class="bar-row"><span>Experts in VRAM</span><span class="muted" id="slots-text">&ndash;</span></div>
-          <div class="st-progress"><div class="st-progress__bar" id="slots-bar" style="width:0%"></div></div>
-          <div class="bar-row"><span>KV cache</span><span class="muted" id="kv-text">&ndash;</span></div>
-          <div class="bar-row"><span>Speculation</span><span class="muted" id="spec-text">&ndash;</span></div>
-          <div class="bar-row"><span>Requests kept</span><span class="muted" id="kept-text">&ndash;</span></div>
+      <div class="monitor-overview">
+        <div class="st-card chart-card">
+          <div class="req-head"><span class="card-title">Throughput</span><span class="muted small" id="chart-note"></span></div>
+          <svg class="chart" id="chart-speed" role="img" aria-label="Decode and prefill speed over the recent past"></svg>
+          <div class="legend" id="legend-speed"></div>
         </div>
-        <div class="st-card sys-card">
-          <div class="req-head"><span class="card-title">This machine</span><span class="muted small" id="sys-sub"></span></div>
-          <div class="sys-grid" id="sys-metrics"><!-- CPU, RAM and disk, filled by app.js --></div>
+
+        <div class="monitor-row">
+          <div class="st-card ctx-card">
+            <span class="card-title">Context fill</span>
+            <div class="ctx-gauge">
+              <svg class="st-gauge" viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="st-gauge__track" cx="60" cy="60" r="50" fill="none" stroke-width="10" stroke-linecap="round"
+                        stroke-dasharray="235.6 314.2" transform="rotate(135 60 60)"/>
+                <circle class="st-gauge__fill" id="ctx-fill" cx="60" cy="60" r="50" fill="none" stroke-width="10"
+                        stroke-linecap="round" stroke-dasharray="0 314.2" transform="rotate(135 60 60)"/>
+              </svg>
+              <div class="ctx-gauge__label"><span class="ctx-gauge__pct" id="ctx-pct">0%</span><span class="muted" id="ctx-sub">&ndash;</span></div>
+            </div>
+            <div class="bar-row"><span>Experts in VRAM</span><span class="muted" id="slots-text">&ndash;</span></div>
+            <div class="st-progress"><div class="st-progress__bar" id="slots-bar" style="width:0%"></div></div>
+            <div class="bar-row"><span>KV cache</span><span class="muted" id="kv-text">&ndash;</span></div>
+            <div class="bar-row"><span>Speculation</span><span class="muted" id="spec-text">&ndash;</span></div>
+            <div class="bar-row"><span>Requests kept</span><span class="muted" id="kept-text">&ndash;</span></div>
+          </div>
+          <div class="st-card sys-card">
+            <div class="req-head"><span class="card-title">This machine</span><span class="muted small" id="sys-sub"></span></div>
+            <div class="sys-grid" id="sys-metrics"><!-- CPU, RAM and disk, filled by app.js --></div>
+          </div>
         </div>
       </div>
 
