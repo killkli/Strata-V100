@@ -42,6 +42,7 @@
 #include "strata/kernels/kv_stream.hpp"
 #include "strata/kernels/cvec.hpp"
 #include "strata/kernels/kv_q4.hpp"
+#include "strata/kernels/kv_tq.hpp"
 #include "strata/core/layer.hpp"
 #include "strata/core/native_dense.hpp"
 #include "strata/core/native_head.hpp"
@@ -4360,7 +4361,10 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                             strata::kernels::fwht256_inplace_cuda(m.Kc, T * 2, m.cs);
                             strata::kernels::fwht256_inplace_cuda(m.Vc, T * 2, m.cs);
                         }
-                        if (st.kv_q4)
+                        if (st.kv_tq)
+                            strata::kernels::kv_append_tq(st.kv_tq_bits, st.k_tq, st.v_tq, st.page_table, p0, T,
+                                                           m.Kc, m.Vc, s, m.cs, nullptr, staged ? &m.stage : nullptr);
+                        else if (st.kv_q4)
                             strata::kernels::kv_append_q4(st.k_q4, st.v_q4, st.page_table, p0, T, m.Kc, m.Vc, s, m.cs,
                                                           host_w, staged ? &m.stage : nullptr);
                         else
@@ -7720,7 +7724,10 @@ bool Prefill::lm_run(const std::vector<Seg>& segs, int depth, const std::vector<
                                 strata::kernels::fwht256_inplace_cuda(m.Kc, T * 2, cs);
                                 strata::kernels::fwht256_inplace_cuda(m.Vc, T * 2, cs);
                             }
-                            if (st.kv_q4)
+                            if (st.kv_tq)
+                                strata::kernels::kv_append_tq(st.kv_tq_bits, st.k_tq, st.v_tq, st.page_table, p0, T,
+                                                               m.Kc, m.Vc, s, cs, nullptr, staged ? &m.stage : nullptr);
+                            else if (st.kv_q4)
                                 strata::kernels::kv_append_q4(st.k_q4, st.v_q4, st.page_table, p0, T, m.Kc, m.Vc, s, cs,
                                                               host_w, staged ? &m.stage : nullptr);
                             else
