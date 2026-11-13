@@ -142,6 +142,9 @@ class DeepSeekWithAModel(Dsv41Engine):
         import shutil
         shutil.copy(os.path.realpath(sys.executable), self.old)
         self.old.chmod(0o755)
+        # Relocatable Python builds have no usable compiled-in stdlib prefix.
+        # Keep the copied executable running from its own path, with the real home.
+        (self.old.parent / "pyvenv.cfg").write_text("home = " + str(Path(sys.base_prefix) / "bin") + "\n")
         proc = subprocess.Popen([str(self.old), "-I", "-S", "-c", "import time; time.sleep(300)"])
         self.addCleanup(lambda: (proc.kill(), proc.wait()))
         time.sleep(0.3)
