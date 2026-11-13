@@ -1,4 +1,5 @@
 #include "strata/core/logit_bias.hpp"
+#include "strata/core/numa_policy.hpp"
 // src/program/generate.cpp - P2.S6: `strata generate`.
 //
 // THE DRIVER, and the first program in this project that answers a question.  Everything below it is a
@@ -4172,6 +4173,21 @@ int main(int argc, char** argv) {
         }
     }
     bool multi_gpu = !split_devs.empty() && !split_same;   // cleared by --split-skip-if-fits before any stage loads
+#if defined(__linux__) && !defined(STRATA_USE_HIP)
+    if (const char* v = std::getenv("STRATA_HOST_NUMA_NODE"); v && *v) {
+        char* end = nullptr;
+        const long node = std::strtol(v, &end, 10);
+        std::string error;
+        if (!end || *end || node < 0 || node >= 64 ||
+            !std::filesystem::exists("/sys/devices/system/node/node" + std::to_string(node)) ||
+            !strata::core::detail::prefer_numa_node((int) node, error)) {
+            std::fprintf(stderr, "strata generate: STRATA_HOST_NUMA_NODE=%s could not be applied: %s\n",
+                         v, error.empty() ? "invalid or unavailable node" : error.c_str());
+            return 2;
+        }
+        std::fprintf(stderr, "strata generate: new host allocations prefer NUMA node %ld; complement touchers keep local policy\n", node);
+    }
+#endif
     // STRATA_PRIMARY_DEVICE: a later stage's list (`--split-device` values must be > 0) still assumes the
     // primary is device 0 - refuse the combination rather than mis-place a stage.  The peer tier takes the
     // primary into account (peer_experts.cpp).

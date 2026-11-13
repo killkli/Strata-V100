@@ -46,6 +46,13 @@ placement and whether registration finished; a failed query is reported as unver
 `ctest --test-dir build -R numa_stage_test --output-on-failure`. The hardware and motivation for this experiment
 are in the [four-V100 research report](../benchmarks/v100-four-gpu-research-2026-11-13.md).
 
+`STRATA_HOST_NUMA_NODE=N` is a separate Linux CUDA option. It makes future host allocations prefer that NUMA
+node before the model loads. It changes no CPU affinity and moves no existing pages. The complement's pinned
+touchers restore local allocation policy, for either CPU-row placement or GPU-local placement, so a large shared
+table can prefer the socket with more RAM while expert pages still go to their intended nodes. The option is
+unset by default; an invalid or unavailable node stops startup before the weights load. The two-node
+`numa_policy_test` checks actual page placement and that a helper overrides the inherited preference.
+
 ## What runs on Volta
 
 The flag lowers the floor (CMake and the runtime device check) and replaces two intrinsics Volta lacks. Which kernel runs is

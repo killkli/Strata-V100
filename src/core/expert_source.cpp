@@ -1,5 +1,6 @@
 // src/core/expert_source.cpp - the adapter.  See the header for the three clauses of the contract.
 #include "strata/core/expert_source.hpp"
+#include "strata/core/numa_policy.hpp"
 #include "strata/core/expert_nibble.hpp"
 #include "strata/core/conversation_memory.hpp"
 #include "strata/core/foresight_swap.hpp"
@@ -586,6 +587,7 @@ struct NumaComplementPlacement {
     std::vector<uint64_t> free_before;                      ///< MemFree per node before the allocation
     std::vector<uint64_t> free_after;                       ///< the same after the model files' pages are released
     std::atomic<bool> pin_failed{false};
+    std::atomic<bool> policy_failed{false};
     std::chrono::steady_clock::time_point t0;
 
     static std::vector<uint64_t> node_free() {
@@ -697,6 +699,12 @@ struct NumaComplementPlacement {
             CPU_ZERO(&set);
             CPU_SET(core[k], &set);
             if (sched_setaffinity(0, sizeof set, &set) != 0) pin_failed = true;
+            // A host-wide preference keeps large shared tables on the roomy socket.
+            // These pages instead belong to this pinned toucher's node.
+            if (const char* v = std::getenv("STRATA_HOST_NUMA_NODE"); v && *v) {
+                std::string error;
+                if (!detail::use_local_numa_policy(error)) policy_failed = true;
+            }
             const auto& rs = ranges[k];
             auto it = std::partition_point(rs.begin(), rs.end(), [&](const auto& r) { return r.second <= lo; });
             for (; it != rs.end() && it->first < hi; ++it)
@@ -787,6 +795,8 @@ struct NumaComplementPlacement {
                          (double) registered / 1073741824.0, (double) bytes / 1073741824.0, stop != nullptr ? stop : "?");
         if (pin_failed)
             std::fprintf(stderr, "FileExpertSource: WARNING: NUMA placement: a toucher could not be pinned to its core\n");
+        if (policy_failed)
+            std::fprintf(stderr, "FileExpertSource: WARNING: NUMA placement: a toucher could not restore local allocation policy\n");
         for (int k = 0; k < 2; ++k) {
             if (slice_bytes[k] == 0) continue;
             if (batches[k] > 0 && failed[k] == batches[k]) {
