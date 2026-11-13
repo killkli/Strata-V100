@@ -6,6 +6,7 @@ This directory is the contributor-facing index for Strata benchmark results acro
 
 | Accelerator | Model | Quantization | Context | Results |
 | --- | --- | --- | ---: | --- |
+| 4 × NVIDIA Tesla V100-SXM2-16GB, dual Xeon E5-2680 v4 | Qwen3.8-Flash-Next | Unsloth UD-IQ4_XS | 2K / 8K timed; 66K retrieval | [Upstream integration and NUMA placement, 2026-11-13](v100-upstream-perf-2026-11-13.md) |
 | NVIDIA Tesla V100-PCIE-16GB | Qwen3.8-Flash-Next | Q2_0 | 262,144 | [V100, 2026-09-28](v100-pcie-16gb-q2_0-2026-09-28.md) |
 | 2 × NVIDIA Tesla V100-PCIE-16GB | Qwen3.8-Flash-Next | Q2_0 | 4K / 32K / 128K | [PR 600 Volta prompt attention, 2026-10-03](v100-q2_0-pr600-2026-10-03.md) |
 | 2 × NVIDIA Tesla V100-PCIE-16GB, Gen3 x2 + x16 | Qwen3.8-Flash-Next | Q2_0 | 262,144 | [Asymmetric PCIe, 2026-09-30](v100-asymmetric-pcie-q2_0-2026-09-30.md) |
@@ -29,7 +30,7 @@ This directory is the contributor-facing index for Strata benchmark results acro
 ## Research and deployment audits
 
 - [External optimization research for four V100 GPUs, 13 November 2026](v100-external-optimization-research-2026-11-13.md): current papers, independent V100 engines, NVIDIA and Linux guidance, and experiments tied to this host's transfer and serving limits.
-- [Four V100 deployment review, 13 November 2026](v100-four-gpu-research-2026-11-13.md): current source and configuration, recent discussions and other engines, measured NUMA transfer costs, and prioritized experiments. This is not a new full-model throughput comparison.
+- [Four V100 deployment review, 13 November 2026](v100-four-gpu-research-2026-11-13.md): source and configuration before integration, recent discussions and other engines, measured NUMA transfer costs, and prioritized experiments. This is not a new full-model throughput comparison.
 
 ## Contributing results
 1. Run the existing [`bench/run_v100_bench.py`](../bench/run_v100_bench.py) runner for the published workload, or add the closest equivalent runner under `bench/`.

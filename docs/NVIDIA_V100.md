@@ -55,6 +55,12 @@ unset by default; an invalid or unavailable node stops startup before the weight
 inheritance by new threads and the limit to newly allocated pages. The two-node
 `numa_policy_test` checks actual page placement and that a helper overrides the inherited preference.
 
+The [four-card integration results](../benchmarks/v100-upstream-perf-2026-11-13.md) compare these two options
+on a dual-socket Xeon host with four 16 GB V100 cards. The report includes the unsuccessful stage-local-only
+arm, the selected two-option profile, and its API and conversation-state checks. The
+[external research review](../benchmarks/v100-external-optimization-research-2026-11-13.md) lists further
+experiments and the limits of transferring results from other engines or newer GPUs.
+
 ## What runs on Volta
 
 The flag lowers the floor (CMake and the runtime device check) and replaces two intrinsics Volta lacks. Which kernel runs is

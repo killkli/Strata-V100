@@ -1,4 +1,4 @@
-> **Strata-V100 local integration.** This branch integrates official Strata through `13eedf552` and the V100 fork through `ee96b35e`. V100 source builds use CUDA 12.x with `sm_70` and the experimental build option. See [the four-card review](benchmarks/v100-four-gpu-research-2026-11-13.md).
+> **Strata-V100 local integration.** This branch integrates official Strata through `13eedf552` and the V100 fork through `ee96b35e`. V100 source builds use CUDA 12.x with `sm_70` and the experimental build option. See the [measured integration results](benchmarks/v100-upstream-perf-2026-11-13.md), [external optimization research](benchmarks/v100-external-optimization-research-2026-11-13.md), and [initial four-card review](benchmarks/v100-four-gpu-research-2026-11-13.md).
 
 <p align="center">
   <picture>
