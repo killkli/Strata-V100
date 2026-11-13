@@ -78,6 +78,11 @@ class GuiLayout(unittest.TestCase):
         self.terminal = base / "terminal"
         (self.terminal / "data").mkdir(parents=True)
         shutil.copy(Path(models.__file__).resolve().parents[1] / "data" / "gguf_fingerprints.json", self.terminal / "data")
+        # The wizard needs a source bundle as well as an install folder. Keep its
+        # discovery root inside this fixture even when the checkout has real configs.
+        source = Path(models.__file__).resolve().parents[1]
+        (self.terminal / "setup.py").symlink_to(source / "setup.py")
+        (self.terminal / "tools").symlink_to(source / "tools", target_is_directory=True)
         p = mock.patch.object(models, "ROOT", self.terminal)
         p.start()
         self.addCleanup(p.stop)
@@ -108,7 +113,7 @@ class GuiLayout(unittest.TestCase):
         (self.install.parent / "app-settings.json").write_text(json.dumps({"data_dir": str(self.docs), "installs": [str(self.install)]}))
 
     def catalog(self) -> Catalog:
-        return Catalog(hardware=HW_12)
+        return Catalog(src=self.terminal, hardware=HW_12)
 
     # ---- T04: one answer for list and the wizard
     def test_models_list_finds_the_app_install_by_default(self):
