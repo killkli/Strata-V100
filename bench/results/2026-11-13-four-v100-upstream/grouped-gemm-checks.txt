@@ -1,0 +1,13 @@
+Test project <repo>/build-v100-20261113
+    Start 88: gemm_bf16_parity
+1/4 Test #88: gemm_bf16_parity .................   Passed    4.63 sec
+    Start 96: pf_wmma_parity
+2/4 Test #96: pf_wmma_parity ...................   Passed   30.60 sec
+    Start 97: pf_wmma2_parity
+3/4 Test #97: pf_wmma2_parity ..................   Passed   17.67 sec
+    Start 98: pf_wmma2_n64_parity
+4/4 Test #98: pf_wmma2_n64_parity ..............   Passed   17.59 sec
+
+100% tests passed out of 4
+
+Total Test time (real) =  70.50 sec

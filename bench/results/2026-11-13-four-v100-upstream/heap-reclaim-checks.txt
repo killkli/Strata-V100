@@ -1,0 +1,3 @@
+conversation_heap_test: parked 3 x 512 MiB, RSS 1538 MiB -> 1026 MiB after evicting the oldest (511 MiB returned to the system), eviction took 21.20 ms
+conversation_heap_test: the second eviction took 21.65 ms, RSS now 515 MiB
+conversation_heap_test: ok

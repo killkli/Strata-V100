@@ -1,0 +1,149 @@
+{
+  "created_utc": "2026-11-13T03:24:38.868854+00:00",
+  "scope": "Local four-V100 upstream integration. All timed prompts use zero cache reuse and 256 generated tokens. Warmed files use deterministic case indices3..5 after six workload warmups.",
+  "hardware_and_baseline": {
+    "worktree_commit": "d189e4103619341863f2fba77b28f8a71d32cb61",
+    "deployed_source": "8b4c09bd3d9213b2d47880826c6e818c3140664d",
+    "fork_head": "ee96b35efdf7ddf3626f74c09c1d448be1479e77",
+    "fork_commits_after_deployed": 22,
+    "engine_version": "0.1.45.7",
+    "fork_latest_engine_version": "0.1.45.7",
+    "cuda": "12.9",
+    "driver": "580.178.04",
+    "cpu": "2x Xeon E5-2680 v4, 28 physical cores, AVX2, no AVX512",
+    "numa_ram_kib": [
+      65883200,
+      32972808
+    ],
+    "gpus": [
+      "V100-SXM2-16GB",
+      "V100-SXM2-16GB",
+      "V100-SXM2-16GB",
+      "V100-SXM2-16GB"
+    ],
+    "gpu_numa_nodes": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "gpu_pcie_gen3_widths": [
+      16,
+      16,
+      8,
+      16
+    ],
+    "gpu_power_limits_watts": [
+      200,
+      200,
+      200,
+      200
+    ],
+    "nvlink_in_topology": false,
+    "peer_read_supported_pairs": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "cross_socket_peer_read": "TNS",
+    "iommu_group_types": {
+      "DMA-FQ": 94
+    },
+    "memlock_bytes": 12653568000,
+    "service_running_at_inspection": false,
+    "config": {
+      "gpu": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "layer_split": "11,24,36",
+      "parallel": 2,
+      "max_context": 262144,
+      "kv": "int8",
+      "kv_resident": 32768,
+      "spec": 4,
+      "spec_min_p": 0.5,
+      "resident_experts": true,
+      "vision_gpu": false,
+      "env": {
+        "STRATA_HC_Q8": "1",
+        "STRATA_ROUTE_TAIL_SKIP": "0"
+      }
+    },
+    "native_layer_type_counts": {
+      "IQ3_S/IQ4_NL": 43,
+      "IQ4_XS/Q8_0": 1,
+      "IQ3_S/Q8_0": 4
+    }
+  },
+  "official_upstream": "13eedf552417a6a791a7d13c6597e24300ee3a09",
+  "v100_fork": "ee96b35efdf7ddf3626f74c09c1d448be1479e77",
+  "engine_change_commit": "506a3b825",
+  "package": {
+    "source": "local",
+    "version": "0.1.59.1",
+    "archs": [
+      70
+    ],
+    "vision": "cpu",
+    "toolkit": 12,
+    "cuda_dirs": [
+      "<cuda>/bin",
+      "<cuda>/lib64"
+    ],
+    "src": "55847e8df58f55e7",
+    "vision_src": "587022c4c655ad94",
+    "source_commit": "e28ddb718499da5519b3d7b8af8f32e1646a0e19",
+    "source_dir": "<repo>",
+    "build_dir": "<repo>/build-v100-20261113",
+    "rollback_snapshot": "<private-state>",
+    "repository_head_at_packaging": "e28ddb718499da5519b3d7b8af8f32e1646a0e19",
+    "vision_build_dir": "<repo>/build-vision-20261113",
+    "upstream_commit": "13eedf552417a6a791a7d13c6597e24300ee3a09",
+    "v100_fork_commit": "ee96b35efdf7ddf3626f74c09c1d448be1479e77",
+    "selected_environment": {
+      "STRATA_HOST_NUMA_NODE": "0",
+      "STRATA_NUMA_STAGE_LOCAL": "1"
+    },
+    "binary_sha256": {
+      "strata": "c5bc3b737ecb3d243cc67adacd3f848b08e9714c62b181b4acdbf0fea69ad231",
+      "libstrata_kq.so": "945561aa715d31dc88f90bc1cf3fdca751495d4a53607e20c3471879f6272003",
+      "strata-vision": "2e2f9dc2bc64e2efe9b247cc3536a862097f1c2c164216d9d81e73fa5d7099be"
+    },
+    "experimental_compatibility": {
+      "resident_turboquant": true,
+      "native_disk_conversation_cache": true,
+      "disk_dflash2_state": false
+    }
+  },
+  "baseline_policy": "Original 8b4c09bd engine/server, production feature flags, host allocation preference node0 applied externally, CPU affinity unchanged.",
+  "candidate_policy": "Merged .59.1; STRATA_HOST_NUMA_NODE=0 plus STRATA_NUMA_STAGE_LOCAL=1. New CPU vision reader; rest of production settings preserved.",
+  "excluded_pilot": "The initial disk-enabled baseline-api.json was excluded.",
+  "limits": [
+    "Three paired prompt variants per size, synthetic CSV-to-Python task.",
+    "Answers differ across engine revisions; this is a fixed output-length HTTP comparison, not a token-identical kernel gate.",
+    "Decode changes of a few percent are not treated as a proven gain.",
+    "Exhaustive Terminal UI walks were interrupted/omitted; targeted fixes and other collected tests are recorded separately.",
+    "CUDA sm70 on four homogeneous V100s and CPU vision tested. No HIP, SYCL, Windows or mixed-architecture runtime validation."
+  ],
+  "installed_validation": "pending",
+  "experimental_compatibility": {
+    "resident_turboquant": "CLI and both prompt writers restored; no KV streaming",
+    "native_disk_cache": "Opt-in append-only native tier restored; no DFlash2 state",
+    "production_profile": "INT8 KV; native disk tier disabled"
+  },
+  "final_installed_validation": "pending",
+  "tq6_compat_validation": "pending",
+  "native_l3_followon": {
+    "restart_passed": true
+  },
+  "timed_data_source_commit_before_compat": "1c387fe0e7799e66a94f10879d5620dc6fa04c5c",
+  "installed_before_compat_source_commit": "1c387fe0e7799e66a94f10879d5620dc6fa04c5c"
+}

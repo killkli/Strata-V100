@@ -1,0 +1,7 @@
+Test project <repo>/build-v100-20261113
+    Start 7: numa_policy_test
+1/1 Test #7: numa_policy_test .................   Passed    0.02 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.02 sec

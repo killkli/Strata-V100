@@ -1,0 +1,389 @@
+{
+  "scenario": "reuse",
+  "spec": 1,
+  "paragraphs": 16,
+  "disk": {
+    "path": "<private-state>/l3-reuse-store",
+    "gib": 2,
+    "slots": 0,
+    "min_free_mib": 0
+  },
+  "layer_split": {
+    "configured": true,
+    "baseline_in_args": true,
+    "disk_in_args": [
+      true
+    ]
+  },
+  "prompt_tokens": {
+    "A": 249,
+    "B": 61,
+    "continuation": 271
+  },
+  "baseline": {
+    "info": {
+      "version": "0.1.59.1",
+      "logit_bias": 1,
+      "context": 262144,
+      "kv": "int8",
+      "kv_resident": 32768,
+      "expert_slots": 21295,
+      "expert_cache_mib": 49186,
+      "expert_slots_primary": 5392,
+      "expert_cache_primary_mib": 12906,
+      "spec": 2,
+      "mtp_max": 1,
+      "lookup": 0,
+      "vram_free_mib": 708,
+      "cvec": 0,
+      "arena_mib": 22928,
+      "pool_workers": 26,
+      "pcie_frac": "0.10",
+      "spec_min_p": "0.00",
+      "conversation_cache_mib": 0,
+      "conversation_cache_slots": 4,
+      "conversation_cache_min_free_mib": 2560,
+      "conversation_cache_min_tokens": 0,
+      "conversation_cache_disk": 0,
+      "conversation_cache_disk_gib": 0,
+      "conversation_cache_disk_records": 0,
+      "conversation_cache_disk_bytes": 0,
+      "tail_role_token": -1,
+      "vram_elastic": 0,
+      "prefill_cap": 8192,
+      "prefill_stages": 4,
+      "stream_all_min": 1024,
+      "prefill_pipe": 0,
+      "batch_slots": 2,
+      "slot_cache": 1,
+      "batch_groups": 2,
+      "engine": "0.1.59.1",
+      "drafting": "mtp",
+      "drafting_note": "Drafting: MTP (DFlash2 isn't available in this mode)"
+    },
+    "records": [
+      {
+        "name": "A",
+        "ids": [
+          40
+        ],
+        "generated": 1,
+        "prompt_tokens": 249,
+        "prompt_ms": 1561.8,
+        "decode_ms": 40.1,
+        "finish": "length",
+        "drafts_accepted": 0,
+        "drafts_offered": 0,
+        "reused": 0,
+        "hits": 471,
+        "lookups": 480,
+        "ram_blobs": 9,
+        "file_blobs": 0,
+        "file_mb": 0.0,
+        "prompt_read": 249,
+        "offloaded": 0,
+        "chunk": 242,
+        "experts_streamed": 1489,
+        "state": {
+          "L": "249",
+          "gdn": "2d3958d68800194d",
+          "ple": "8f521a4a919a6df8",
+          "tail": "bb6a4369e2da731a",
+          "dead": "2845b0d88b683c7c",
+          "pooled": "8a83ab58f454d3d0",
+          "pooled_full": "d85015a52d632153",
+          "kv": "6448322770b70315",
+          "ple_prev": "248069,271"
+        }
+      },
+      {
+        "name": "A+",
+        "ids": [
+          10025,
+          248046
+        ],
+        "generated": 2,
+        "prompt_tokens": 271,
+        "prompt_ms": 892.4,
+        "decode_ms": 150.0,
+        "finish": "stop",
+        "drafts_accepted": 0,
+        "drafts_offered": 0,
+        "reused": 249,
+        "hits": 925,
+        "lookups": 960,
+        "ram_blobs": 35,
+        "file_blobs": 0,
+        "file_mb": 0.0,
+        "prompt_read": 22,
+        "offloaded": 0,
+        "chunk": 0,
+        "experts_streamed": 0,
+        "state": {
+          "L": "272",
+          "gdn": "f1ec971258f6b7a1",
+          "ple": "db34993f11ec49e5",
+          "tail": "bd9866060b94f05f",
+          "dead": "2845b0d88b683c7c",
+          "pooled": "5a6bc5e3163d1521",
+          "pooled_full": "98a965d111809eba",
+          "kv": "1cba6f658316ca01",
+          "ple_prev": "271,10025"
+        }
+      }
+    ],
+    "hash_count": 2,
+    "log": {
+      "startups": [],
+      "parked": [],
+      "reads": [],
+      "restored": [],
+      "misses": [],
+      "corrupt": [],
+      "discarded": [],
+      "shape_discards": [],
+      "read_failures": [],
+      "skips": [],
+      "write_failures": [],
+      "cannot_open": []
+    },
+    "log_path": "<private-state>/l3-reuse-gate/baseline.log"
+  },
+  "disk_engines": [
+    {
+      "label": "disk-0",
+      "info": {
+        "version": "0.1.59.1",
+        "logit_bias": 1,
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 21295,
+        "expert_cache_mib": 49186,
+        "expert_slots_primary": 5392,
+        "expert_cache_primary_mib": 12906,
+        "spec": 2,
+        "mtp_max": 1,
+        "lookup": 0,
+        "vram_free_mib": 708,
+        "cvec": 0,
+        "arena_mib": 22928,
+        "pool_workers": 26,
+        "pcie_frac": "0.10",
+        "spec_min_p": "0.00",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "conversation_cache_min_tokens": 0,
+        "conversation_cache_disk": 1,
+        "conversation_cache_disk_gib": 2,
+        "conversation_cache_disk_records": 0,
+        "conversation_cache_disk_bytes": 0,
+        "tail_role_token": -1,
+        "vram_elastic": 0,
+        "prefill_cap": 8192,
+        "prefill_stages": 4,
+        "stream_all_min": 1024,
+        "prefill_pipe": 0,
+        "batch_slots": 2,
+        "slot_cache": 1,
+        "batch_groups": 2,
+        "engine": "0.1.59.1",
+        "drafting": "mtp",
+        "drafting_note": ""
+      },
+      "records": [
+        {
+          "name": "A",
+          "ids": [
+            40
+          ],
+          "generated": 1,
+          "prompt_tokens": 249,
+          "prompt_ms": 2044.9,
+          "decode_ms": 39.6,
+          "finish": "length",
+          "drafts_accepted": 0,
+          "drafts_offered": 0,
+          "reused": 0,
+          "hits": 471,
+          "lookups": 480,
+          "ram_blobs": 9,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 249,
+          "offloaded": 0,
+          "chunk": 242,
+          "experts_streamed": 1489,
+          "state": {
+            "L": "249",
+            "gdn": "2d3958d68800194d",
+            "ple": "8f521a4a919a6df8",
+            "tail": "bb6a4369e2da731a",
+            "dead": "2845b0d88b683c7c",
+            "pooled": "8a83ab58f454d3d0",
+            "pooled_full": "d85015a52d632153",
+            "kv": "6448322770b70315",
+            "ple_prev": "248069,271"
+          }
+        },
+        {
+          "name": "B",
+          "ids": [
+            10025
+          ],
+          "generated": 1,
+          "prompt_tokens": 61,
+          "prompt_ms": 989.2,
+          "decode_ms": 18.9,
+          "finish": "length",
+          "drafts_accepted": 0,
+          "drafts_offered": 0,
+          "reused": 0,
+          "hits": 461,
+          "lookups": 480,
+          "ram_blobs": 19,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 61,
+          "offloaded": 0,
+          "chunk": 0,
+          "experts_streamed": 0,
+          "state": {
+            "L": "61",
+            "gdn": "cb9657c16272d8f3",
+            "ple": "3bdee9d7cb2e468d",
+            "tail": "31a8c6142f9f7c20",
+            "dead": "0f895ff1e80a7a81",
+            "pooled": "4dc1d3d483a00fb8",
+            "pooled_full": "0ca7989c812a6dfa",
+            "kv": "dd2457b13aef7ee3",
+            "ple_prev": "248069,271"
+          }
+        },
+        {
+          "name": "A+",
+          "ids": [
+            10025,
+            248046
+          ],
+          "generated": 2,
+          "prompt_tokens": 271,
+          "prompt_ms": 1659.8,
+          "decode_ms": 39.0,
+          "finish": "stop",
+          "drafts_accepted": 0,
+          "drafts_offered": 0,
+          "reused": 249,
+          "hits": 925,
+          "lookups": 960,
+          "ram_blobs": 35,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 22,
+          "offloaded": 0,
+          "chunk": 0,
+          "experts_streamed": 0,
+          "state": {
+            "L": "272",
+            "gdn": "f1ec971258f6b7a1",
+            "ple": "db34993f11ec49e5",
+            "tail": "bd9866060b94f05f",
+            "dead": "2845b0d88b683c7c",
+            "pooled": "5a6bc5e3163d1521",
+            "pooled_full": "98a965d111809eba",
+            "kv": "1cba6f658316ca01",
+            "ple_prev": "271,10025"
+          }
+        }
+      ],
+      "hash_count": 3,
+      "log": {
+        "startups": [
+          {
+            "directory": "<private-state>/l3-reuse-store",
+            "gib": 2,
+            "recovered": 0,
+            "bytes": 0,
+            "evictions": 0,
+            "corruptions": 0
+          }
+        ],
+        "parked": [
+          {
+            "tokens": 249,
+            "ms": 835.9,
+            "records": 1,
+            "bytes": 242191892,
+            "evictions": 0,
+            "corruptions": 0,
+            "snapshot_bytes": 242201192
+          },
+          {
+            "tokens": 61,
+            "ms": 575.8,
+            "records": 2,
+            "bytes": 481511144,
+            "evictions": 0,
+            "corruptions": 0,
+            "snapshot_bytes": 239325544
+          }
+        ],
+        "reads": [
+          {
+            "name": "cda46218babbde6b6-00000000000000f9",
+            "stages": 4,
+            "ms": 784.6,
+            "tokens": 249,
+            "records": 1,
+            "bytes": 242191892,
+            "hits": 1,
+            "misses": 2
+          }
+        ],
+        "restored": [
+          {
+            "tokens": 249,
+            "source": "live",
+            "ms": 486.9,
+            "records": 2,
+            "bytes": 481511144,
+            "hits": 1,
+            "misses": 2
+          }
+        ],
+        "misses": [
+          {
+            "ram_resume": 0,
+            "ms": 0.0,
+            "hits": 0,
+            "misses": 1,
+            "records": 0,
+            "bytes": 0,
+            "evictions": 0,
+            "corruptions": 0
+          },
+          {
+            "ram_resume": 0,
+            "ms": 0.0,
+            "hits": 0,
+            "misses": 2,
+            "records": 0,
+            "bytes": 0,
+            "evictions": 0,
+            "corruptions": 0
+          }
+        ],
+        "corrupt": [],
+        "discarded": [],
+        "shape_discards": [],
+        "read_failures": [],
+        "skips": [],
+        "write_failures": [],
+        "cannot_open": []
+      },
+      "log_path": "<private-state>/l3-reuse-gate/disk-0.log"
+    }
+  ],
+  "corruption": null
+}

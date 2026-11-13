@@ -1,0 +1,447 @@
+{
+  "baseline-control": {
+    "api_checks": [
+      {
+        "name": "health",
+        "passed": true,
+        "seconds": 0.012
+      },
+      {
+        "name": "model_alias",
+        "passed": true,
+        "seconds": 0.002
+      },
+      {
+        "name": "authentication_required",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "openai_nonstream",
+        "passed": true,
+        "seconds": 1.805
+      },
+      {
+        "name": "openai_sse_and_usage",
+        "passed": true,
+        "seconds": 7.715
+      },
+      {
+        "name": "openai_tool_call",
+        "passed": true,
+        "seconds": 3.545
+      },
+      {
+        "name": "openai_tool_result_roundtrip",
+        "passed": true,
+        "seconds": 2.023
+      },
+      {
+        "name": "anthropic_messages",
+        "passed": true,
+        "seconds": 2.811
+      },
+      {
+        "name": "responses_api",
+        "passed": true,
+        "seconds": 1.527
+      },
+      {
+        "name": "two_simultaneous_clients",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "two_streams_keep_distinct_output",
+        "passed": true,
+        "seconds": 0
+      }
+    ],
+    "long_and_vision": [
+      {
+        "name": "long_context_needle_over_60k",
+        "passed": true,
+        "seconds": 24.287,
+        "usage": {
+          "prompt_tokens": 66444,
+          "completion_tokens": 7,
+          "total_tokens": 66451,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": "C7K9P2"
+      },
+      {
+        "name": "existing_vision_encoder_via_openai_api",
+        "passed": true,
+        "seconds": 1.877,
+        "usage": {
+          "prompt_tokens": 79,
+          "completion_tokens": 2,
+          "total_tokens": 81,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": " red"
+      }
+    ]
+  },
+  "candidate-default": {
+    "api_checks": [
+      {
+        "name": "health",
+        "passed": true,
+        "seconds": 0.006
+      },
+      {
+        "name": "model_alias",
+        "passed": true,
+        "seconds": 0.002
+      },
+      {
+        "name": "authentication_required",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "openai_nonstream",
+        "passed": true,
+        "seconds": 0.536
+      },
+      {
+        "name": "openai_sse_and_usage",
+        "passed": true,
+        "seconds": 1.539
+      },
+      {
+        "name": "openai_tool_call",
+        "passed": true,
+        "seconds": 1.864
+      },
+      {
+        "name": "openai_tool_result_roundtrip",
+        "passed": true,
+        "seconds": 1.015
+      },
+      {
+        "name": "anthropic_messages",
+        "passed": true,
+        "seconds": 0.877
+      },
+      {
+        "name": "responses_api",
+        "passed": true,
+        "seconds": 0.839
+      },
+      {
+        "name": "two_simultaneous_clients",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "two_streams_keep_distinct_output",
+        "passed": true,
+        "seconds": 0
+      }
+    ],
+    "long_and_vision": [
+      {
+        "name": "long_context_needle_over_60k",
+        "passed": true,
+        "seconds": 21.603,
+        "usage": {
+          "prompt_tokens": 66444,
+          "completion_tokens": 7,
+          "total_tokens": 66451,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": "C7K9P2"
+      },
+      {
+        "name": "existing_vision_encoder_via_openai_api",
+        "passed": true,
+        "seconds": 4.209,
+        "usage": {
+          "prompt_tokens": 79,
+          "completion_tokens": 2,
+          "total_tokens": 81,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": " red"
+      }
+    ]
+  },
+  "stage-local": {
+    "api_checks": [
+      {
+        "name": "health",
+        "passed": true,
+        "seconds": 0.012
+      },
+      {
+        "name": "model_alias",
+        "passed": true,
+        "seconds": 0.001
+      },
+      {
+        "name": "authentication_required",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "openai_nonstream",
+        "passed": true,
+        "seconds": 1.036
+      },
+      {
+        "name": "openai_sse_and_usage",
+        "passed": true,
+        "seconds": 1.964
+      },
+      {
+        "name": "openai_tool_call",
+        "passed": true,
+        "seconds": 2.587
+      },
+      {
+        "name": "openai_tool_result_roundtrip",
+        "passed": true,
+        "seconds": 1.009
+      },
+      {
+        "name": "anthropic_messages",
+        "passed": true,
+        "seconds": 0.987
+      },
+      {
+        "name": "responses_api",
+        "passed": true,
+        "seconds": 0.881
+      },
+      {
+        "name": "two_simultaneous_clients",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "two_streams_keep_distinct_output",
+        "passed": true,
+        "seconds": 0
+      }
+    ],
+    "long_and_vision": [
+      {
+        "name": "long_context_needle_over_60k",
+        "passed": true,
+        "seconds": 20.908,
+        "usage": {
+          "prompt_tokens": 66444,
+          "completion_tokens": 7,
+          "total_tokens": 66451,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": "C7K9P2"
+      },
+      {
+        "name": "existing_vision_encoder_via_openai_api",
+        "passed": true,
+        "seconds": 2.825,
+        "usage": {
+          "prompt_tokens": 79,
+          "completion_tokens": 2,
+          "total_tokens": 81,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": " red"
+      }
+    ]
+  },
+  "host-node0": {
+    "api_checks": [
+      {
+        "name": "health",
+        "passed": true,
+        "seconds": 0.14
+      },
+      {
+        "name": "model_alias",
+        "passed": true,
+        "seconds": 0.002
+      },
+      {
+        "name": "authentication_required",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "openai_nonstream",
+        "passed": true,
+        "seconds": 1.452
+      },
+      {
+        "name": "openai_sse_and_usage",
+        "passed": true,
+        "seconds": 5.686
+      },
+      {
+        "name": "openai_tool_call",
+        "passed": true,
+        "seconds": 3.219
+      },
+      {
+        "name": "openai_tool_result_roundtrip",
+        "passed": true,
+        "seconds": 1.93
+      },
+      {
+        "name": "anthropic_messages",
+        "passed": true,
+        "seconds": 2.91
+      },
+      {
+        "name": "responses_api",
+        "passed": true,
+        "seconds": 1.577
+      },
+      {
+        "name": "two_simultaneous_clients",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "two_streams_keep_distinct_output",
+        "passed": true,
+        "seconds": 0
+      }
+    ],
+    "long_and_vision": [
+      {
+        "name": "long_context_needle_over_60k",
+        "passed": true,
+        "seconds": 21.839,
+        "usage": {
+          "prompt_tokens": 66444,
+          "completion_tokens": 7,
+          "total_tokens": 66451,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": "C7K9P2"
+      },
+      {
+        "name": "existing_vision_encoder_via_openai_api",
+        "passed": true,
+        "seconds": 2.635,
+        "usage": {
+          "prompt_tokens": 79,
+          "completion_tokens": 2,
+          "total_tokens": 81,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": " red"
+      }
+    ]
+  },
+  "stage-local-host0": {
+    "api_checks": [
+      {
+        "name": "health",
+        "passed": true,
+        "seconds": 0.008
+      },
+      {
+        "name": "model_alias",
+        "passed": true,
+        "seconds": 0.002
+      },
+      {
+        "name": "authentication_required",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "openai_nonstream",
+        "passed": true,
+        "seconds": 0.487
+      },
+      {
+        "name": "openai_sse_and_usage",
+        "passed": true,
+        "seconds": 1.747
+      },
+      {
+        "name": "openai_tool_call",
+        "passed": true,
+        "seconds": 1.896
+      },
+      {
+        "name": "openai_tool_result_roundtrip",
+        "passed": true,
+        "seconds": 1.052
+      },
+      {
+        "name": "anthropic_messages",
+        "passed": true,
+        "seconds": 0.938
+      },
+      {
+        "name": "responses_api",
+        "passed": true,
+        "seconds": 0.877
+      },
+      {
+        "name": "two_simultaneous_clients",
+        "passed": true,
+        "seconds": 0
+      },
+      {
+        "name": "two_streams_keep_distinct_output",
+        "passed": true,
+        "seconds": 0
+      }
+    ],
+    "long_and_vision": [
+      {
+        "name": "long_context_needle_over_60k",
+        "passed": true,
+        "seconds": 20.086,
+        "usage": {
+          "prompt_tokens": 66444,
+          "completion_tokens": 7,
+          "total_tokens": 66451,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": "C7K9P2"
+      },
+      {
+        "name": "existing_vision_encoder_via_openai_api",
+        "passed": true,
+        "seconds": 4.139,
+        "usage": {
+          "prompt_tokens": 79,
+          "completion_tokens": 2,
+          "total_tokens": 81,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "answer": " red"
+      }
+    ]
+  }
+}

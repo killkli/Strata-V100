@@ -1,0 +1,16 @@
+{
+  "purpose": "Discard only unpinned cached pages of the selected GGUF shards between stopped experiments; model bytes unchanged. This prevents an earlier node1 page cache from overriding the next run allocation preference.",
+  "before_MemFree_MiB": {
+    "0": 42118.42578125,
+    "1": 5973.5625
+  },
+  "after_MemFree_MiB": {
+    "0": 63108.125,
+    "1": 31076.59765625
+  },
+  "files": [
+    "Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+    "Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf",
+    "Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf"
+  ]
+}

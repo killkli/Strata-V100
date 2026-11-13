@@ -1,0 +1,207 @@
+{
+  "baseline": "baseline-control-after-six-warmup-requests",
+  "output_tokens": 256,
+  "prompt_reuse": 0,
+  "runs": [
+    {
+      "label": "baseline-control-after-six-warmup-requests",
+      "file": "baseline-warmed.json",
+      "contexts": [
+        {
+          "prompt_tokens": 2105,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 715.8,
+            "decode_tok_s": 107.4,
+            "wall_seconds": 5.394
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 0.0,
+            "decode_tok_s": 0.0,
+            "wall_seconds": 0.0
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 0.0,
+            "decode_tok_s": 0.0,
+            "wall_seconds": 0.0
+          },
+          "answer_hash_matches": 3,
+          "median_drafts": 224,
+          "median_accepted_drafts": 175
+        },
+        {
+          "prompt_tokens": 8576,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 1110.4,
+            "decode_tok_s": 106.5,
+            "wall_seconds": 10.206
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 0.0,
+            "decode_tok_s": 0.0,
+            "wall_seconds": 0.0
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 0.0,
+            "decode_tok_s": 0.0,
+            "wall_seconds": 0.0
+          },
+          "answer_hash_matches": 3,
+          "median_drafts": 218,
+          "median_accepted_drafts": 175
+        }
+      ]
+    },
+    {
+      "label": "host-node0-after-six-warmup-requests",
+      "file": "host-preference-warmed.json",
+      "contexts": [
+        {
+          "prompt_tokens": 2105,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 798.4,
+            "decode_tok_s": 109.2,
+            "wall_seconds": 4.993
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 11.539536183291421,
+            "decode_tok_s": 1.6759776536312776,
+            "wall_seconds": -7.434186132740073
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 10.796558423535929,
+            "decode_tok_s": 2.0560747663551426,
+            "wall_seconds": -7.279480037140196
+          },
+          "answer_hash_matches": 0,
+          "median_drafts": 231,
+          "median_accepted_drafts": 171
+        },
+        {
+          "prompt_tokens": 8576,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 1153.2,
+            "decode_tok_s": 107.8,
+            "wall_seconds": 9.793
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 3.854466858789629,
+            "decode_tok_s": 1.2206572769952961,
+            "wall_seconds": -4.046639231824423
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 3.854466858789629,
+            "decode_tok_s": 4.255319148936154,
+            "wall_seconds": -3.839355852317361
+          },
+          "answer_hash_matches": 0,
+          "median_drafts": 227,
+          "median_accepted_drafts": 170
+        }
+      ]
+    },
+    {
+      "label": "stage-local-host0-after-six-warmup-requests",
+      "file": "gpu-local-warmed.json",
+      "contexts": [
+        {
+          "prompt_tokens": 2105,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 843.7,
+            "decode_tok_s": 109.6,
+            "wall_seconds": 4.87
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 17.868119586476695,
+            "decode_tok_s": 2.048417132215996,
+            "wall_seconds": -9.714497589914718
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 17.638079378295867,
+            "decode_tok_s": 2.048417132215996,
+            "wall_seconds": -9.848204368752311
+          },
+          "answer_hash_matches": 0,
+          "median_drafts": 224,
+          "median_accepted_drafts": 171
+        },
+        {
+          "prompt_tokens": 8576,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 1202.9,
+            "decode_tok_s": 109.7,
+            "wall_seconds": 9.486
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 8.330331412103753,
+            "decode_tok_s": 3.0046948356807546,
+            "wall_seconds": -7.054673721340377
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 8.213256484149834,
+            "decode_tok_s": 3.0985915492957705,
+            "wall_seconds": -7.054673721340377
+          },
+          "answer_hash_matches": 0,
+          "median_drafts": 223,
+          "median_accepted_drafts": 170
+        }
+      ]
+    },
+    {
+      "label": "installed-after-six-warmup-requests",
+      "file": "installed-before-compat-warmed.json",
+      "contexts": [
+        {
+          "prompt_tokens": 2105,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 844.0,
+            "decode_tok_s": 113.9,
+            "wall_seconds": 4.74
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 17.91003073484214,
+            "decode_tok_s": 6.052141527001864,
+            "wall_seconds": -12.124582869855393
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 17.679711351651406,
+            "decode_tok_s": 6.448598130841132,
+            "wall_seconds": -11.977715877437323
+          },
+          "answer_hash_matches": 0,
+          "median_drafts": 223,
+          "median_accepted_drafts": 175
+        },
+        {
+          "prompt_tokens": 8576,
+          "cases": 3,
+          "median": {
+            "prompt_tok_s": 1207.3,
+            "decode_tok_s": 109.1,
+            "wall_seconds": 9.466
+          },
+          "median_ratio_change_percent": {
+            "prompt_tok_s": 8.726585014409217,
+            "decode_tok_s": 2.4413145539906145,
+            "wall_seconds": -7.250636880266514
+          },
+          "paired_median_change_percent": {
+            "prompt_tok_s": 8.726585014409217,
+            "decode_tok_s": 2.4413145539906145,
+            "wall_seconds": -7.250636880266514
+          },
+          "answer_hash_matches": 0,
+          "median_drafts": 223,
+          "median_accepted_drafts": 171
+        }
+      ]
+    }
+  ]
+}

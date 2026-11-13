@@ -1,0 +1,105 @@
+{
+  "passed": true,
+  "rounds": [
+    {
+      "round": 0,
+      "replies": [
+        {
+          "client": 0,
+          "content": "CACHE_ALDER_72914",
+          "seconds": 6.867,
+          "usage": {
+            "prompt_tokens": 3387,
+            "completion_tokens": 10,
+            "total_tokens": 3397,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          },
+          "done": true
+        },
+        {
+          "client": 1,
+          "content": "CACHE_BIRCH_83526",
+          "seconds": 7.025,
+          "usage": {
+            "prompt_tokens": 3388,
+            "completion_tokens": 11,
+            "total_tokens": 3399,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            }
+          },
+          "done": true
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "replies": [
+        {
+          "client": 0,
+          "content": "CACHE_ALDER_72914",
+          "seconds": 0.662,
+          "usage": {
+            "prompt_tokens": 3420,
+            "completion_tokens": 10,
+            "total_tokens": 3430,
+            "prompt_tokens_details": {
+              "cached_tokens": 3396
+            }
+          },
+          "done": true
+        },
+        {
+          "client": 1,
+          "content": "CACHE_BIRCH_83526",
+          "seconds": 0.652,
+          "usage": {
+            "prompt_tokens": 3422,
+            "completion_tokens": 11,
+            "total_tokens": 3433,
+            "prompt_tokens_details": {
+              "cached_tokens": 3398
+            }
+          },
+          "done": true
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "replies": [
+        {
+          "client": 0,
+          "content": "CACHE_ALDER_72914",
+          "seconds": 1.013,
+          "usage": {
+            "prompt_tokens": 3423,
+            "completion_tokens": 10,
+            "total_tokens": 3433,
+            "prompt_tokens_details": {
+              "cached_tokens": 3392
+            }
+          },
+          "done": true
+        },
+        {
+          "client": 1,
+          "content": "CACHE_BIRCH_83526",
+          "seconds": 1.118,
+          "usage": {
+            "prompt_tokens": 3425,
+            "completion_tokens": 11,
+            "total_tokens": 3436,
+            "prompt_tokens_details": {
+              "cached_tokens": 3388
+            }
+          },
+          "done": true
+        }
+      ]
+    }
+  ],
+  "reuse_observed": true
+}

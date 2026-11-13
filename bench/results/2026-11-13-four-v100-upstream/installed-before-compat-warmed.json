@@ -1,0 +1,183 @@
+{
+  "label": "installed-after-six-warmup-requests",
+  "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+  "repeat_start": 3,
+  "repeats": 3,
+  "checks": [],
+  "benchmarks": [
+    {
+      "lines": 90,
+      "repeat": 3,
+      "wall_seconds": 4.78,
+      "usage": {
+        "prompt_tokens": 2105,
+        "completion_tokens": 256,
+        "total_tokens": 2361,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 2105,
+        "prompt_ms": 2512.7,
+        "prompt_per_token_ms": 1.194,
+        "prompt_per_second": 837.7,
+        "predicted_n": 256,
+        "predicted_ms": 2251.9,
+        "predicted_per_token_ms": 8.796,
+        "predicted_per_second": 113.7,
+        "draft_n": 223,
+        "draft_n_accepted": 175
+      },
+      "content": "```python\nimport statistics\nfrom typing import List, Dict, Tuple\n\n\ndef parse_and_summarize(records: List[str]) -> Dict[str, any]:\n    \"\"\"\n    Parse key-value records and compute summary statistics.\n    \n    Args:\n        records: A list of strings in the format \"row_N: key=K, value=V\"\n        \n    Returns:\n        A dictionary containing:\n        - 'count': number of parsed records\n        - 'keys': list of all keys\n        - 'values': list of all values\n        - 'key_stats': dict with min, max, mean, median, std for keys\n        - 'value_stats': dict with min, max, mean, median, std for values\n        - 'parse_errors': list of rows that failed to parse\n    \"\"\"\n    import re\n    \n    keys = []\n    values = []\n    parse_errors = []\n    \n    # Regex to match the pattern: row_N: key=K, value=V\n    pattern = re.compile(r'row_\\d+:\\s*key=(\\d+),\\s*value=(\\d+)')\n    \n    for i, record in enumerate(records):\n        match",
+      "answer_sha256": "c43e6fd82bcef747db6ecaf7996e6fba0a89158af25fe704574f94060a257a1b",
+      "finish_reason": "length"
+    },
+    {
+      "lines": 90,
+      "repeat": 4,
+      "wall_seconds": 4.694,
+      "usage": {
+        "prompt_tokens": 2105,
+        "completion_tokens": 256,
+        "total_tokens": 2361,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 2105,
+        "prompt_ms": 2494.2,
+        "prompt_per_token_ms": 1.185,
+        "prompt_per_second": 844.0,
+        "predicted_n": 256,
+        "predicted_ms": 2189.6,
+        "predicted_per_token_ms": 8.553,
+        "predicted_per_second": 116.9,
+        "draft_n": 220,
+        "draft_n_accepted": 177
+      },
+      "content": "```python\nimport statistics\nfrom typing import List, Dict, Any\n\n\ndef parse_and_summarize(records: List[str]) -> Dict[str, Any]:\n    \"\"\"\n    Parse key-value records and compute summary statistics.\n    \n    Args:\n        records: A list of strings, each in the format \"row_N: key=K, value=V\"\n        \n    Returns:\n        A dictionary containing:\n        - 'count': number of parsed records\n        - 'keys': list of all keys (integers)\n        - 'values': list of all values (integers)\n        - 'key_stats': dict with min, max, mean, median, std for keys\n        - 'value_stats': dict with min, max, mean, median, std for values\n    \"\"\"\n    keys = []\n    values = []\n    \n    for record in records:\n        # Parse each line like \"row_0: key=577990, value=593072\"\n        # Split by ': ' to separate row label from the rest\n        if ': ' not in record:\n            continue\n        _, remainder = record.split(': ', 1)\n        \n",
+      "answer_sha256": "64c83e91f340c58fd1fbac2ae7d713432a5aed4e6c6b3257338a6e0296907f66",
+      "finish_reason": "length"
+    },
+    {
+      "lines": 90,
+      "repeat": 5,
+      "wall_seconds": 4.74,
+      "usage": {
+        "prompt_tokens": 2105,
+        "completion_tokens": 256,
+        "total_tokens": 2361,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 2105,
+        "prompt_ms": 2482.4,
+        "prompt_per_token_ms": 1.179,
+        "prompt_per_second": 848.0,
+        "predicted_n": 256,
+        "predicted_ms": 2247.7,
+        "predicted_per_token_ms": 8.78,
+        "predicted_per_second": 113.9,
+        "draft_n": 226,
+        "draft_n_accepted": 175
+      },
+      "content": "```python\nimport statistics\nfrom typing import List, Dict, Any\n\n\ndef parse_and_summarize_records(records: List[str]) -> Dict[str, Any]:\n    \"\"\"\n    Parse key-value records and compute summary statistics.\n    \n    Args:\n        records: A list of strings, each in the format \"row_N: key=K, value=V\"\n        \n    Returns:\n        A dictionary containing:\n        - 'count': number of records parsed\n        - 'keys': list of all keys (integers)\n        - 'values': list of all values (integers)\n        - 'key_stats': dict with min, max, mean, median, std for keys\n        - 'value_stats': dict with min, max, mean, median, std for values\n        - 'key_value_pairs': list of tuples (key, value)\n    \"\"\"\n    keys = []\n    values = []\n    \n    for record in records:\n        # Parse each line like \"row_0: key=467614, value=558799\"\n        # Split by ': ' to separate row label from the rest\n        if ': ' not in record:",
+      "answer_sha256": "c0606d72035cab8ec8bd32918ce6971675662ac51aefa2d037d8797d6e8bbd8f",
+      "finish_reason": "length"
+    },
+    {
+      "lines": 360,
+      "repeat": 3,
+      "wall_seconds": 9.396,
+      "usage": {
+        "prompt_tokens": 8576,
+        "completion_tokens": 256,
+        "total_tokens": 8832,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 8576,
+        "prompt_ms": 7071.6,
+        "prompt_per_token_ms": 0.825,
+        "prompt_per_second": 1212.7,
+        "predicted_n": 256,
+        "predicted_ms": 2307.7,
+        "predicted_per_token_ms": 9.014,
+        "predicted_per_second": 110.9,
+        "draft_n": 213,
+        "draft_n_accepted": 173
+      },
+      "content": "```python\nimport statistics\nfrom typing import List, Dict, Any\n\n\ndef parse_and_summarize_records(records: List[Dict[str, int]]) -> Dict[str, Any]:\n    \"\"\"\n    Parse a list of records containing 'key' and 'value' fields and compute\n    comprehensive statistical summaries for both keys and values.\n\n    Args:\n        records: A list of dictionaries, each with 'key' and 'value' integer fields.\n\n    Returns:\n        A dictionary containing summary statistics for keys and values, including:\n        - count: number of records\n        - min, max, mean, median, stdev (standard deviation)\n        - sum\n        - range (max - min)\n        - variance\n        - quartiles (Q1, Q3)\n    \"\"\"\n    if not records:\n        return {\n            \"count\": 0,\n            \"keys\": {},\n            \"values\": {}\n        }\n\n    # Extract keys and values into separate lists\n    keys = [record[\"key\"] for record in records]\n    values = [record[\"value\"] for record in records]\n\n    def compute_stats(data: List[int]) -> Dict[str, Any]:",
+      "answer_sha256": "dca13d4eaf75e5125c5dd6dec97f258a67e1be821adbf795b677b901b177ca19",
+      "finish_reason": "length"
+    },
+    {
+      "lines": 360,
+      "repeat": 4,
+      "wall_seconds": 9.466,
+      "usage": {
+        "prompt_tokens": 8576,
+        "completion_tokens": 256,
+        "total_tokens": 8832,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 8576,
+        "prompt_ms": 7103.5,
+        "prompt_per_token_ms": 0.828,
+        "prompt_per_second": 1207.3,
+        "predicted_n": 256,
+        "predicted_ms": 2345.6,
+        "predicted_per_token_ms": 9.162,
+        "predicted_per_second": 109.1,
+        "draft_n": 223,
+        "draft_n_accepted": 171
+      },
+      "content": "```python\nimport statistics\nfrom typing import List, Dict, Any\n\n\ndef parse_and_summarize_records(records: List[Dict[str, int]]) -> Dict[str, Any]:\n    \"\"\"\n    Parse a list of records containing 'key' and 'value' fields and compute\n    comprehensive statistical summaries for both keys and values.\n\n    Args:\n        records: A list of dictionaries, each with 'key' and 'value' integer fields.\n\n    Returns:\n        A dictionary containing summary statistics for keys and values, including:\n        - count: number of records\n        - min, max, mean, median, stdev (if applicable)\n        - sum\n        - range\n        - quartiles (Q1, Q3)\n        - IQR (Interquartile Range)\n    \"\"\"\n    if not records:\n        return {\n            \"keys\": {},\n            \"values\": {},\n            \"count\": 0\n        }\n\n    keys = [r[\"key\"] for r in records]\n    values = [r[\"value\"] for r in records]\n\n    def compute_stats(data: List[int]) -> Dict[str, Any]:\n        \"\"\"Compute statistical summary for a",
+      "answer_sha256": "cf4260f2a8fa6792f8558301c9aa693c33f100a8d8e39f7e4f5eb94893f77204",
+      "finish_reason": "length"
+    },
+    {
+      "lines": 360,
+      "repeat": 5,
+      "wall_seconds": 9.54,
+      "usage": {
+        "prompt_tokens": 8576,
+        "completion_tokens": 256,
+        "total_tokens": 8832,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 8576,
+        "prompt_ms": 7138.2,
+        "prompt_per_token_ms": 0.832,
+        "prompt_per_second": 1201.4,
+        "predicted_n": 256,
+        "predicted_ms": 2385.8,
+        "predicted_per_token_ms": 9.32,
+        "predicted_per_second": 107.3,
+        "draft_n": 229,
+        "draft_n_accepted": 169
+      },
+      "content": "```python\nimport statistics\nfrom typing import List, Dict, Any\n\n\ndef parse_and_summarize_records(records: List[str]) -> Dict[str, Any]:\n    \"\"\"\n    Parse a list of record strings in the format 'row_N: key=K, value=V'\n    and compute summary statistics for keys and values.\n\n    Args:\n        records: A list of strings, each representing a row with key-value pairs.\n\n    Returns:\n        A dictionary containing:\n        - count: number of parsed records\n        - key_stats: dict with min, max, mean, median, std_dev, sum for keys\n        - value_stats: dict with min, max, mean, median, std_dev, sum for values\n        - errors: list of any parsing errors encountered\n    \"\"\"\n    keys = []\n    values = []\n    errors = []\n\n    for i, record in enumerate(records):\n        try:\n            # Expected format: \"row_N: key=K, value=V\"\n            # Split by ': ' to separate row identifier from the rest\n            if ': ' not in record:\n                raise ValueError(f\"Missing ': ' separator in record: {record}\")\n\n",
+      "answer_sha256": "49c1b573ab81fb657f7495ec1471479a8605bcd490ea34677fd9a35f28abd44b",
+      "finish_reason": "length"
+    }
+  ]
+}

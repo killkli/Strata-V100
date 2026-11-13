@@ -1,0 +1,98 @@
+[
+  {
+    "profile": "baseline",
+    "startup_evidence": [
+      "strata generate: PCIe probe: 11.0 GB/s host->device (best of 11.0 11.0 11.0 10.9) -> pcie_frac 0.30 (default 0.55)",
+      "strata generate: layer split: CUDA1 PCIe probe 11.0 GB/s (best of 10.9 11.0 11.0 10.9) -> pcie_frac 0.30",
+      "strata generate: layer split: CUDA2 PCIe probe 6.0 GB/s (best of 6.0 6.0 6.0 6.0) -> pcie_frac 0.17",
+      "strata generate: layer split: CUDA3 PCIe probe 8.7 GB/s (best of 8.5 8.5 8.6 8.7) -> pcie_frac 0.24",
+      "strata generate: 13 pool workers on logical processors 1,2,3,4,5,6,7,8,9,10,11,12,13, the host thread on 0 (draining too) (--host-core first)",
+      "strata generate: expert cache 5144 slots, 12.03 GiB of VRAM; policy is",
+      "strata generate: layer split: CUDA1 runs layers 11-23, expert cache 5290 slots (11.48 GiB), 5290 of its 6656 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA2 runs layers 24-35, expert cache 5259 slots (11.75 GiB), 5259 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA3 runs layers 36-47, expert cache 4474 slots (10.23 GiB), 4474 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA0 runs layers 0-10",
+      "FileExpertSource: allocating 24.94 GiB page-locked cache complement"
+    ]
+  },
+  {
+    "profile": "upstream-default",
+    "startup_evidence": [
+      "strata generate: PCIe probe: 11.0 GB/s host->device (best of 10.9 11.0 10.9 10.9) -> pcie_frac 0.30 (default 0.55)",
+      "strata generate: layer split: CUDA1 PCIe probe 11.0 GB/s (best of 11.0 11.0 10.9 11.0) -> pcie_frac 0.30",
+      "strata generate: layer split: CUDA2 PCIe probe 6.0 GB/s (best of 6.0 6.0 6.0 6.0) -> pcie_frac 0.17",
+      "strata generate: layer split: CUDA3 PCIe probe 8.7 GB/s (best of 8.6 8.6 8.5 8.7) -> pcie_frac 0.24",
+      "strata generate: 26 pool workers on logical processors 1,14,2,15,3,16,4,17,5,18,6,19,7,20,8,21,9,22,10,23,11,24,12,25,13,26, the host thread on 0 (draining too) (--host-core first)",
+      "strata generate: expert cache 5392 slots, 12.60 GiB of VRAM; policy is",
+      "strata generate: layer split: CUDA1 runs layers 11-23, expert cache 5562 slots (12.07 GiB), 5562 of its 6656 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA2 runs layers 24-35, expert cache 5521 slots (12.33 GiB), 5521 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA3 runs layers 36-47, expert cache 4818 slots (11.03 GiB), 4818 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA0 runs layers 0-10",
+      "FileExpertSource: allocating 22.40 GiB page-locked cache complement",
+      "FileExpertSource: NUMA placement of the complement: slice 0 -> node 0 (11.30 GiB, toucher CPU 1), slice 1 -> node 1 (11.10 GiB, toucher CPU 14), 4 KiB pages; free before: node 0 0.51 GiB, node 1 0.19 GiB",
+      "FileExpertSource: NUMA placement: the model files' cached pages were released; free after the drop: node 0 34.16 GiB, node 1 13.26 GiB",
+      "FileExpertSource: NUMA placement: node 0 11.30 GiB (100.0 % of its slices), node 1 11.10 GiB (100.0 % of its slices); free before: node 0 0.51 GiB, node 1 0.19 GiB; after the drop: node 0 34.16 GiB, node 1 13.26 GiB; pages taken and page-locked in 17.0 s since the placement started"
+    ]
+  },
+  {
+    "profile": "gpu-local-uncontrolled",
+    "startup_evidence": [
+      "strata generate: PCIe probe: 7.2 GB/s host->device (best of 7.2 7.2 7.2 7.2) -> pcie_frac 0.20 (default 0.55)",
+      "strata generate: layer split: CUDA1 PCIe probe 7.2 GB/s (best of 7.1 7.1 7.2 7.2) -> pcie_frac 0.20",
+      "strata generate: layer split: CUDA2 PCIe probe 6.1 GB/s (best of 6.1 6.1 6.1 6.1) -> pcie_frac 0.17",
+      "strata generate: layer split: CUDA3 PCIe probe 9.5 GB/s (best of 9.5 9.5 9.5 9.5) -> pcie_frac 0.26",
+      "strata generate: 26 pool workers on logical processors 1,14,2,15,3,16,4,17,5,18,6,19,7,20,8,21,9,22,10,23,11,24,12,25,13,26, the host thread on 0 (draining too) (--host-core first)",
+      "strata generate: expert cache 5392 slots, 12.60 GiB of VRAM; policy is",
+      "strata generate: layer split: CUDA1 runs layers 11-23, expert cache 5562 slots (12.07 GiB), 5562 of its 6656 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA2 runs layers 24-35, expert cache 5521 slots (12.33 GiB), 5521 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA3 runs layers 36-47, expert cache 4818 slots (11.03 GiB), 4818 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA0 runs layers 0-10",
+      "FileExpertSource: allocating 22.40 GiB page-locked cache complement",
+      "FileExpertSource: stage-local NUMA complement: node 0 10.41 GiB (CPU 0), node 1 11.96 GiB (CPU 14); favors each GPU's local reads; CPU row slices may read remotely",
+      "FileExpertSource: NUMA placement: the model files' cached pages were released; free after the drop: node 0 44.57 GiB, node 1 6.28 GiB",
+      "FileExpertSource: WARNING: NUMA placement at risk: node 1 has 6.28 GiB free for its 11.96 GiB slice plus 2.00 GiB of reserve",
+      "FileExpertSource: NUMA placement: node 0 10.41 GiB (100.0 % of its slices), node 1 7.32 GiB (61.2 % of its slices); free before: node 0 0.53 GiB, node 1 0.06 GiB; after the drop: node 0 44.57 GiB, node 1 6.28 GiB; pages taken and page-locked in 22.3 s since the placement started",
+      "FileExpertSource: WARNING: NUMA placement FAILED: slice 1 has 61.2 % of its pages on node 1 (< 95 %; of 48970 sampled: node 0 18986, node 1 29984, not present 0)"
+    ]
+  },
+  {
+    "profile": "host-preference",
+    "startup_evidence": [
+      "strata generate: new host allocations prefer NUMA node 0; complement touchers keep local policy",
+      "strata generate: PCIe probe: 10.2 GB/s host->device (best of 10.2 10.2 10.2 10.2) -> pcie_frac 0.28 (default 0.55)",
+      "strata generate: layer split: CUDA1 PCIe probe 10.2 GB/s (best of 10.1 10.2 10.2 10.2) -> pcie_frac 0.28",
+      "strata generate: layer split: CUDA2 PCIe probe 6.0 GB/s (best of 6.0 6.0 6.0 6.0) -> pcie_frac 0.17",
+      "strata generate: layer split: CUDA3 PCIe probe 7.5 GB/s (best of 7.5 7.5 7.4 7.5) -> pcie_frac 0.21",
+      "strata generate: 26 pool workers on logical processors 1,14,2,15,3,16,4,17,5,18,6,19,7,20,8,21,9,22,10,23,11,24,12,25,13,26, the host thread on 0 (draining too) (--host-core first)",
+      "strata generate: expert cache 5392 slots, 12.60 GiB of VRAM; policy is",
+      "strata generate: layer split: CUDA1 runs layers 11-23, expert cache 5562 slots (12.07 GiB), 5562 of its 6656 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA2 runs layers 24-35, expert cache 5521 slots (12.33 GiB), 5521 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA3 runs layers 36-47, expert cache 4818 slots (11.03 GiB), 4818 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA0 runs layers 0-10",
+      "FileExpertSource: allocating 22.40 GiB page-locked cache complement",
+      "FileExpertSource: NUMA placement of the complement: slice 0 -> node 0 (11.30 GiB, toucher CPU 1), slice 1 -> node 1 (11.10 GiB, toucher CPU 14), 4 KiB pages; free before: node 0 0.49 GiB, node 1 0.09 GiB",
+      "FileExpertSource: NUMA placement: the model files' cached pages were released; free after the drop: node 0 22.66 GiB, node 1 27.86 GiB",
+      "FileExpertSource: NUMA placement: node 0 11.30 GiB (100.0 % of its slices), node 1 11.10 GiB (100.0 % of its slices); free before: node 0 0.49 GiB, node 1 0.09 GiB; after the drop: node 0 22.66 GiB, node 1 27.86 GiB; pages taken and page-locked in 16.1 s since the placement started"
+    ]
+  },
+  {
+    "profile": "gpu-local",
+    "startup_evidence": [
+      "strata generate: new host allocations prefer NUMA node 0; complement touchers keep local policy",
+      "strata generate: PCIe probe: 11.0 GB/s host->device (best of 11.0 11.0 11.0 10.9) -> pcie_frac 0.30 (default 0.55)",
+      "strata generate: layer split: CUDA1 PCIe probe 11.0 GB/s (best of 10.9 11.0 10.9 10.9) -> pcie_frac 0.30",
+      "strata generate: layer split: CUDA2 PCIe probe 6.0 GB/s (best of 6.0 6.0 6.0 6.0) -> pcie_frac 0.17",
+      "strata generate: layer split: CUDA3 PCIe probe 7.3 GB/s (best of 7.2 7.2 7.2 7.3) -> pcie_frac 0.20",
+      "strata generate: 26 pool workers on logical processors 1,14,2,15,3,16,4,17,5,18,6,19,7,20,8,21,9,22,10,23,11,24,12,25,13,26, the host thread on 0 (draining too) (--host-core first)",
+      "strata generate: expert cache 5392 slots, 12.60 GiB of VRAM; policy is",
+      "strata generate: layer split: CUDA1 runs layers 11-23, expert cache 5562 slots (12.07 GiB), 5562 of its 6656 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA2 runs layers 24-35, expert cache 5521 slots (12.33 GiB), 5521 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA3 runs layers 36-47, expert cache 4818 slots (11.03 GiB), 4818 of its 6144 profiled pairs; slot 0 verified",
+      "strata generate: layer split: CUDA0 runs layers 0-10",
+      "FileExpertSource: allocating 22.40 GiB page-locked cache complement",
+      "FileExpertSource: stage-local NUMA complement: node 0 10.41 GiB (CPU 0), node 1 11.96 GiB (CPU 14); favors each GPU's local reads; CPU row slices may read remotely",
+      "FileExpertSource: NUMA placement: the model files' cached pages were released; free after the drop: node 0 21.08 GiB, node 1 30.25 GiB",
+      "FileExpertSource: NUMA placement: node 0 10.41 GiB (100.0 % of its slices), node 1 11.96 GiB (100.0 % of its slices); free before: node 0 0.50 GiB, node 1 0.10 GiB; after the drop: node 0 21.08 GiB, node 1 30.25 GiB; pages taken and page-locked in 22.0 s since the placement started"
+    ]
+  }
+]
