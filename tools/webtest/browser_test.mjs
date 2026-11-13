@@ -11,6 +11,94 @@ const { test, run } = runner("web page browser tests");
 const turn = (role, text, extra = {}) => ({ role, text, time: 1, ...extra });
 const fence = (lang, code) => "```" + lang + "\n" + code + "\n```\n";
 
+// ------------------------------------------------------------------------------------------------ monitor bootstrap
+test("monitor: the served page starts, polls and opens the dashboard with sparse metrics", async ({ browser, mock }) => {
+  mock.state.loaded = true;
+  for (const hash of ["", "#monitor"]) {
+    const page = await openPage(browser, mock, { hash });
+    try {
+      assert.deepEqual(page.errors, [], "the real HTML and scripts must initialize together");
+      await page.waitForFunction(() => document.getElementById("pill-text").textContent === "Idle");
+      await page.click("#tab-btn-monitor");
+      assert.equal(await page.$$eval("#kpis .kpi", e => e.length), 8);
+      assert.equal(await page.$$eval("#sys-metrics .sys-metric", e => e.length), 4);
+      assert.equal(await page.$eval("#req-body td", e => e.colSpan), 10);
+      assert.equal(await page.$eval("#slots-card", e => e.hidden), true);
+      assert.equal(await page.$eval("#l3-card", e => e.hidden), true);
+      const before = mock.state.calls.filter(c => c === "GET /metrics").length;
+      await page.waitForResponse(r => new URL(r.url()).pathname === "/metrics");
+      assert.ok(mock.state.calls.filter(c => c === "GET /metrics").length > before);
+      assert.deepEqual(page.errors, []);
+    } finally { await page.close(); }
+  }
+});
+
+test("monitor: four GPUs, throughput, request columns and cache and slot panels render and update", async ({ browser, mock }) => {
+  const row = { time: 1, finish: "stop", prompt_tokens: 1000, reused: 200, prompt_ms: 2000,
+    output_tokens: 100, decode_ms: 2500, decode_tok_s: 40, ttft_ms: 120,
+    duration_s: 5, hit_rate: 0.8, drafts_offered: 20, drafts_accepted: 10 };
+  mock.state.metricOverrides = {
+    hardware: { cpu: 25, ram_used: 32 * 2 ** 30, ram_total: 64 * 2 ** 30,
+      gpus: Array.from({length: 4}, (_, index) => ({ index, util: 30 + index, mem_used: 8 * 2 ** 30,
+        mem_total: 16 * 2 ** 30, temp: 60, power: 80, energy_wh: 12 })) },
+    requests: [row], requests_kept: 1,
+    totals: { requests: 1, prompt_tokens: 1000, reused: 200, prompt_ms: 2000,
+      output_tokens: 100, decode_ms: 2500, ttft_ms: 120, since: 1 },
+    conversation_cache: { enabled: true, budget_mib: 8192, slots: 4, parked: 1, bytes: 1024 },
+    l3: { on: true, records: 2, bytes: 1024, budget_bytes: 2 ** 30, hits: 1, misses: 1 },
+    live: { state: "generating", queued: 0, tok_s: 31.5, prefill_tok_s_mean: 600, generated: 10,
+      slots: [{ slot: 0, state: "decoding", generated: 10, tok_s: 31.5 }, { slot: 1, state: "idle" }] },
+  };
+  const page = await openPage(browser, mock, { hash: "#monitor" });
+  try {
+    assert.deepEqual(page.errors, []);
+    await page.waitForSelector(".gpu-card");
+    assert.equal(await page.$$eval(".gpu-card", e => e.length), 4);
+    assert.equal(await page.$eval("#kpi-decode", e => e.textContent), "31.5t/s");
+    assert.equal(await page.$eval("#kpi-prefill", e => e.textContent), "600t/s");
+    assert.match(await page.$eval("#state-live", e => e.textContent), /31.5 t\/s/);
+    assert.ok(await page.$eval("#chart-speed .chart-line", e => e.getAttribute("d").length > 0));
+    assert.equal(await page.$$eval("#req-body tr:first-child td", e => e.length), 10);
+    assert.match(await page.$eval("#req-body tr", e => e.textContent), /120 ms/);
+    assert.equal(await page.$$eval(".slot-row", e => e.length), 2);
+    assert.equal(await page.$eval("#cc-bars", e => e.hidden), false);
+    assert.equal(await page.$eval("#l3-card", e => e.hidden), false);
+    mock.state.metricOverrides.live = { state: "idle", queued: 0 };
+    await page.waitForFunction(() => document.getElementById("pill-text").textContent === "Idle");
+    assert.equal(await page.$eval("#kpi-decode", e => e.textContent), "40.0t/s");
+    assert.equal(await page.$eval("#kpi-prefill", e => e.textContent), "400t/s");
+    mock.state.metricOverrides.live = { state: "reading", queued: 1, prompt_read: 25, prompt_total: 100 };
+    await page.waitForFunction(() => document.getElementById("state-label").textContent === "Reading prompt");
+    assert.match(await page.$eval("#state-detail", e => e.textContent), /25%/);
+    mock.state.metricOverrides.live = { state: "unloaded", queued: 0 };
+    await page.waitForFunction(() => document.getElementById("state-label").textContent === "Unloaded");
+    assert.equal(await page.$eval("#unload-btn", e => e.textContent), "Load");
+    assert.deepEqual(page.errors, []);
+  } finally { delete mock.state.metricOverrides; await page.close(); }
+});
+
+// serve/test_web_monitor.py starts the production HTTP handler with an in-memory engine; no model or GPU.
+if (process.env.WEBTEST_SERVER) test("monitor: authenticated Python server connects, controls the model and records a chat", async ({ browser }) => {
+  const page = await openPage(browser, {url: process.env.WEBTEST_SERVER},
+    { hash: "#monitor", seed: { apikey: process.env.WEBTEST_KEY } });
+  try {
+    await page.waitForFunction(() => document.getElementById("unload-btn").textContent === "Unload");
+    assert.deepEqual(page.errors, []);
+    await page.click("#unload-btn");
+    await page.waitForFunction(() => document.getElementById("state-label").textContent === "Unloaded");
+    await page.click("#unload-btn");
+    await page.waitForFunction(() => document.getElementById("unload-btn").textContent === "Unload");
+    await page.click("#tab-btn-chat");
+    await say(page, "Say hello.");
+    await idle(page);
+    await page.click("#tab-btn-monitor");
+    await page.waitForFunction(() => document.querySelectorAll("#req-body tr:first-child td").length === 10);
+    assert.match(await page.$eval("#req-body", e => e.textContent), /Done/);
+    assert.match(await page.$eval("#kpisub-requests", e => e.textContent), /1 kept/);
+    assert.deepEqual(page.errors, []);
+  } finally { await page.close(); }
+});
+
 // ------------------------------------------------------------------------------------------------ preview (#1628)
 const hostilePage = (base) => `<!doctype html><html><head><meta http-equiv="refresh" content="0;url=${base}/exfil-refresh"></head><body>
 <pre id="out">static</pre><a id="l" href="${base}/exfil-link">link</a>

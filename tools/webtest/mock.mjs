@@ -120,6 +120,7 @@ function metrics(state) {
     hardware_static: { gpu_name: "Mock GPU", cpu_name: "Mock CPU", threads: 16, cores: 8, psutil: true },
     history: { tok_s: spark, gpu_util: spark, gpu_mem_used: spark, gpu_temp: spark, gpu_power: spark, cpu: spark, disk_read_mb: spark, gpu_pcie_rx_mb: spark, prefill_tok_s_mean: spark },
     requests: [], totals: null, requests_kept: 0, conversation_cache: null,
+    ...state.metricOverrides,
   };
 }
 
