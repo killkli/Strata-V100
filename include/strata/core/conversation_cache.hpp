@@ -759,10 +759,9 @@ public:
 
     // Evict the oldest ordinary conversation, or the oldest root if no ordinary victim remains.
     // The parking path can also free RAM one entry at a time on demand (see the physical-RAM admission
-    // gate in generate.cpp).  A ConversationBuffer holds pieces of 16 MiB, each its own allocation, far
-    // above glibc's mmap threshold, so dropping an entry returns the whole footprint to the kernel at
-    // once - the next admission check reads it back from /proc/meminfo.  A piece another entry still
-    // shares stays charged to that entry.
+    // gate in generate.cpp). Small or partial pieces can live below glibc's dynamic mmap threshold.
+    // Trim the freed heap after destruction so the next admission check can observe the released RAM.
+    // A piece another entry still shares stays charged to that entry.
     // False when none can go (empty, or only entries that hold a pinned shared prefix are left).
     bool evict_oldest() {
         auto victim = std::find_if(entries_.begin(), entries_.end(),
@@ -776,6 +775,7 @@ public:
             eviction_handler_(std::move(victim->image), victim->pinned, eviction_context_);
         entries_.erase(victim);
         ++evictions_;
+        release_free_heap();
         return true;
     }
     // #879: every parked conversation (pinned ones too) and the retained K/V go - after non-finite logits any of them
