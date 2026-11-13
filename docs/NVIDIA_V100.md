@@ -50,7 +50,9 @@ are in the [four-V100 research report](../benchmarks/v100-four-gpu-research-2026
 node before the model loads. It changes no CPU affinity and moves no existing pages. The complement's pinned
 touchers restore local allocation policy, for either CPU-row placement or GPU-local placement, so a large shared
 table can prefer the socket with more RAM while expert pages still go to their intended nodes. The option is
-unset by default; an invalid or unavailable node stops startup before the weights load. The two-node
+unset by default; an invalid or unavailable node stops startup before the weights load. This follows Linux's
+[thread memory policy](https://www.kernel.org/doc/html/latest/admin-guide/mm/numa_memory_policy.html), including
+inheritance by new threads and the limit to newly allocated pages. The two-node
 `numa_policy_test` checks actual page placement and that a helper overrides the inherited preference.
 
 ## What runs on Volta

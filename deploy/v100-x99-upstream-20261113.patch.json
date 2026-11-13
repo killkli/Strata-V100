@@ -1,0 +1,10 @@
+[
+  {"op": "test", "path": "/model_name", "value": "qwen3.8-flash-next-unsloth-ud-iq4_xs"},
+  {"op": "test", "path": "/gpu", "value": [0, 1, 2, 3]},
+  {"op": "test", "path": "/parallel", "value": 2},
+  {"op": "test", "path": "/layer_split", "value": "11,24,36"},
+  {"op": "test", "path": "/env/STRATA_HC_Q8", "value": "1"},
+  {"op": "test", "path": "/env/STRATA_ROUTE_TAIL_SKIP", "value": "0"},
+  {"op": "add", "path": "/env/STRATA_HOST_NUMA_NODE", "value": "0"},
+  {"op": "add", "path": "/env/STRATA_NUMA_STAGE_LOCAL", "value": "1"}
+]
