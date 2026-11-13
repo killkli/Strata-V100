@@ -36,6 +36,7 @@ int main() {
     unset("STRATA_SM121_PERF");
     unset("STRATA_SM86_PERF");
     unset("STRATA_SM60_PERF");
+    unset("STRATA_SM70_PERF");
     unset("STRATA_EMULATE_CC");
     // GB10 (12.1): the five measured switches, and nothing else
     {
@@ -67,6 +68,17 @@ int main() {
         CHECK(!p.empty() && p == q);
         CHECK(!find(a, "STRATA_PF_FUSED") && !find(p, "STRATA_PF_FUSED"));
     }
+    // Keep the fork's measured Volta switches when merging the newer upstream tables.
+    {
+        const auto v = nv_default_env(7, 0, false);
+        CHECK(v == nv_default_env(7, 0, true));
+        CHECK(find(v, "STRATA_SM70_TABLE") && *find(v, "STRATA_SM70_TABLE") == "1");
+        CHECK(find(v, "STRATA_DEQUANT_WIDE") && find(v, "STRATA_ARGMAX_ROWS_SM70"));
+        CHECK(find(v, "STRATA_SIDE_MIXER") && *find(v, "STRATA_SIDE_MIXER") == "2");
+        put("STRATA_SM70_PERF", "0");
+        CHECK(nv_default_env(7, 0, false).empty());
+        unset("STRATA_SM70_PERF");
+    }
     // round 0212: STRATA_MMQ_KQ=1 is a default for compute capability 8.0+ (owner yes 11-03), with its own off switches
     unset("STRATA_NV_KQ_DEFAULT");
     CHECK(kNvKqDefaultOn);
@@ -97,6 +109,11 @@ int main() {
     put("STRATA_DEFAULTS", "026");
     CHECK(nv_default_env(12, 1).empty());
     unset("STRATA_DEFAULTS");
+        put("STRATA_SM70_TABLE", "0");
+        const auto changed = apply_nv_defaults(7, 0);
+        CHECK(std::string(std::getenv("STRATA_SM70_TABLE")) == "0");
+        for (const auto& key : changed) unset(key.c_str());
+        unset("STRATA_SM70_TABLE");
     if (fails == 0) std::printf("nv_defaults_test: ok\n");
     return fails == 0 ? 0 : 1;
 }

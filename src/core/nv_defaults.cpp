@@ -38,6 +38,41 @@ std::vector<std::pair<std::string, std::string>> nv_default_env(int major, int m
             {"STRATA_QSA_ROWS", "1"},            // -0.5, -1.2
             {"STRATA_B6_MMVQ_ROWS", "1"},        // A4000 0, 3060 -1.7
         };
+    } else if (mj == 7 && mn == 0) {
+        if (off("STRATA_SM70_PERF")) return t;
+        t = {
+            // Volta (Tesla V100), measured on this fork's dual-V100 16 GB rig (IQ3_S, layer split 16,
+            // --pipeline-windows 2): exact-kernel switches measured faster there.
+            {"STRATA_SM70_TABLE", "1"},        // the Volta master switch: the interleaved dense table, expert mode 8, the hidden HC up
+            {"STRATA_DEQUANT_WIDE", "1"},     // vector stores for native weights; avoids repeated narrow Q6_K dequant work
+#if defined(__linux__)
+            // One Volta card on Linux CUDA: overlap copies with verification. The existing mode guards and an
+            // explicit STRATA_ADAPT_OVERLAP=0 still win. Windows keeps the opt-in setting.
+            {"STRATA_ADAPT_OVERLAP", "1"},
+#endif
+            // The second prompt-expert tile, for the shapes it was built for (IQ3_XXS / IQ3_S / IQ2_S gate/up and
+            // IQ4_NL down, sm_70, aligned arguments with room for the tile).  It acts only inside the opt-in
+            // STRATA_PF_WMMA=1 prompt path; every other format, direction, device or alignment keeps the first
+            // tile.  STRATA_PF_WMMA2=0 keeps the first tile only.
+            {"STRATA_PF_WMMA2", "1"},
+            // Upstream PR #3411 (koshikawa-masato), measured as a combined stack on dual V100 PCIe
+            // 32 GB IQ3_S/MTP4: the six-switch stack +5.8/+7.6% decode, the seven additions +4.7/+4.8%
+            // against that stack; ten decoded texts matched. This is combined-stack evidence, not the
+            // token-id gate above. On this fork's 2xV100 16 GB daily model an A/B/A/B/A/B with a
+            // restart before every measured request gave 83.1 vs 74.6 tok/s median (+11.4%). Explicit
+            // user settings and STRATA_SM70_PERF=0 still win.
+            {"STRATA_SIDE_MIXER", "2"},
+            {"STRATA_GR_UP75", "1"},
+            {"STRATA_B6_MMVQ_ROWS", "1"},
+            {"STRATA_GU_SWIGLU", "1"},
+            {"STRATA_QSA_ROWS", "1"},
+            {"STRATA_ATTN_DAILY", "1"},
+            {"STRATA_GR_NORM_FAST", "1"},
+            {"STRATA_ARGMAX_ROWS_SM70", "1"},
+            {"STRATA_QIL", "1"},
+            {"STRATA_EXPDEC", "1"},
+            {"STRATA_GR_DOWN_TG", "1"},
+        };
     } else if (mj == 6 && mn == 0) {
         if (off("STRATA_SM60_PERF")) return t;
         t = {
@@ -97,12 +132,13 @@ std::vector<std::string> apply_nv_defaults(int major, int minor) {
     }
     if (!set.empty()) {
         const bool sm86 = mj == 8;
+        const bool sm70 = mj == 7 && mn == 0;
         const bool sm121 = mj == 12 && mn == 1;
         // sm_86 / sm_60: bit-exact switches.  sm_121: the fused prompt path and the FP4-activation NVFP4 prompt round differently from the
         // paths they replace (24 of 24 greedy answers were identical on the Spark; no KL run), so the line does not say "exact".
         std::fprintf(stderr, "strata: %s: %zu %sspeed switches on by default (%s=0 turns them off%s; a switch you set is kept): ",
-                     sm86 ? "sm_86 (Ampere)" : sm121 ? "sm_121 (GB10)" : "sm_60 (Pascal)", set.size(), sm121 ? "" : "exact ",
-                     sm86 ? "STRATA_SM86_PERF" : sm121 ? "STRATA_SM121_PERF" : "STRATA_SM60_PERF",
+                     sm86 ? "sm_86 (Ampere)" : sm70 ? "sm_70 (Volta)" : sm121 ? "sm_121 (GB10)" : "sm_60 (Pascal)", set.size(), sm121 ? "" : "exact ",
+                     sm86 ? "STRATA_SM86_PERF" : sm70 ? "STRATA_SM70_PERF" : sm121 ? "STRATA_SM121_PERF" : "STRATA_SM60_PERF",
                      sm121 ? ", as does STRATA_DEFAULTS=026" : "");
         for (size_t i = 0; i < set.size(); ++i) std::fprintf(stderr, "%s%s", i ? " " : "", set[i].c_str() + 7);
         std::fprintf(stderr, "\n");
