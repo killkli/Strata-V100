@@ -1154,7 +1154,7 @@ size_t allocated_states(const ConversationDiskRecord& record) {
 // A pre-existing v2 file with no sidecar: many inline anchors, real K/V payloads.  A load must keep
 // every position, bound the states it ALLOCATES, return the exact state at any requested cut (even
 // inside a panel), survive a restart, and detect a corrupt inline state it would not have kept.
-void test_legacy_inline_chain() {
+void test_legacy_inline_chain(bool read_prefix = false) {
     const std::filesystem::path dir = scratch_dir("legacy");
     const ConversationDiskIdentity identity = ConversationDiskIdentity::from_string("legacy");
     const std::string name = ids_name(24);
@@ -1260,10 +1260,13 @@ void test_legacy_inline_chain() {
     // The panel's payload opens with the live state then its three checkpoint states: this byte sits
     // in the SECOND checkpoint's state, which the bound above drops.
     patch_byte(chain_file, payload_at + 2 * per_state + 1, 0x5A);
-    check(store.get(name, back, error) == ConversationDiskStatus::corrupt,
+    const uint64_t before_corruption = store.corruptions();
+    check((read_prefix ? store.get_prefix(name, back, 20, error) : store.get(name, back, error)) ==
+              ConversationDiskStatus::corrupt,
           "a corrupt inline state is detected");
     check(!store.has(name) && !std::filesystem::exists(chain_file),
           "the corrupt legacy chain is dropped");
+    check(store.corruptions() == before_corruption + 1, "the failed read counts the corruption once");
     std::filesystem::remove_all(dir);
 }
 
@@ -2049,6 +2052,7 @@ int main() {
     test_branch_prefix_reuse();
     test_get_prefix_extent();
     test_legacy_inline_chain();
+    test_legacy_inline_chain(true);
     test_sidecar_retention();
     test_lost_sidecar_is_not_offered();
     test_sidecar_write_failure();

@@ -3011,6 +3011,19 @@ ConversationDiskStatus ConversationDiskStore::get_prefix(const std::string& name
     const Entry* entry = find(name);
     if (entry == nullptr) return ConversationDiskStatus::miss;
     const ConversationDiskStatus status = read_chain(path_for(name), 0, record, error, upto);
+    if (status == ConversationDiskStatus::corrupt) {
+        // Prefix lookup is the serving path. Do not leave a corrupt source or
+        // dependent branches indexed for the next request to select again.
+        std::string discard_error;
+        const auto discarded = remove(name, discard_error);
+        ++corruptions_;
+        record = {};
+        if (discarded != ConversationDiskStatus::ok && discarded != ConversationDiskStatus::miss) {
+            error += "; " + discard_error;
+            return ConversationDiskStatus::failed;
+        }
+        return status;
+    }
     if (status != ConversationDiskStatus::ok) return status;
     // The cut often lands on a retained checkpoint inside a panel, not on a panel end. Promote
     // that checkpoint's state to the live state, then bound the rest: the caller asked for an
