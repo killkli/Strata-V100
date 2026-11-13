@@ -40,6 +40,7 @@
 #include <random>
 #include <span>
 #include <vector>
+#include <thread>
 
 namespace k = strata::kernels;
 
@@ -161,23 +162,40 @@ int run(int ty, int n_out, int K, std::mt19937& rng, bool use_ids, bool down, bo
     for (int r = 0; r < yrows; ++r)
         for (int n = 0; n < ldy; ++n)
             if ((r < base || r >= total || n >= n_out) && y[(size_t) r * ldy + n] != SENT) ++bad;
-    double worst = 0, scale = 0;
-    for (int e = 0; e < E; ++e)
-        for (int r = bounds[e]; r < bounds[e + 1]; ++r) {
-            const __half* xr = &x[(size_t) (use_ids ? ids[(size_t) r] : r) * ldx];
-            for (int n = 0; n < n_out; ++n) {
-                double s = 0;
-                const int we = use_ids ? (down ? e : E - 1 - e) : e;
-                const uint16_t* wr = &q[((size_t) we * n_out + n) * K];
-                for (int kk = 0; kk < K; ++kk) {
-                    const __half h = __half_raw{wr[kk]};
-                    s += (double) __half2float(h) * (double) __half2float(xr[kk]);
+    // Half-to-float conversion is exact. Convert each input once, instead of twice
+    // per multiply; every oracle dot product still accumulates in the same FP64 order.
+    std::vector<float> qf(q.size()), xf(x.size());
+    for (size_t i = 0; i < q.size(); ++i) qf[i] = __half2float(__half_raw{q[i]});
+    for (size_t i = 0; i < x.size(); ++i) xf[i] = __half2float(x[i]);
+    struct Error { double worst = 0, scale = 0; int bad = 0; };
+    const unsigned workers = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
+    std::vector<Error> errors(workers);
+    auto oracle = [&](unsigned worker) {
+        auto& error = errors[worker];
+        for (int e = 0; e < E; ++e)
+            for (int r = bounds[e] + (int) worker; r < bounds[e + 1]; r += (int) workers) {
+                const float* xr = &xf[(size_t) (use_ids ? ids[(size_t) r] : r) * ldx];
+                for (int n = 0; n < n_out; ++n) {
+                    double sum = 0;
+                    const int we = use_ids ? (down ? e : E - 1 - e) : e;
+                    const float* wr = &qf[((size_t) we * n_out + n) * K];
+                    for (int kk = 0; kk < K; ++kk) sum += (double) wr[kk] * (double) xr[kk];
+                    error.scale = std::max(error.scale, std::fabs(sum));
+                    if (!std::isfinite(y[(size_t) r * ldy + n]) || !std::isfinite(sum)) ++error.bad;
+                    error.worst = std::max(error.worst, std::fabs(sum - (double) y[(size_t) r * ldy + n]));
                 }
-                scale = std::max(scale, std::fabs(s));
-                if (!std::isfinite(y[(size_t) r * ldy + n]) || !std::isfinite(s)) ++bad;
-                worst = std::max(worst, std::fabs(s - (double) y[(size_t) r * ldy + n]));
             }
-        }
+    };
+    std::vector<std::thread> threads;
+    for (unsigned w = 1; w < workers; ++w) threads.emplace_back(oracle, w);
+    oracle(0);
+    for (auto& thread : threads) thread.join();
+    double worst = 0, scale = 0;
+    for (const auto& error : errors) {
+        worst = std::max(worst, error.worst);
+        scale = std::max(scale, error.scale);
+        bad += error.bad;
+    }
     const bool ok = worst <= 2e-5 * scale + 1e-6 && bad == 0;
     std::printf("%-8s %5d x %4d, %d rows in %d experts%s: max |err| %.3g of max |ref| %.3g, %d stray %s\n", name_of(ty),
                 n_out, K, total - base, E, use_ids ? (down ? " (ids, down)" : " (ids)") : "", worst, scale, bad, ok ? "ok" : "FAIL");
