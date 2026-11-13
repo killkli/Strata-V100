@@ -2,6 +2,7 @@
 """Exercise the existing HTTP contract against the real resident model. Never print credentials."""
 import argparse
 import concurrent.futures
+import hashlib
 import json
 import random
 import threading
@@ -15,11 +16,16 @@ ap.add_argument('--config', default=str(Path(__file__).resolve().parents[1] / 's
 ap.add_argument('--out', required=True)
 ap.add_argument('--label', required=True)
 ap.add_argument('--mode', choices=['smoke', 'bench', 'all'], default='smoke')
+ap.add_argument('--repeat-start', type=int, default=0, help='Start at a fresh deterministic case number after warmup.')
+ap.add_argument('--repeats', type=int, default=3)
 args = ap.parse_args()
+if args.repeat_start < 0 or args.repeats < 1:
+    ap.error('repeat-start must be nonnegative and repeats must be positive')
 cfg = json.loads(Path(args.config).read_text())
 base = 'http://127.0.0.1:' + str(cfg.get('port', 8080))
 model = cfg['model_name']
-result = {'label': args.label, 'model': model, 'checks': [], 'benchmarks': []}
+result = {'label': args.label, 'model': model, 'repeat_start': args.repeat_start,
+          'repeats': args.repeats, 'checks': [], 'benchmarks': []}
 output = Path(args.out)
 
 def save():
@@ -149,7 +155,7 @@ if args.mode in ('bench', 'all'):
         while compilers_running():
             time.sleep(3)
     for size in (90, 360):
-        for repeat in range(3):
+        for repeat in range(args.repeat_start, args.repeat_start + args.repeats):
             rng = random.Random(size * 100 + repeat)
             lines = [f'Case {size}-{repeat}: inspect these records.']
             for i in range(size):
@@ -157,11 +163,13 @@ if args.mode in ('bench', 'all'):
             lines.append('Write a detailed Python function to parse these rows and summarize key/value statistics. Include code and an explanation.')
             reply, dt = call('/v1/chat/completions', chat('\n'.join(lines), max_tokens=256))
             assert reply['choices'][0]['message'].get('content'), reply
+            content = reply['choices'][0]['message']['content']
             row = {'lines': size, 'repeat': repeat, 'wall_seconds': round(dt, 3),
                    'usage': reply['usage'], 'timings': reply.get('timings'),
+                   'content': content, 'answer_sha256': hashlib.sha256(content.encode()).hexdigest(),
                    'finish_reason': reply['choices'][0]['finish_reason']}
             result['benchmarks'].append(row)
             save()
-            print('benchmark: ' + json.dumps(row), flush=True)
+            print('benchmark: ' + json.dumps({k: v for k, v in row.items() if k != 'content'}), flush=True)
 save()
 print('Saved ' + str(output), flush=True)
