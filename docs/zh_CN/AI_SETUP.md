@@ -65,7 +65,7 @@
 
 ```
 Linux, Mac:           curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh | sh
-Windows (PowerShell): irm https://github.com/Niko1221/Strata/releases/latest/download/install.ps1 | iex
+Windows (PowerShell): irm -TimeoutSec 120 https://github.com/Niko1221/Strata/releases/latest/download/install.ps1 | iex
 ```
 
 Windows 上，之后请打开一个新的终端窗口（PATH 已改变）。检查一下：`strata --version`。

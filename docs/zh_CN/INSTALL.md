@@ -87,7 +87,7 @@ curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.s
 Windows（PowerShell）：
 
 ```powershell
-irm https://github.com/Niko1221/Strata/releases/latest/download/install.ps1 | iex
+irm -TimeoutSec 120 https://github.com/Niko1221/Strata/releases/latest/download/install.ps1 | iex
 ```
 
 安装脚本会识别这台计算机的型号，下载终端版压缩包，校验其 SHA-256，将其解压到你的主目录
