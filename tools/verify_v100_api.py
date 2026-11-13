@@ -138,11 +138,14 @@ if args.mode in ('bench', 'all'):
             try:
                 if p.read_text().strip() in names:
                     return True
+                cmd = (p.parent / 'cmdline').read_bytes().split(b'\0')
+                if b'pytest' in cmd:
+                    return True
             except OSError:
                 pass
         return False
     if compilers_running():
-        print('Waiting for compilation to finish before timing measurements', flush=True)
+        print('Waiting for compilation and pytest workers to finish before timing measurements', flush=True)
         while compilers_running():
             time.sleep(3)
     for size in (90, 360):
