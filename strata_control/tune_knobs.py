@@ -46,7 +46,7 @@ def default_unsteady(ctx: "Context") -> bool:
 
 
 #: Flags that take no value (present = on, absent = off).
-BOOL_FLAGS = frozenset({"--kv-grow", "--no-host-worker", "--no-pool", "--mmap-experts",
+BOOL_FLAGS = frozenset({"--kv-grow", "--trim-stage-weights", "--no-host-worker", "--no-pool", "--mmap-experts",
                         "--resident-experts", "--prompt-cache-tail", "--vram-elastic", "--split-skip-if-fits",
                         "--resident-cpu-experts", "--no-hit-poke", "--expert-cache-per-layer", "--batch-mtp"})
 
@@ -99,6 +99,8 @@ ARMS: tuple[Arm, ...] = (
         classes=("B", "C", "G"), backends=("cuda", "hip", "sycl")),
     Arm("spec3", "Shorter speculative window (3 tokens)", "placement", {"--spec": 3}, classes=("A", "B")),
     # --- class C: mid graphics memory, PCIe-bound -------------------------------------------------------------------------------
+    Arm("trim_stage", "Trim stage weights on two cards", "exact", {"--trim-stage-weights": True},
+        backends=("cuda",), classes=("C",), needs=("two_gpus",)),
     # --- class G: Intel Arc (SYCL): +5.5% (5/5, twice) ------------------------------------------------------------------------
     Arm("pcie_start_02", "Start with a smaller PCIe share", "placement", {"--pcie-frac": 0.2},
         backends=("sycl",), classes=("G",)),
