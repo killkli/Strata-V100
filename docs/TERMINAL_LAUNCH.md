@@ -63,6 +63,8 @@ and test-starts it before using it.
    or Tailscale (needs it installed and connected). Also the port and an API key. Beyond this computer a key is recommended:
    Strata makes one, and `t` turns it off. Without a key the server still starts and warns that anyone who can reach the port
    can use the model and its tools; `--no-api-key` does the same without screens, and the warning is stronger on a Cloudflare tunnel.
+   A named tunnel with a stable hostname is a design proposal, not a choice on this screen:
+   [Named Cloudflare Tunnel design](CLOUDFLARED_NAMED_TUNNEL_DESIGN.md).
 10. **Save as preset** and launch. Downloads show progress, then the engine starts and the monitor opens. No web page opens
     unless you pass `--open`.
 
