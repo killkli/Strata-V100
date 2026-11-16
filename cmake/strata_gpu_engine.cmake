@@ -187,6 +187,11 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
     target_link_libraries(qsa_scores_parity PRIVATE strata_kernels CUDA::cudart)
     add_test(NAME qsa_scores_parity COMMAND qsa_scores_parity)
     set_tests_properties(qsa_scores_parity PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "STRATA_SCORES_THREAD=1")
+    # the same scores through the tiled halve prompt scorer, eight query rows per CTA (STRATA_SCORES_PROMPT_HALVE=1);
+    # the case came from origin/main's CMakeLists.txt, where the tests still lived in that file
+    add_test(NAME qsa_scores_prompt_halve_parity COMMAND qsa_scores_parity)
+    set_tests_properties(qsa_scores_prompt_halve_parity PROPERTIES SKIP_RETURN_CODE 77
+      ENVIRONMENT "STRATA_SCORES_THREAD=0;STRATA_SCORES_PROMPT_HALVE=1")
     # STRATA_SELECT_TWO_PASS: the two-pass prompt scores' selection against the tensor-core scorer's, ids and the
     # scored-again blocks bitwise (sm_80+, synthetic, no model)
     add_executable(qsa_two_pass_parity src/kernels/qsa_two_pass_parity.cpp)
