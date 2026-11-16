@@ -3,16 +3,20 @@
 ## Reporting a vulnerability
 
 Please report anything that should not be public until it is fixed **privately**, through GitHub's private
-vulnerability reporting: the repository's **Security** tab, **Report a vulnerability**
-([direct link](https://github.com/Niko1221/Strata/security/advisories/new)). Say what you found, how to reproduce it
-(the request, the config keys involved, the Strata version), and what an attacker gains. We answer there, fix it in
-a release, and credit you in the advisory unless you ask us not to.
+vulnerability reporting: this repository's **Security** tab, **Report a vulnerability**
+([direct link](https://github.com/jmnargi/Strata-V100/security/advisories/new)). Say what you found, how to reproduce
+it (the request, the config keys involved, the Strata version), and what an attacker gains. We answer there, fix it
+in a release, and credit you in the advisory unless you ask us not to.
+
+The engine and the server are shared with [upstream Strata](https://github.com/Niko1221/Strata). If a report affects
+upstream code and not only this fork's V100 changes, also send it to the
+[upstream advisory page](https://github.com/Niko1221/Strata/security/advisories/new), or say so in your report here
+and we will pass it on.
 
 Ordinary hardening ideas and findings that are safe to discuss in public are welcome as an
-[issue](https://github.com/Niko1221/Strata/issues) (#544 collects audit findings) or as a pull request, which we
-review like our own code.
+[issue](https://github.com/jmnargi/Strata-V100/issues) or as a pull request, which we review like our own code.
 
-Supported: the latest release. Fixes go into the next release, not into older ones.
+Supported: the latest release of this fork. Fixes go into the next release, not into older ones.
 
 ## What the server exposes
 

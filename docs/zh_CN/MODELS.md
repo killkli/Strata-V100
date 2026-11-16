@@ -13,7 +13,7 @@ Strata 的主模型是 [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-
 ## 按内存选
 <a id="pick-by-memory"></a>
 
-这些档位把 RAM 和 VRAM（显卡的内存）合在一起算，和 [README](../../README.md#the-other-sizes) 一样。`strata launch`、setup
+这些档位把 RAM 和 VRAM（显卡的内存）合在一起算，和 [README](../../README.md#models-and-quants-that-run-here) 一样。`strata launch`、setup
 和 MCP 服务器的安装工具按它们预选；桌面应用从 0.2.1 起也这样。其它每个规模都仍是一个可选项。一张 12 GB 显卡加 32 GB
 RAM 的 PC 属于 40 GB 档（32 + 12 = 44）。
 

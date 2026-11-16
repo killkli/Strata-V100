@@ -1,80 +1,113 @@
-# Strata guides
+# Strata documentation
 
-**New here? Start with [Install Strata](INSTALL.md).** Download the one installer for your system (Windows, Linux or Mac), or install the Terminal with one line. Both use released engine packages. This documentation is for version 0.2.13.
+This directory holds all Strata documentation. The pages describe engine version
+0.1.45.7 and the server in `serve/`.
 
-## Use Strata
+## Start here
 
-| I want to… | Guide |
-| --- | --- |
-| Install or update | [Desktop app and Terminal](INSTALL.md) |
-| Choose a model and check memory | [Models and quantizations](MODELS.md) |
-| Run DeepSeek V4.1-Flash (app and Terminal) | [DeepSeek V4.1-Flash](MODELS.md#deepseek-v41-flash) |
-| See which model runs on which hardware | [Model and hardware table](CAPABILITIES.md) |
-| Start from the command line | [Terminal launch](TERMINAL_LAUNCH.md) |
-| Connect a coding tool | [Tool connections](TERMINAL_LAUNCH.md#connect-your-apps-strata-connect) |
-| Fix an install or startup problem | [Troubleshooting](TROUBLESHOOTING.md) |
-| Check privacy, downloads and network access | [Safety and privacy](SAFETY.md) |
+Read these pages in this order:
 
-## Hardware
+1. [README](../README.md) - what Strata is, and what it does on this hardware.
+2. [INSTALL.md](INSTALL.md) - install, start, update and configure.
+3. [MODELS.md](MODELS.md) - which model to use, and which one fits your PC.
+4. [HOW_IT_WORKS.md](HOW_IT_WORKS.md) - how the engine fits a large model in a small PC.
+5. [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - when something goes wrong.
 
-Use the guide for your GPU and operating system. Model and feature support can differ between backends.
+## Reference
 
-| Hardware | Guide |
-| --- | --- |
-| NVIDIA RTX 20 / 30 / 40 / 50 | [Install](INSTALL.md#what-you-need) |
-| AMD Radeon (RX and AI PRO R9700) | [AMD / HIP](AMD_HIP.md) |
-| AMD Ryzen AI Max / Strix Halo | [Strix Halo](STRIX_HALO.md), [on Windows](STRIX_HALO_WINDOWS.md) |
-| Intel Arc on Linux | [Intel Arc](INTEL_ARC.md) |
-| Apple Silicon | [Mac / Metal](MAC.md) |
-| More than one GPU | [Multiple GPUs](MULTI_GPU.md) |
-| Two cards: one reads the prompt, one makes the answer (opt-in) | [Split serving](SPLIT_SERVE.md) |
-| Older GPUs | [Experimental hardware](OLDER_GPUS.md) |
+These pages are the complete reference. Each setting appears with its default and its
+effect.
 
-## Developers and contributors
+| Page | What it answers |
+|---|---|
+| [ENGINE_FLAGS.md](ENGINE_FLAGS.md) | Every engine command-line flag: value, default, effect. |
+| [ENVIRONMENT.md](ENVIRONMENT.md) | Every environment variable the engine, server and terminal read. |
+| [SERVER.md](SERVER.md) | How to start the API server: options, run config keys, endpoints. |
+| [TERMINAL.md](TERMINAL.md) | Every `strata` command and subcommand. |
+| [TUNING.md](TUNING.md) | How to make it faster: settings by goal, optimizations, measured and rejected work. |
+| [GLOSSARY.md](GLOSSARY.md) | The terms the docs use, and where each one is explained. |
+| [STYLE.md](STYLE.md) | The writing rules for these pages. |
+| [DETAILS.md](DETAILS.md) | All measured numbers, the request formats, and the settings history. |
 
-- [Build or run from a source checkout](SOURCE_INSTALL.md)
-- [Docker](DOCKER.md)
-- [Contribution rules](../CONTRIBUTING.md)
-- [Community benchmarks](COMMUNITY_BENCHMARKS.md) and the [standard benchmark protocol](BENCHMARK_PROTOCOL.md)
-- [How the engine works](HOW_IT_WORKS.md), [technical reference](DETAILS.md) and [Terminal reference](TERMINAL.md)
-- [KVA: approximate prompt processing for the late layers (experimental, opt-in)](KVA.md)
-- [Named Cloudflare Tunnel design (a proposal; this release ships the temporary Quick Tunnel)](CLOUDFLARED_NAMED_TUNNEL_DESIGN.md)
-- [App development](../apps/host/README.md) and [packaging](../packaging/README.md)
+## By task
 
-## AI tools and media
+| Task | Page |
+|---|---|
+| Install on Windows, Linux, or Mac | [INSTALL.md](INSTALL.md), [AI_SETUP.md](AI_SETUP.md) |
+| Choose a model or a quantization | [MODELS.md](MODELS.md), [QUANTS.md](QUANTS.md) |
+| Run on a Tesla V100 or Titan V | [NVIDIA_V100.md](NVIDIA_V100.md), [OLDER_GPUS.md](OLDER_GPUS.md) |
+| Run on two or more NVIDIA cards | [MULTI_GPU.md](MULTI_GPU.md), [SECOND_GPU.md](SECOND_GPU.md) |
+| Serve several requests at once | [BATCHING.md](BATCHING.md) |
+| Run NVFP4 experts | [NVFP4.md](NVFP4.md) |
+| Run Gyro trellis quants | [GYRO.md](GYRO.md) |
+| Run Unsloth K-quants | [QUANTS.md](QUANTS.md), [UNSLOTH_Q4.md](UNSLOTH_Q4.md), [UNSLOTH_Q6.md](UNSLOTH_Q6.md) |
+| Run Qwen3.6-35B-A3B | [QWEN36.md](QWEN36.md) |
+| Run on AMD Radeon | [AMD_HIP.md](AMD_HIP.md), [AMD_HIP_PERFORMANCE.md](AMD_HIP_PERFORMANCE.md) |
+| Run on Intel Arc | [INTEL.md](INTEL.md), [INTEL_ARC.md](INTEL_ARC.md) |
+| Run on Strix Halo | [STRIX_HALO.md](STRIX_HALO.md) |
+| Read images | [IMAGES.md](IMAGES.md) |
+| Make images | [IMAGES.md](IMAGES.md) |
+| Let an AI assistant install and run Strata | [MCP_SERVER.md](MCP_SERVER.md), [AI_SETUP.md](AI_SETUP.md) |
+| Run behind llama-swap | [LLAMA_SWAP.md](LLAMA_SWAP.md) |
+| Check what Strata downloads | [SAFETY.md](SAFETY.md) |
+| Report a benchmark or ask for a test | [COMMUNITY_BENCHMARKS.md](COMMUNITY_BENCHMARKS.md), [TEST_REQUESTS.md](TEST_REQUESTS.md) |
+| Monitor a server with Prometheus | [monitoring/METRICS.md](monitoring/METRICS.md) |
 
-- [Install for a user](AI_SETUP.md)
-- [Verified facts, model availability and API reference](AI_REFERENCE.md)
-- [Articles and videos](MEDIA_KIT.md)
-- [Repository instructions for agents](../AGENTS.md)
+## Optimization pages
 
-## Which instructions apply?
+Each page below explains one opt-in optimization, its switch, and its measurement.
+Read the switch first, then the measurement.
 
-`strata launch` belongs to the installed Terminal. `START-HERE.bat`, `SETUP.bat`, `UPDATE.bat` and `setup.sh`
-belong to a **source checkout**. Raw engine commands are a third interface. Their flags are not interchangeable:
-Terminal launch uses `--gpu` and `--vision on|off`; source setup uses `--gpus` and `--vision yes|no`.
+| Page | What it covers |
+|---|---|
+| [EXPERTDEC.md](EXPERTDEC.md) | The verify window's routed experts read the group's activations from shared memory. |
+| [QSAROWS.md](QSAROWS.md) | The decode window's QSA scores stay in registers. |
+| [BATCHED_DMA.md](BATCHED_DMA.md) | Expert uploads of one verifier group as one batched copy. |
+| [KV_PREFETCH.md](KV_PREFETCH.md) | Streamed KV uploads overlap the prefill of the layer that needs them. |
+| [PREFILL_HEAD_ALIAS.md](PREFILL_HEAD_ALIAS.md) | The prompt read borrows the output head's VRAM. |
+| [VRAM_ELASTIC.md](VRAM_ELASTIC.md) | Give VRAM back to other programs between requests. |
+| [DISJOINT_EXPERT_CACHE.md](DISJOINT_EXPERT_CACHE.md) | No expert is in two caches on the same PC. |
+| [EXCHANGE_ROTATION.md](EXCHANGE_ROTATION.md) | The resident RAM tier swaps an expert without the extra host copy. |
+| [MMVQ_IL_TABLE.md](MMVQ_IL_TABLE.md) | The interleaved small-batch matvec, and how to measure the table for a card. |
+| [PROMPT_CACHE_TAIL.md](PROMPT_CACHE_TAIL.md) | One extra checkpoint near the end of a prompt. |
+| [MESSAGE_BOUNDARY_CACHE.md](MESSAGE_BOUNDARY_CACHE.md) | Reuse a long history when the last user message changes. |
+| [LOGIT_BIAS.md](LOGIT_BIAS.md) | Per-request token biases. |
 
-Release notes, design proposals and benchmark reports describe their named versions and machines. They remain
-available as historical evidence; use the guides above for a new installation. A published result on one GPU
-does not establish support or speed on every GPU.
+## Operations and internals
 
-## Writing a guide page
+| Page | What it covers |
+|---|---|
+| [CLOSING.md](CLOSING.md) | What ends the engine, and when. |
+| [MANAGEMENT_PROTOCOL.md](MANAGEMENT_PROTOCOL.md) | The local management bridge that the Desktop app and the terminal share. |
+| [SECOND_GPU.md](SECOND_GPU.md) | CUDA1 to CUDA3 as expert-cache tiers. |
+| [RESEARCH_RUNS.md](RESEARCH_RUNS.md) | One long document, many questions: the state plan. |
+| [THIRD_PARTY_QUANTS.md](THIRD_PARTY_QUANTS.md) | A PLE table that is not IQ4_NL. |
+| [ORCA.md](ORCA.md), [ORCA_Q4_K_S.md](ORCA_Q4_K_S.md) | OrcaRouter checkpoints. |
+| [A770_SPEED_SPEC.md](A770_SPEED_SPEC.md) | The Arc A770 decode objective and its criteria. |
 
-- Installation steps live in [INSTALL.md](INSTALL.md), source steps in [SOURCE_INSTALL.md](SOURCE_INSTALL.md). The public READMEs stay short.
-- Check command examples against the parser and filenames against the release assets.
-- A guide describes the current release. Version history, fixed bugs and superseded settings go in a closing
-  **History / older measurements** section, in `bench/results`, or in the release notes. Do not mix them into instructions.
+## Measurement logs
 
-Every guide page has this shape:
+These pages record measurements as they were taken. They keep their original text and
+their original numbers. A log is evidence, not current advice: read the build and the
+hardware in each table before you compare it with a run of your own.
 
-| Part | Content |
-| --- | --- |
-| Title | `# Name of the task or topic` |
-| Purpose | One to three lines: what the page is for and who it is for |
-| Quick start or Steps | The shortest working path, commands in code blocks |
-| Details | `##` sections; option and flag lists as tables; short paragraphs |
-| History / older measurements | Optional, last. Dated numbers only |
+- [NVIDIA_V100.md](NVIDIA_V100.md) - the Volta build, the two-V100 service profiles, and their numbers.
+- [DETAILS.md](DETAILS.md) - the long measurement and settings record.
+- [benchmarks/](benchmarks/) and [../benchmarks/](../benchmarks/) - benchmark data and reports.
+- [../improvements/](../improvements/) - the upstream-sync and release selection records, from
+  v0.1.40.2 to 2026-10-19, with the changes that were taken and the ones that were left out.
 
-Label every measurement the same way, directly above the number or table:
+## Conventions
 
-> **Measured on:** hardware (GPU, CPU, RAM), model or set, Strata version, workload.
+- The English pages are authoritative. The root README files (`README.md` and the six
+  translations) mirror each other one to one: the same sections, the same tables, the same
+  numbers, translated. [zh_CN/](zh_CN/) holds translations of the pages in this directory
+  and can lag behind them.
+- `--flag value` is an engine or server option. `NAME=value` is an environment variable.
+  `+N tokens` or `tokens/s` is the measured value.
+- A number belongs to the hardware in its table. Do not compare a number from one table
+  with a number from another table unless both tables name the same build and the same
+  hardware.
+- "Measured" means a run of the code. "From the code" means a reading of the source,
+  with the file named. Tests do not replace a measurement.
+- The pages follow [STYLE.md](STYLE.md).

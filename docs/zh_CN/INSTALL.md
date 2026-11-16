@@ -2,7 +2,7 @@
 <a id="installing-strata"></a>
 
 关于在 Windows、Linux 和 Mac 上、使用 NVIDIA 或 AMD 显卡或 Apple Silicon Mac 安装、启动、更新和配置 Strata 的一切。
-简要版本在 [README](../../README.md#install)。AI 编程助手可以按 [AI_SETUP.md](AI_SETUP.md) 替你完成全部这些操作。
+简要版本在 [README](../../README.md#install-and-start)。AI 编程助手可以按 [AI_SETUP.md](AI_SETUP.md) 替你完成全部这些操作。
 
 安装方式有三种。除非有理由不这么做，否则请选第一种：
 

@@ -60,6 +60,11 @@ build-vision-cuda12.bat
 .idea/
 .cursor/
 
+# Local agent instructions (kept out of the repository on purpose)
+AGENTS.md
+CLAUDE.md
+.cursorrules
+
 /.ccache/
 /.rocm-win/
 
