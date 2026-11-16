@@ -4,7 +4,12 @@
 
 Publish the already-running Strata OpenAI-compatible API on `192.168.1.13:8080` at a stable Cloudflare hostname, for example `https://llm.example.com/v1`. Keep the current model server running, expose no inbound router ports, and require both Cloudflare Access and Strata API authentication for programmatic clients.
 
-This design follows [`cloudflared-tunnel-setup.md`](../../cloudflared-tunnel-setup.md), with two current-doc corrections noted below. The Cloudflare zone is already available, so only the exact domain and chosen subdomain remain deployment inputs.
+This design follows an operator note that lives on the tunnel host, outside this repository (`cloudflared-tunnel-setup.md`), with two
+current-doc corrections noted below. The Cloudflare zone is already available, so only the exact domain and chosen subdomain remain
+deployment inputs.
+
+**Status:** a design only. No `strata tunnel` command exists in this release, and `strata launch --access cloudflare` still starts the
+temporary Quick Tunnel.
 
 ## Existing Strata behavior
 
