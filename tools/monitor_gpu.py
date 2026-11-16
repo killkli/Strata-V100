@@ -122,7 +122,7 @@ def main():
     except KeyboardInterrupt:
         print("\nGPU monitoring stopped.")
     except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
-        print(f"monitor-gpu: {exc}", file=sys.stderr)
+        print(f"monitor_gpu: {exc}", file=sys.stderr)
         return 1
     return 0
 
