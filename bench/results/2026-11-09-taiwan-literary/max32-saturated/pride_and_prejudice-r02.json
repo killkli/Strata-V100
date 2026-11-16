@@ -1,0 +1,41 @@
+{
+  "id": "pride_and_prejudice-r02",
+  "book": "pride_and_prejudice",
+  "title_zh_TW": "傲慢與偏見",
+  "replica": 2,
+  "source_words": 283,
+  "source_sha256": "06425bc2251488105675e0fdd7e0b28473a33b43444cfe07f9018d6ae5bc35ae",
+  "seconds": 94.8364,
+  "ttft_content_seconds": 3.6112,
+  "start_offset_seconds": 0.0008,
+  "end_offset_seconds": 94.8371,
+  "usage": {
+    "prompt_tokens": 641,
+    "completion_tokens": 333,
+    "total_tokens": 974,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "engine_timings": {
+    "cache_n": 0,
+    "prompt_n": 641,
+    "prompt_ms": 1547.7,
+    "prompt_per_token_ms": 2.415,
+    "prompt_per_second": 414.2,
+    "predicted_n": 333,
+    "predicted_ms": 91096.6,
+    "predicted_per_token_ms": 273.563,
+    "predicted_per_second": 3.7,
+    "draft_n": 0,
+    "draft_n_accepted": 0
+  },
+  "finish_reason": "stop",
+  "translation_chars": 486,
+  "han_chars": 393,
+  "visible_decode_tokens_per_second": 3.654,
+  "reasoning_chars": 0,
+  "simplified_character_hits": {},
+  "historical_currency_warning": false,
+  "passed": true
+}

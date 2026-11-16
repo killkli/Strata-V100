@@ -1,0 +1,633 @@
+{
+  "label": "max32-four",
+  "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+  "configured_slots": 32,
+  "effective_slots": 32,
+  "max_context": 8192,
+  "simultaneous_requests_sent": 4,
+  "replicas_per_book": 1,
+  "max_observed_active_slots": 4,
+  "wall_seconds": 42.6666,
+  "successful": 4,
+  "failed": 0,
+  "completion_tokens": 1751,
+  "aggregate_completion_tokens_per_second": 41.039,
+  "aggregate_han_chars_per_second": 48.867,
+  "ttft_content_median_seconds": 5.234,
+  "ttft_content_max_seconds": 8.9254,
+  "system_prompt": "你是一位臺灣文學小說譯者。請將使用者提供的英文經典小說完整翻譯，並改寫成臺灣讀者自然流暢的繁體中文小說正文。\n使用臺灣常用詞彙、繁體字及中文標點，對話使用「」；避免簡體字與中國大陸慣用語。\n忠實保留原作所有情節、人物關係、細節、敘事人稱、諷刺及情緒，調整生硬的英文句構，保持文學性；維持原作時代背景與文化，不改成本土故事。\n人名採自然一致的中文譯名，保留原段落與對話次序。不得摘要、刪段、增添原文沒有的劇情。\n保留原作的貨幣、計量單位與歷史背景，不得換算成本地貨幣或使用現代網路語；原文未註明幣別時，不要自行添加美元、鎂或任何貨幣符號。\n只輸出翻譯改寫後的正文，不要標題、說明、英文原文、註解、識別碼或思考過程。",
+  "system_prompt_sha256": "b7a33fb3439d660828724c4dc45e12dce8be16d20775b0416fa322ffba2e0130",
+  "generation_parameters": {
+    "max_tokens": 3072,
+    "temperature": 0.2,
+    "top_p": 0.9,
+    "seed": 20261109,
+    "enable_thinking": false
+  },
+  "records": [
+    {
+      "id": "great_expectations-r00",
+      "book": "great_expectations",
+      "title_zh_TW": "遠大前程",
+      "replica": 0,
+      "source_words": 407,
+      "source_sha256": "3b072e619d128b201c9396481bb7d88f9d36b963ff7e7a0299b1e96d119a11af",
+      "seconds": 42.6644,
+      "ttft_content_seconds": 8.9254,
+      "start_offset_seconds": 0.0007,
+      "end_offset_seconds": 42.6651,
+      "usage": {
+        "prompt_tokens": 778,
+        "completion_tokens": 544,
+        "total_tokens": 1322,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "engine_timings": {
+        "cache_n": 0,
+        "prompt_n": 778,
+        "prompt_ms": 2393.9,
+        "prompt_per_token_ms": 3.077,
+        "prompt_per_second": 325.0,
+        "predicted_n": 544,
+        "predicted_ms": 33407.7,
+        "predicted_per_token_ms": 61.411,
+        "predicted_per_second": 16.3,
+        "draft_n": 31,
+        "draft_n_accepted": 17
+      },
+      "finish_reason": "stop",
+      "translation_chars": 701,
+      "han_chars": 615,
+      "visible_decode_tokens_per_second": 16.17,
+      "reasoning_chars": 0,
+      "simplified_character_hits": {},
+      "historical_currency_warning": false,
+      "passed": true
+    },
+    {
+      "id": "jane_eyre-r00",
+      "book": "jane_eyre",
+      "title_zh_TW": "簡愛",
+      "replica": 0,
+      "source_words": 280,
+      "source_sha256": "f7d7622833576cc076a5a4e627b1b81e692606631c1c7521179e82c4f3a9ea65",
+      "seconds": 35.0028,
+      "ttft_content_seconds": 2.1134,
+      "start_offset_seconds": 0.001,
+      "end_offset_seconds": 35.0037,
+      "usage": {
+        "prompt_tokens": 643,
+        "completion_tokens": 369,
+        "total_tokens": 1012,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "engine_timings": {
+        "cache_n": 0,
+        "prompt_n": 643,
+        "prompt_ms": 2008.7,
+        "prompt_per_token_ms": 3.124,
+        "prompt_per_second": 320.1,
+        "predicted_n": 369,
+        "predicted_ms": 32740.3,
+        "predicted_per_token_ms": 88.727,
+        "predicted_per_second": 11.3,
+        "draft_n": 0,
+        "draft_n_accepted": 0
+      },
+      "finish_reason": "stop",
+      "translation_chars": 519,
+      "han_chars": 453,
+      "visible_decode_tokens_per_second": 11.234,
+      "reasoning_chars": 0,
+      "simplified_character_hits": {},
+      "historical_currency_warning": false,
+      "passed": true
+    },
+    {
+      "id": "moby_dick-r00",
+      "book": "moby_dick",
+      "title_zh_TW": "白鯨",
+      "replica": 0,
+      "source_words": 385,
+      "source_sha256": "327447198443e8e702eda2f8146cdff870075762e256e2522b7279a43082569c",
+      "seconds": 40.8944,
+      "ttft_content_seconds": 6.2786,
+      "start_offset_seconds": 0.0001,
+      "end_offset_seconds": 40.8945,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 498,
+        "total_tokens": 1259,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "engine_timings": {
+        "cache_n": 0,
+        "prompt_n": 761,
+        "prompt_ms": 1843.4,
+        "prompt_per_token_ms": 2.422,
+        "prompt_per_second": 412.8,
+        "predicted_n": 498,
+        "predicted_ms": 34444.1,
+        "predicted_per_token_ms": 69.165,
+        "predicted_per_second": 14.5,
+        "draft_n": 0,
+        "draft_n_accepted": 0
+      },
+      "finish_reason": "stop",
+      "translation_chars": 689,
+      "han_chars": 618,
+      "visible_decode_tokens_per_second": 14.404,
+      "reasoning_chars": 0,
+      "simplified_character_hits": {},
+      "historical_currency_warning": false,
+      "passed": true
+    },
+    {
+      "id": "pride_and_prejudice-r00",
+      "book": "pride_and_prejudice",
+      "title_zh_TW": "傲慢與偏見",
+      "replica": 0,
+      "source_words": 283,
+      "source_sha256": "06425bc2251488105675e0fdd7e0b28473a33b43444cfe07f9018d6ae5bc35ae",
+      "seconds": 33.4765,
+      "ttft_content_seconds": 4.1885,
+      "start_offset_seconds": 0.0004,
+      "end_offset_seconds": 33.4769,
+      "usage": {
+        "prompt_tokens": 644,
+        "completion_tokens": 340,
+        "total_tokens": 984,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "engine_timings": {
+        "cache_n": 0,
+        "prompt_n": 644,
+        "prompt_ms": 1685.2,
+        "prompt_per_token_ms": 2.617,
+        "prompt_per_second": 382.2,
+        "predicted_n": 340,
+        "predicted_ms": 29122.2,
+        "predicted_per_token_ms": 85.654,
+        "predicted_per_second": 11.7,
+        "draft_n": 0,
+        "draft_n_accepted": 0
+      },
+      "finish_reason": "stop",
+      "translation_chars": 492,
+      "han_chars": 399,
+      "visible_decode_tokens_per_second": 11.633,
+      "reasoning_chars": 0,
+      "simplified_character_hits": {},
+      "historical_currency_warning": false,
+      "passed": true
+    }
+  ],
+  "telemetry": [
+    {
+      "at_s": 6121.296084782,
+      "active_slots": 0,
+      "in_flight": 0,
+      "gpus_csv": "0, 15740, 0, 44, 44.71\n1, 15646, 0, 45, 44.24\n2, 15646, 0, 45, 41.29\n3, 15648, 0, 46, 47.27"
+    },
+    {
+      "at_s": 6121.864531929,
+      "active_slots": 0,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6122.36766921,
+      "active_slots": 0,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6122.871068473,
+      "active_slots": 0,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6123.374382749,
+      "active_slots": 0,
+      "in_flight": 4,
+      "gpus_csv": "0, 15796, 15, 45, 52.53\n1, 15706, 8, 46, 56.49\n2, 15704, 67, 46, 54.58\n3, 15712, 17, 47, 76.81"
+    },
+    {
+      "at_s": 6123.927376082,
+      "active_slots": 2,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6124.43043301,
+      "active_slots": 2,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6124.935053958,
+      "active_slots": 2,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6125.43792694,
+      "active_slots": 2,
+      "in_flight": 4,
+      "gpus_csv": "0, 15800, 30, 45, 65.30\n1, 15710, 20, 47, 71.67\n2, 15708, 87, 46, 71.32\n3, 15722, 51, 48, 94.37"
+    },
+    {
+      "at_s": 6125.989558686,
+      "active_slots": 3,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6126.492668452,
+      "active_slots": 3,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6126.995822665,
+      "active_slots": 3,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6127.498649809,
+      "active_slots": 3,
+      "in_flight": 4,
+      "gpus_csv": "0, 15804, 37, 45, 51.47\n1, 15714, 38, 47, 60.86\n2, 15712, 64, 46, 69.79\n3, 15728, 68, 48, 98.81"
+    },
+    {
+      "at_s": 6128.05089113,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6128.553784597,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6129.056998892,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6129.559957252,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15808, 0, 45, 54.01\n1, 15718, 0, 47, 55.53\n2, 15716, 0, 47, 53.62\n3, 15734, 100, 50, 76.76"
+    },
+    {
+      "at_s": 6130.110260686,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6130.613157307,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6131.116141206,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6131.619135225,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 87, 46, 79.52\n1, 15724, 97, 48, 79.46\n2, 15720, 84, 48, 71.22\n3, 15738, 99, 49, 88.51"
+    },
+    {
+      "at_s": 6132.167346047,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6132.670433456,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6133.173616933,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6133.676436255,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 85, 47, 79.75\n1, 15724, 97, 49, 86.42\n2, 15720, 83, 48, 79.12\n3, 15738, 97, 50, 95.23"
+    },
+    {
+      "at_s": 6134.23029691,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6134.733107515,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6135.236303755,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6135.739658377,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 84, 47, 78.04\n1, 15724, 94, 49, 83.35\n2, 15720, 83, 48, 77.74\n3, 15738, 99, 50, 91.47"
+    },
+    {
+      "at_s": 6136.294156686,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6136.797506308,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6137.300540005,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6137.803701829,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 84, 47, 75.47\n1, 15724, 97, 49, 81.88\n2, 15720, 83, 49, 75.67\n3, 15738, 97, 51, 102.76"
+    },
+    {
+      "at_s": 6138.352862798,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6138.855754851,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6139.359224627,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6139.862377663,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 82, 48, 76.36\n1, 15724, 94, 50, 85.98\n2, 15720, 83, 49, 76.56\n3, 15738, 98, 51, 98.81"
+    },
+    {
+      "at_s": 6140.414033534,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6140.917229446,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6141.420286457,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6141.923110139,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 85, 48, 75.62\n1, 15724, 98, 50, 82.59\n2, 15720, 87, 49, 76.01\n3, 15738, 98, 51, 94.80"
+    },
+    {
+      "at_s": 6142.474105442,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6142.977268886,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6143.480093169,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6143.982929176,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 85, 48, 79.41\n1, 15724, 96, 50, 81.77\n2, 15720, 85, 49, 78.63\n3, 15738, 98, 52, 101.64"
+    },
+    {
+      "at_s": 6144.53356835,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6145.036549649,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6145.539601171,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6146.042857329,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 82, 48, 79.46\n1, 15724, 94, 50, 85.38\n2, 15720, 82, 50, 76.66\n3, 15738, 97, 52, 92.34"
+    },
+    {
+      "at_s": 6146.594437725,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6147.097258944,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6147.600380925,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6148.103227136,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 86, 48, 80.35\n1, 15724, 97, 50, 88.22\n2, 15720, 86, 50, 87.03\n3, 15738, 98, 52, 96.22"
+    },
+    {
+      "at_s": 6148.654586344,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6149.158106716,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6149.661493018,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6150.164518379,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 86, 49, 83.14\n1, 15724, 97, 51, 88.60\n2, 15720, 82, 50, 78.14\n3, 15738, 97, 52, 87.90"
+    },
+    {
+      "at_s": 6150.716265076,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6151.219340741,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6151.722466814,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6152.225650057,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 82, 49, 76.41\n1, 15724, 95, 51, 85.27\n2, 15720, 84, 50, 78.53\n3, 15738, 98, 52, 99.24"
+    },
+    {
+      "at_s": 6152.776407619,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6153.279575362,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6153.782832417,
+      "active_slots": 4,
+      "in_flight": 4
+    },
+    {
+      "at_s": 6154.285682951,
+      "active_slots": 4,
+      "in_flight": 4,
+      "gpus_csv": "0, 15812, 83, 49, 81.77\n1, 15724, 97, 51, 87.84\n2, 15720, 84, 50, 74.14\n3, 15738, 98, 53, 94.19"
+    },
+    {
+      "at_s": 6154.834411303,
+      "active_slots": 3,
+      "in_flight": 3
+    },
+    {
+      "at_s": 6155.337529903,
+      "active_slots": 3,
+      "in_flight": 3
+    },
+    {
+      "at_s": 6155.840825523,
+      "active_slots": 3,
+      "in_flight": 3
+    },
+    {
+      "at_s": 6156.343656821,
+      "active_slots": 2,
+      "in_flight": 2,
+      "gpus_csv": "0, 15812, 62, 49, 83.74\n1, 15724, 74, 51, 81.43\n2, 15720, 71, 50, 84.01\n3, 15738, 79, 53, 86.47"
+    },
+    {
+      "at_s": 6156.894180403,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6157.39726936,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6157.90049535,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6158.403584036,
+      "active_slots": 2,
+      "in_flight": 2,
+      "gpus_csv": "0, 15812, 39, 49, 80.84\n1, 15724, 46, 51, 91.49\n2, 15720, 46, 50, 76.66\n3, 15738, 58, 53, 78.19"
+    },
+    {
+      "at_s": 6158.95245192,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6159.455851597,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6159.958948023,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6160.461761734,
+      "active_slots": 2,
+      "in_flight": 2,
+      "gpus_csv": "0, 15812, 32, 49, 62.26\n1, 15724, 50, 51, 74.04\n2, 15720, 52, 50, 75.18\n3, 15738, 53, 53, 85.00"
+    },
+    {
+      "at_s": 6161.01295872,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6161.515894573,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6162.018921282,
+      "active_slots": 2,
+      "in_flight": 2
+    },
+    {
+      "at_s": 6162.521974429,
+      "active_slots": 0,
+      "in_flight": 1,
+      "gpus_csv": "0, 15820, 15, 49, 78.53\n1, 15732, 10, 51, 71.13\n2, 15728, 14, 50, 56.49\n3, 15744, 12, 52, 80.16"
+    },
+    {
+      "at_s": 6163.072753958,
+      "active_slots": 0,
+      "in_flight": 1
+    },
+    {
+      "at_s": 6163.576274285,
+      "active_slots": 0,
+      "in_flight": 1
+    }
+  ],
+  "telemetry_errors": [],
+  "limits": "One simultaneous burst, not a statistical comparison. Aggregate throughput includes prompt admission, queueing and generation; per-request TTFT is time to first translated content, not SSE headers. Input cache reuse and actual token counts are recorded."
+}

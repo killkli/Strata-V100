@@ -1,0 +1,44 @@
+{
+  "test_configuration": {
+    "requested_slots": 32,
+    "batch_groups": 4,
+    "context": 8192,
+    "kv_resident": 8192
+  },
+  "production_configuration": {
+    "parallel": 2,
+    "context": 262144,
+    "port": 8080
+  },
+  "stages": [
+    {
+      "name": "max32-four",
+      "exit_code": 0,
+      "successful": 4,
+      "wall_seconds": 42.6666,
+      "aggregate_tokens_per_second": 41.039,
+      "observed_active_slots": 4
+    },
+    {
+      "name": "max32-saturated",
+      "exit_code": 0,
+      "successful": 32,
+      "wall_seconds": 132.0453,
+      "aggregate_tokens_per_second": 106.161,
+      "observed_active_slots": 32
+    }
+  ],
+  "test_effective_slots": 32,
+  "test_reported_context": 8192,
+  "production_restored": {
+    "passed": true,
+    "pid": 20205,
+    "context": 262144,
+    "concurrency": {
+      "serving": 2,
+      "requested": 2
+    },
+    "config_unchanged": true,
+    "launcher_unchanged": true
+  }
+}

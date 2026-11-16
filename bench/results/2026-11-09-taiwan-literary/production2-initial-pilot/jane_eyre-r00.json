@@ -1,0 +1,40 @@
+{
+  "id": "jane_eyre-r00",
+  "book": "jane_eyre",
+  "title_zh_TW": "簡愛",
+  "replica": 0,
+  "source_words": 280,
+  "source_sha256": "f7d7622833576cc076a5a4e627b1b81e692606631c1c7521179e82c4f3a9ea65",
+  "seconds": 11.303,
+  "ttft_content_seconds": 3.8426,
+  "start_offset_seconds": 0.0003,
+  "end_offset_seconds": 11.3034,
+  "usage": {
+    "prompt_tokens": 603,
+    "completion_tokens": 374,
+    "total_tokens": 977,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "engine_timings": {
+    "cache_n": 0,
+    "prompt_n": 603,
+    "prompt_ms": 1493.4,
+    "prompt_per_token_ms": 2.477,
+    "prompt_per_second": 403.8,
+    "predicted_n": 374,
+    "predicted_ms": 7318.0,
+    "predicted_per_token_ms": 19.567,
+    "predicted_per_second": 51.1,
+    "draft_n": 0,
+    "draft_n_accepted": 0
+  },
+  "finish_reason": "stop",
+  "translation_chars": 514,
+  "han_chars": 448,
+  "visible_decode_tokens_per_second": 50.275,
+  "reasoning_chars": 0,
+  "simplified_character_hits": {},
+  "passed": true
+}

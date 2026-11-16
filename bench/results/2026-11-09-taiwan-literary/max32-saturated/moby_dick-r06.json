@@ -1,0 +1,41 @@
+{
+  "id": "moby_dick-r06",
+  "book": "moby_dick",
+  "title_zh_TW": "白鯨",
+  "replica": 6,
+  "source_words": 385,
+  "source_sha256": "327447198443e8e702eda2f8146cdff870075762e256e2522b7279a43082569c",
+  "seconds": 123.3683,
+  "ttft_content_seconds": 36.0862,
+  "start_offset_seconds": 0.0032,
+  "end_offset_seconds": 123.3714,
+  "usage": {
+    "prompt_tokens": 759,
+    "completion_tokens": 505,
+    "total_tokens": 1264,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "engine_timings": {
+    "cache_n": 0,
+    "prompt_n": 759,
+    "prompt_ms": 1672.2,
+    "prompt_per_token_ms": 2.203,
+    "prompt_per_second": 453.9,
+    "predicted_n": 505,
+    "predicted_ms": 87109.8,
+    "predicted_per_token_ms": 172.495,
+    "predicted_per_second": 5.8,
+    "draft_n": 0,
+    "draft_n_accepted": 0
+  },
+  "finish_reason": "stop",
+  "translation_chars": 690,
+  "han_chars": 619,
+  "visible_decode_tokens_per_second": 5.798,
+  "reasoning_chars": 0,
+  "simplified_character_hits": {},
+  "historical_currency_warning": false,
+  "passed": true
+}

@@ -1,0 +1,41 @@
+{
+  "id": "great_expectations-r00",
+  "book": "great_expectations",
+  "title_zh_TW": "遠大前程",
+  "replica": 0,
+  "source_words": 407,
+  "source_sha256": "3b072e619d128b201c9396481bb7d88f9d36b963ff7e7a0299b1e96d119a11af",
+  "seconds": 39.3731,
+  "ttft_content_seconds": 22.4811,
+  "start_offset_seconds": 0.0004,
+  "end_offset_seconds": 39.3735,
+  "usage": {
+    "prompt_tokens": 778,
+    "completion_tokens": 566,
+    "total_tokens": 1344,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "engine_timings": {
+    "cache_n": 0,
+    "prompt_n": 778,
+    "prompt_ms": 2229.9,
+    "prompt_per_token_ms": 2.866,
+    "prompt_per_second": 348.9,
+    "predicted_n": 566,
+    "predicted_ms": 16467.3,
+    "predicted_per_token_ms": 29.094,
+    "predicted_per_second": 34.4,
+    "draft_n": 103,
+    "draft_n_accepted": 53
+  },
+  "finish_reason": "stop",
+  "translation_chars": 749,
+  "han_chars": 665,
+  "visible_decode_tokens_per_second": 33.715,
+  "reasoning_chars": 0,
+  "simplified_character_hits": {},
+  "historical_currency_warning": false,
+  "passed": true
+}

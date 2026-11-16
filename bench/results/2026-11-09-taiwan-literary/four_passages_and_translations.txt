@@ -1,0 +1,162 @@
+四段經典小說：臺灣繁體中文翻譯改寫測試
+
+以下保留 max32-four 輪次的模型原始輸出，未人工潤飾。時間不含模型載入；每輪一次，非統計推論。
+
+
+=================================================================
+
+傲慢與偏見 / Jane Austen
+
+https://www.gutenberg.org/cache/epub/1342/pg1342.txt
+
+英文 283 字；首字 4.19 秒；完成 33.48 秒；生成 11.63 tokens/s。
+
+
+英文原文：
+It is a truth universally acknowledged, that a single man in possession of a good fortune must be in want of a wife.
+
+However little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered as the rightful property of some one or other of their daughters.
+
+“My dear Mr. Bennet,” said his lady to him one day, “have you heard that Netherfield Park is let at last?”
+
+Mr. Bennet replied that he had not.
+
+“But it is,” returned she; “for Mrs. Long has just been here, and she told me all about it.”
+
+Mr. Bennet made no answer.
+
+“Do not you want to know who has taken it?” cried his wife, impatiently.
+
+“_You_ want to tell me, and I have no objection to hearing it.”
+
+[Illustration:
+
+“He came down to see the place”
+
+[_Copyright 1894 by George Allen._]]
+
+This was invitation enough.
+
+“Why, my dear, you must know, Mrs. Long says that Netherfield is taken by a young man of large fortune from the north of England; that he came down on Monday in a chaise and four to see the place, and was so much delighted with it that he agreed with Mr. Morris immediately; that he is to take possession before Michaelmas, and some of his servants are to be in the house by the end of next week.”
+
+“What is his name?”
+
+“Bingley.”
+
+“Is he married or single?”
+
+“Oh, single, my dear, to be sure! A single man of large fortune; four or five thousand a year. What a fine thing for our girls!”
+
+
+臺灣繁體中文翻譯改寫：
+凡是有錢的單身漢，必定需要一位太太，這已是舉世公認的真理。
+
+儘管這位先生初來乍到時，旁人對他的性情與見解所知甚少，但這條真理在鄰近各家的腦海中已是根深蒂固，以至於他們將他視為自家女兒們理所當然的歸屬。
+
+「親愛的班納特先生，」有一天，他的太太對他說，「你聽說了嗎？尼德斐莊園終於租出去了。」
+
+班納特先生回答說他沒聽說。
+
+「確實租出去了，」她接著說，「因為朗太太剛來過，她把整件事都告訴我了呢。」
+
+班納特先生沒有回答。
+
+「你難道不想知道是誰租下的嗎？」他的妻子不耐煩地叫道。
+
+「是你想告訴我，而我也不反對聽聽。」
+
+這便是足夠的邀請了。
+
+「哎呀，親愛的，你得知道，朗太太說，尼德斐莊園被一位來自英格蘭北部、家財萬貫的年輕人租下了；他星期一乘著四匹馬拉的輕便馬車前來看房，對那地方喜愛得不得了，當場便與莫里斯先生達成協議；他打算在米迦勒節前搬進去，而且下週結束前，他的一些僕人就會先住進屋裡。」
+
+「他叫什麼名字？」
+
+「彬格萊。」
+
+「他是已婚還是單身？」
+
+「噢，當然是單身啦，親愛的！一位家財萬貫的單身漢；年收入有四五千鎊呢。這對我們的女兒們來說，簡直是天大的好事！」
+
+
+=================================================================
+
+簡愛 / Charlotte Brontë
+
+https://www.gutenberg.org/cache/epub/1260/pg1260.txt
+
+英文 280 字；首字 2.11 秒；完成 35.00 秒；生成 11.23 tokens/s。
+
+
+英文原文：
+There was no possibility of taking a walk that day. We had been wandering, indeed, in the leafless shrubbery an hour in the morning; but since dinner (Mrs. Reed, when there was no company, dined early) the cold winter wind had brought with it clouds so sombre, and a rain so penetrating, that further outdoor exercise was now out of the question.
+
+I was glad of it: I never liked long walks, especially on chilly afternoons: dreadful to me was the coming home in the raw twilight, with nipped fingers and toes, and a heart saddened by the chidings of Bessie, the nurse, and humbled by the consciousness of my physical inferiority to Eliza, John, and Georgiana Reed.
+
+The said Eliza, John, and Georgiana were now clustered round their mama in the drawing-room: she lay reclined on a sofa by the fireside, and with her darlings about her (for the time neither quarrelling nor crying) looked perfectly happy. Me, she had dispensed from joining the group; saying, “She regretted to be under the necessity of keeping me at a distance; but that until she heard from Bessie, and could discover by her own observation, that I was endeavouring in good earnest to acquire a more sociable and childlike disposition, a more attractive and sprightly manner—something lighter, franker, more natural, as it were—she really must exclude me from privileges intended only for contented, happy, little children.”
+
+“What does Bessie say I have done?” I asked.
+
+“Jane, I don’t like cavillers or questioners; besides, there is something truly forbidding in a child taking up her elders in that manner. Be seated somewhere; and until you can speak pleasantly, remain silent.”
+
+
+臺灣繁體中文翻譯改寫：
+那天根本無法外出散步。上午我們確實在光禿禿的灌木叢間遊蕩了一個鐘頭，但自從午餐後（里德太太若無賓客造訪，總是提早用膳），凜冽的冬風便攜來陰沉的烏雲與刺骨的冷雨，使得繼續戶外活動成為不可能的事。
+
+我對此感到慶幸：我從來不喜歡長途步行，尤其是在寒冷的午後；對我而言，最令人難受的莫過於在那陰冷昏暗的暮色中歸家，手指腳趾凍得發麻，心裡因保姆貝茜的責罵而鬱悶，又因意識到自己身體不如伊麗莎、約翰和喬治安娜·里德強健而感到自卑。
+
+前述的伊麗莎、約翰和喬治安娜此刻正簇擁在母親身邊，待在客廳裡：她斜倚在壁爐旁的沙發上，身邊環繞著她的寶貝們（此時他們既不爭吵也不哭泣），看起來十分滿足快樂。至於我，她已免除了我加入這群體的資格，並說道：「她很遺憾不得不讓我保持距離；但在貝茜回報之前，且在她親眼觀察確認我正真心努力培養更合群、更具孩童特質的性情，展現更討喜、更活潑的舉止——某種更輕盈、坦率、自然的神態之前——她確實必須剝奪我享受那些僅供快樂、幸福的小孩子享有的特權。」
+
+「貝茜說我做了什麼？」我問道。
+
+「簡，我不喜歡吹毛求疵或愛追根究底的人；況且，一個孩子以那種方式頂撞長輩，實在令人難以忍受。找個地方坐下，在你學會好好說話之前，保持沉默。」
+
+
+=================================================================
+
+遠大前程 / Charles Dickens
+
+https://www.gutenberg.org/cache/epub/1400/pg1400.txt
+
+英文 407 字；首字 8.93 秒；完成 42.66 秒；生成 16.17 tokens/s。
+
+
+英文原文：
+My father’s family name being Pirrip, and my Christian name Philip, my infant tongue could make of both names nothing longer or more explicit than Pip. So, I called myself Pip, and came to be called Pip.
+
+I give Pirrip as my father’s family name, on the authority of his tombstone and my sister,—Mrs. Joe Gargery, who married the blacksmith. As I never saw my father or my mother, and never saw any likeness of either of them (for their days were long before the days of photographs), my first fancies regarding what they were like were unreasonably derived from their tombstones. The shape of the letters on my father’s, gave me an odd idea that he was a square, stout, dark man, with curly black hair. From the character and turn of the inscription, “_Also Georgiana Wife of the Above_,” I drew a childish conclusion that my mother was freckled and sickly. To five little stone lozenges, each about a foot and a half long, which were arranged in a neat row beside their grave, and were sacred to the memory of five little brothers of mine,—who gave up trying to get a living, exceedingly early in that universal struggle,—I am indebted for a belief I religiously entertained that they had all been born on their backs with their hands in their trousers-pockets, and had never taken them out in this state of existence.
+
+Ours was the marsh country, down by the river, within, as the river wound, twenty miles of the sea. My first most vivid and broad impression of the identity of things seems to me to have been gained on a memorable raw afternoon towards evening. At such a time I found out for certain that this bleak place overgrown with nettles was the churchyard; and that Philip Pirrip, late of this parish, and also Georgiana wife of the above, were dead and buried; and that Alexander, Bartholomew, Abraham, Tobias, and Roger, infant children of the aforesaid, were also dead and buried; and that the dark flat wilderness beyond the churchyard, intersected with dikes and mounds and gates, with scattered cattle feeding on it, was the marshes; and that the low leaden line beyond was the river; and that the distant savage lair from which the wind was rushing was the sea; and that the small bundle of shivers growing afraid of it all and beginning to cry, was Pip.
+
+
+臺灣繁體中文翻譯改寫：
+父親的姓氏是皮里普，我的教名是菲利普，我這咿呀學語的嬰兒，從這兩個名字裡能拼湊出的，再長再清楚也不過是「皮普」二字。於是，我便自稱皮普，別人也漸漸叫我皮普。
+
+我之所以說父親姓皮里普，依據有二：一是他的墓碑，二是我的姊姊——嫁給鐵匠的喬・加吉里太太。我從未見過父親或母親，也從未見過他們任何形貌的相似之處（因為他們在世時，攝影術尚未問世），因此我對他們模樣的初步想像，全然荒謬地源自那些墓碑。父親墓碑上字母的形狀，讓我產生一種古怪的念頭，覺得他定是個方頭大耳、膚色黝黑、頭髮捲曲的壯漢。而從那句「亦葬其妻喬治安娜」的銘文筆跡與轉折，我得出一個幼稚的結論，認為母親定是滿臉雀斑、體弱多病。在那五塊約莫一尺半長、整齊排列在墓旁的菱形小石碑前，我懷著虔誠的信念，深信我那五個早夭的弟弟——他們在那場名為「謀生」的普遍鬥爭中，極早就放棄了努力——定是生來便仰臥著，雙手插在褲袋裡，且在此生中從未將手抽出過。
+
+我們家住在沼澤地帶，就在河邊，隨著河流蜿蜒，距離大海不過二十英里。我對事物本質最早、最鮮明而廣闊的印象，似乎是在一個難忘的、陰冷蕭瑟的黃昏午後獲得的。就在那個時刻，我確切地發現，這片長滿蕁麻的荒涼之地便是教堂墓地；菲利普・皮里普，本教區已故居民，以及前述之妻喬治安娜，均已逝世並安葬於此；亞歷山大、巴塞洛繆、亞伯拉罕、托比亞斯和羅傑，前述夫婦早夭的五個孩子，也同樣逝世並安葬於此；墓地之外那片黑暗平坦的荒野，交織著堤壩、土丘和閘門，散落的牛群在其間覓食，那便是沼澤；遠處那條鉛灰色的低平線條，便是河流；而風從中呼嘯而出的遙遠野蠻巢穴，便是大海；至於那一小團因恐懼一切而顫抖、開始哭泣的戰慄，便是皮普。
+
+
+=================================================================
+
+白鯨 / Herman Melville
+
+https://www.gutenberg.org/cache/epub/2701/pg2701.txt
+
+英文 385 字；首字 6.28 秒；完成 40.89 秒；生成 14.40 tokens/s。
+
+
+英文原文：
+Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world. It is a way I have of driving off the spleen and regulating the circulation. Whenever I find myself growing grim about the mouth; whenever it is a damp, drizzly November in my soul; whenever I find myself involuntarily pausing before coffin warehouses, and bringing up the rear of every funeral I meet; and especially whenever my hypos get such an upper hand of me, that it requires a strong moral principle to prevent me from deliberately stepping into the street, and methodically knocking people’s hats off—then, I account it high time to get to sea as soon as I can. This is my substitute for pistol and ball. With a philosophical flourish Cato throws himself upon his sword; I quietly take to the ship. There is nothing surprising in this. If they but knew it, almost all men in their degree, some time or other, cherish very nearly the same feelings towards the ocean with me.
+
+There now is your insular city of the Manhattoes, belted round by wharves as Indian isles by coral reefs—commerce surrounds it with her surf. Right and left, the streets take you waterward. Its extreme downtown is the battery, where that noble mole is washed by waves, and cooled by breezes, which a few hours previous were out of sight of land. Look at the crowds of water-gazers there.
+
+Circumambulate the city of a dreamy Sabbath afternoon. Go from Corlears Hook to Coenties Slip, and from thence, by Whitehall, northward. What do you see?—Posted like silent sentinels all around the town, stand thousands upon thousands of mortal men fixed in ocean reveries. Some leaning against the spiles; some seated upon the pier-heads; some looking over the bulwarks of ships from China; some high aloft in the rigging, as if striving to get a still better seaward peep. But these are all landsmen; of week days pent up in lath and plaster—tied to counters, nailed to benches, clinched to desks. How then is this? Are the green fields gone? What do they here?
+
+
+臺灣繁體中文翻譯改寫：
+叫我以實瑪利。幾年前——別管確切是多久以前了——當時我口袋裡幾乎沒錢，陸地上也沒有什麼特別讓我感興趣的事，我便想出海去轉一轉，看看這世界上的水域。這是我驅散憂鬱、調節氣血的一種方式。每當我發現自己嘴角緊抿、神色陰沉；每當我的靈魂陷入潮濕陰冷的十一月；每當我不由自主地在棺材鋪前駐足，或者尾隨每一場我遇到的葬禮；尤其是當我的憂鬱症佔據上風，以至於需要極強烈的道德原則才能阻止我故意走上街頭，有條不紊地打落路人頭上的帽子時——那麼，我就認為該是盡快出海的時候了。這是我代替手槍和子彈的法子。加圖以哲學家的姿態揮劍自刎；我則靜悄悄地登上船。這沒什麼好大驚小怪的。如果人們知道的話，幾乎所有人在某種程度上，總會在某個時刻，對大海懷有和我幾乎相同的感情。
+
+瞧，那就是你們曼哈頓的島城，四周環繞著碼頭，就像印第安人的島嶼被珊瑚礁環抱一樣——商業像海浪一樣包圍著它。左邊右邊，街道都把你引向水邊。它的最南端是炮台公園，那裡聳立的防波堤被海浪沖刷，被海風吹涼，而幾小時前，這些風還看不見陸地。看看那裡成群結隊凝望水面的人群吧。
+
+在一個夢幻般的安息日下午，繞著這座城市走一圈。從科爾爾斯角走到庫恩蒂斯碼頭，再從那裡經白廳向北走。你看見了什麼？成千上萬的凡人，像沉默的哨兵一樣環繞著城鎮，沉浸在對海洋的冥想中。有的倚靠在樁柱上；有的坐在碼頭盡頭；有的從來自中國的船隻舷牆上向外張望；有的高掛在索具上，彷彿要努力獲得一個更好的向海一瞥。但這些都是陸地上的人；平日裡被關在灰泥和木板搭建的屋子裡——被綁在櫃檯後，被釘在長凳上，被鎖在書桌前。那麼，這是怎麼回事？綠色的田野不見了嗎？他們在這裡做什麼？
+

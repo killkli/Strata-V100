@@ -1,0 +1,145 @@
+{
+  "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+  "engine": "0.1.45.7",
+  "sources": [
+    {
+      "id": "pride_and_prejudice",
+      "title_zh_TW": "傲慢與偏見",
+      "author": "Jane Austen",
+      "source_url": "https://www.gutenberg.org/cache/epub/1342/pg1342.txt",
+      "catalog_url": "https://www.gutenberg.org/ebooks/1342",
+      "word_count": 283,
+      "excerpt_sha256": "06425bc2251488105675e0fdd7e0b28473a33b43444cfe07f9018d6ae5bc35ae"
+    },
+    {
+      "id": "jane_eyre",
+      "title_zh_TW": "簡愛",
+      "author": "Charlotte Brontë",
+      "source_url": "https://www.gutenberg.org/cache/epub/1260/pg1260.txt",
+      "catalog_url": "https://www.gutenberg.org/ebooks/1260",
+      "word_count": 280,
+      "excerpt_sha256": "f7d7622833576cc076a5a4e627b1b81e692606631c1c7521179e82c4f3a9ea65"
+    },
+    {
+      "id": "great_expectations",
+      "title_zh_TW": "遠大前程",
+      "author": "Charles Dickens",
+      "source_url": "https://www.gutenberg.org/cache/epub/1400/pg1400.txt",
+      "catalog_url": "https://www.gutenberg.org/ebooks/1400",
+      "word_count": 407,
+      "excerpt_sha256": "3b072e619d128b201c9396481bb7d88f9d36b963ff7e7a0299b1e96d119a11af"
+    },
+    {
+      "id": "moby_dick",
+      "title_zh_TW": "白鯨",
+      "author": "Herman Melville",
+      "source_url": "https://www.gutenberg.org/cache/epub/2701/pg2701.txt",
+      "catalog_url": "https://www.gutenberg.org/ebooks/2701",
+      "word_count": 385,
+      "excerpt_sha256": "327447198443e8e702eda2f8146cdff870075762e256e2522b7279a43082569c"
+    }
+  ],
+  "test_peak": {
+    "effective_slots": 32,
+    "batch_groups": 4,
+    "context": 8192,
+    "observed_active_slots": 32
+  },
+  "production_restored": {
+    "passed": true,
+    "context": 262144,
+    "concurrency": {
+      "serving": 2,
+      "requested": 2
+    },
+    "config_unchanged": true,
+    "launcher_unchanged": true
+  },
+  "modes": {
+    "production2-four": {
+      "effective_slots": 2,
+      "max_context": 262144,
+      "simultaneous_requests_sent": 4,
+      "max_observed_active_slots": 2,
+      "wall_seconds": 39.3746,
+      "successful": 4,
+      "completion_tokens": 1775,
+      "aggregate_completion_tokens_per_second": 45.08,
+      "aggregate_han_chars_per_second": 54.375,
+      "ttft_content_median_seconds": 11.148,
+      "ttft_content_max_seconds": 22.4811,
+      "per_request_seconds_range": [
+        16.458,
+        39.3731
+      ],
+      "per_request_visible_decode_tps_median": 25.519,
+      "unambiguous_simplified_character_hits": 0
+    },
+    "max32-four": {
+      "effective_slots": 32,
+      "max_context": 8192,
+      "simultaneous_requests_sent": 4,
+      "max_observed_active_slots": 4,
+      "wall_seconds": 42.6666,
+      "successful": 4,
+      "completion_tokens": 1751,
+      "aggregate_completion_tokens_per_second": 41.039,
+      "aggregate_han_chars_per_second": 48.867,
+      "ttft_content_median_seconds": 5.234,
+      "ttft_content_max_seconds": 8.9254,
+      "per_request_seconds_range": [
+        33.4765,
+        42.6644
+      ],
+      "per_request_visible_decode_tps_median": 13.0185,
+      "unambiguous_simplified_character_hits": 0
+    },
+    "max32-saturated": {
+      "effective_slots": 32,
+      "max_context": 8192,
+      "simultaneous_requests_sent": 32,
+      "max_observed_active_slots": 32,
+      "wall_seconds": 132.0453,
+      "successful": 32,
+      "completion_tokens": 14018,
+      "aggregate_completion_tokens_per_second": 106.161,
+      "aggregate_han_chars_per_second": 127.047,
+      "ttft_content_median_seconds": 29.491,
+      "ttft_content_max_seconds": 64.2647,
+      "per_request_seconds_range": [
+        94.6833,
+        132.0402
+      ],
+      "per_request_visible_decode_tps_median": 5.2620000000000005,
+      "unambiguous_simplified_character_hits": 0
+    }
+  },
+  "quality_observations": [
+    {
+      "phase": "max32-saturated",
+      "id": "pride_and_prejudice-r07",
+      "issue": "British annual income rendered using modern USD slang 鎂",
+      "output": "bench/results/2026-11-09-taiwan-literary/max32-saturated/pride_and_prejudice-r07.zh-TW.txt"
+    }
+  ],
+  "methodology": {
+    "generation_parameters": {
+      "max_tokens": 3072,
+      "temperature": 0.2,
+      "top_p": 0.9,
+      "seed": 20261109,
+      "enable_thinking": false
+    },
+    "system_prompt": "你是一位臺灣文學小說譯者。請將使用者提供的英文經典小說完整翻譯，並改寫成臺灣讀者自然流暢的繁體中文小說正文。\n使用臺灣常用詞彙、繁體字及中文標點，對話使用「」；避免簡體字與中國大陸慣用語。\n忠實保留原作所有情節、人物關係、細節、敘事人稱、諷刺及情緒，調整生硬的英文句構，保持文學性；維持原作時代背景與文化，不改成本土故事。\n人名採自然一致的中文譯名，保留原段落與對話次序。不得摘要、刪段、增添原文沒有的劇情。\n保留原作的貨幣、計量單位與歷史背景，不得換算成本地貨幣或使用現代網路語；原文未註明幣別時，不要自行添加美元、鎂或任何貨幣符號。\n只輸出翻譯改寫後的正文，不要標題、說明、英文原文、註解、識別碼或思考過程。",
+    "input_cache_reuse_tokens": 0,
+    "model_loading_excluded_from_timings": true,
+    "notes": [
+      "One burst per mode; not a statistical or all-workload performance guarantee.",
+      "Production baseline was rerun after restoring the service with the exact same revised prompt. Initial pilot is preserved separately and excluded.",
+      "Peak configuration uses 8K context; production uses 262144. The effect of concurrency alone is not isolated.",
+      "Saturated mode repeats each of the four excerpts eight times with unique leading request IDs.",
+      "Aggregate output tokens/s is the sum of all API completion token counts divided by whole-burst wall time, including prefill/admission/queueing.",
+      "No translation text was manually corrected. Script/format checks are not a comprehensive translation-quality assessment."
+    ]
+  }
+}
