@@ -1280,6 +1280,10 @@ ConversationDiskStatus ConversationDiskStore::open(const ConversationDiskOptions
         if (written[a] != written[b]) return written[a] < written[b];
         return pending[a].name < pending[b].name;
     });
+    // Dependencies determine when a chain can be validated. Keep its on-disk recency
+    // even when a newer sibling can be indexed in an earlier pass.
+    std::vector<uint64_t> recency(pending.size());
+    for (const size_t i : order) recency[i] = ++stamp_;
     // Index in dependency order: a chain waits until the chain it borrows from is indexed.  A chain
     // that no pass can index has a missing, too short, cyclic, or incompatible base: it cannot
     // load, so it is dropped (the engine re-reads the prompt).
@@ -1296,7 +1300,7 @@ ConversationDiskStatus ConversationDiskStore::open(const ConversationDiskOptions
             --remaining;
             progress = true;
             if (status == ConversationDiskStatus::ok) {
-                entry.stamp = ++stamp_;
+                entry.stamp = recency[i];
                 bytes_ += entry.bytes;
                 entries_.push_back(std::move(entry));
                 ++recoveries_;

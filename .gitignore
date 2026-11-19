@@ -30,6 +30,7 @@ td.log
 /.venv/
 /terminal/build/
 /build/
+/third_party/llama.cpp/
 /engine/third_party/llama.cpp
 /terminal/third_party/llama.cpp
 /terminal/models/
