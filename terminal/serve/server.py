@@ -3537,6 +3537,17 @@ def engine_args(cfg: dict, exe: str | None = None, *, announce: bool = True) -> 
     # so a setup run or the app rewriting "args" cannot undo them (#3216 #3215 #3270)
     if cfg.get("user_args"):
         args = user_args.merge(args, cfg["user_args"])
+    # Older source configs name the bundled profile in the checkout's former data directory.
+    for i, arg in enumerate(args[:-1]):
+        if arg != "--expert-profile":
+            continue
+        old = Path(cfg.get("cwd") or ROOT.parent) / args[i + 1]
+        if old.parent == ROOT.parent / "data" and old.name in {
+            "expert-profile.bin", "expert-profile-coder.bin", "expert-profile-sycl.bin"
+        } and not old.exists():
+            moved = ROOT / "data" / old.name
+            if moved.is_file():
+                args[i + 1] = str(moved)
     # "drafting": auto | mtp | dflash2 | off (strata_control/drafting.py; the Models screen and `strata launch --drafting` write it): which drafter
     # guesses ahead. ONE drafter per run: DFlash2 alone (no --mtp, --draft-fallback none) or the MTP alone (no DFlash2 option). Auto is DFlash2 where the engine
     # has it, on one card and on a layer split over several cards. A choice that cannot be applied (no drafter file yet, several requests at once) starts the other one if it is on this computer,

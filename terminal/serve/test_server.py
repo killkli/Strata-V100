@@ -2461,6 +2461,21 @@ class ConversationDiskArguments(unittest.TestCase):
             "--conversation-cache-disk-min-free-mib", "1024",
         ])
 
+    def test_pre_layout_profile_path_follows_the_bundled_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory)
+            terminal = checkout / "terminal"
+            data = terminal / "data"
+            data.mkdir(parents=True)
+            profile = data / "expert-profile.bin"
+            profile.touch()
+            cfg = {"args": ["--expert-profile", "data/expert-profile.bin"], "cwd": str(checkout)}
+            with mock.patch("serve.server.ROOT", terminal):
+                self.assertEqual(engine_args(cfg), ["--expert-profile", str(profile)])
+                (checkout / "data").mkdir()
+                (checkout / "data" / profile.name).touch()
+                self.assertEqual(engine_args(cfg), cfg["args"])
+
     def test_existing_flags_are_not_duplicated(self):
         args = ["--conversation-cache-disk", "from-args", "--conversation-cache-disk-gib", "8"]
         cfg = {"args": args, "conversation_cache_disk": "/mnt/cache", "conversation_cache_disk_gib": 25}
