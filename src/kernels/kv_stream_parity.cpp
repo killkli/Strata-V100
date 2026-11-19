@@ -251,9 +251,9 @@ bool run(int fmt) {
         if (!ok) ++bad;
     }
 
-        // 5. the verify window's batch vs the repeated step calls, host mirror included: the streamed writer
-        // keeps rewriting the host copy, and a rejected draft's tail must not survive in either copy.
-        {
+        // 5. Batch vs repeated steps, including host mirrors, page boundaries and rejected-tail rewrites.
+        // Repeat with staging + DMA instead of kernel stores into mapped host memory.
+        for (bool dma : {false, true}) {
             const int PAGES = 16;
             const int64_t CELLS = (int64_t) PAGES * s.page_size, Tmax = 8;
             const int64_t H6 = s.n_head_kv, D6 = s.head_dim;
@@ -340,7 +340,11 @@ bool run(int fmt) {
                     append(pa, it, sts + (size_t) t * k::kStepCount, kc2 + (size_t) t * H6 * D6,
                            vc2 + (size_t) t * H6 * D6, s, fmt, &pha.p);
                 }
-                append_batch(pb, it, sts, kc2, vc2, T, s, fmt, &phb.p);
+                if (dma)
+                    k::kv_stage_from_host(pb.attn(it), phb.p, fmt, (pos0 + P - 1) / P, s, nullptr);
+                append_batch(pb, it, sts, kc2, vc2, T, s, fmt, dma ? nullptr : &phb.p);
+                if (dma)
+                    k::kv_unstage_to_host(pb.attn(it), phb.p, fmt, pos0 / P, (pos0 + T + P - 1) / P, s, nullptr);
                 ck(cudaDeviceSynchronize(), "batch2");
             };
             long cd = 0;
@@ -353,7 +357,7 @@ bool run(int fmt) {
             stage(4, P, false);
             cd += cmp("rejected-tail rewrite device", pa.p, pb.p);
             cd += cmp("rejected-tail rewrite host", pha.p, phb.p);
-            std::printf("  %s batch-vs-step: %s\n", name, cd ? "DIFFERS" : "identical");
+            std::printf("  %s %s: %s\n", name, dma ? "staged host DMA" : "batch-vs-step", cd ? "DIFFERS" : "identical");
             if (cd) ++bad;
         }
     return bad == 0;

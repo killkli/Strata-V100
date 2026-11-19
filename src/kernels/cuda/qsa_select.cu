@@ -2380,6 +2380,14 @@ __global__ void __launch_bounds__(SCORE_WARPS * 32) block_scores_halve_kernel(co
     constexpr int NQ = V / IDX_HEADS;              // query slots (nq <= NQ)
     constexpr int LV = V == 4 ? 2 : V == 8 ? 3 : V == 16 ? 4 : 5, SH = 5 - LV;
     static_assert(V == 4 || V == 8 || V == 16 || V == 32, "V");
+    // Query-row tiling (the mechanism of 1Cat-vLLM #1176): blockIdx.y picks a tile of NQ consecutive queries, so one
+    // launch covers any nq.  The decode arm launches a 1-D grid, so row0 == 0 and its behavior is unchanged.
+    const int64_t row0 = (int64_t) blockIdx.y * NQ;
+    if (row0 >= nq) return;   // CTA-uniform, before any barrier
+    nq = (int) ((int64_t) nq - row0 < NQ ? (int64_t) nq - row0 : NQ);
+    q_idx += row0 * IDX_HEADS * IDX_DIM;
+    steps += row0 * kStepCount;
+    out += row0 * max_blocks;
     __shared__ __align__(16) float qs[NQ * IDX_HEADS * IDX_DIM];
     __shared__ int64_t s_nkv[NQ], s_nbid[NQ];
     if (threadIdx.x < NQ) {
@@ -2399,7 +2407,7 @@ __global__ void __launch_bounds__(SCORE_WARPS * 32) block_scores_halve_kernel(co
     // up to 4 queries: the lane's query values in registers (read once, not once per block from shared memory: the
     // shared-memory reads were the kernel's limit, ncu mio_throttle)
     constexpr bool QREG = V <= 16;
-    float4 qr[QREG ? V : 1];
+    [[maybe_unused]] float4 qr[QREG ? V : 1];
     if constexpr (QREG) {
 #pragma unroll
         for (int i = 0; i < V; ++i) qr[i] = *reinterpret_cast<const float4*>(qs + (i >> 2) * IDX_HEADS * IDX_DIM + (i & 3) * IDX_DIM + lane * 4);
@@ -2492,6 +2500,27 @@ bool scores_halve_on() {
     return ok[dev] == 1;
 }
 
+#if !defined(__HIPCC__)
+// Opt-in prompt scoring with eight shared-key query rows and a shuffle-reduced
+// butterfly. Query tiling follows 1Cat-vLLM #1176; scores keep the warp kernel's
+// exact arithmetic. Explicit thread scoring retains precedence.
+bool scores_prompt_halve_on() {
+    static const bool enabled = [] {
+        const char* v = std::getenv("STRATA_SCORES_PROMPT_HALVE");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
+    return enabled;
+}
+
+void launch_prompt_halve(const float* pooled, const float* dead, const float* q_idx, const int32_t* steps, int64_t nq,
+                         int64_t max_blocks, int64_t reach, float* scores, cudaStream_t st) {
+    constexpr int KEY_ROWS = KEY_GROUPS * SCORE_WARPS;
+    const dim3 grid((unsigned) ((reach + KEY_ROWS - 1) / KEY_ROWS), (unsigned) ((nq + MQ - 1) / MQ));
+    block_scores_halve_kernel<32><<<grid, SCORE_WARPS * 32, 0, st>>>(pooled, dead, q_idx, steps, (int) nq,
+                                                                  max_blocks, scores);
+}
+#endif
+
 void qsa_block_scores(const float* pooled, const float* dead, const float* q_idx, const int32_t* steps, int64_t nq,
                       int64_t max_blocks, const QsaShapes& s, float* scores, void* stream, int64_t active_blocks) {
     if (nq <= 0) return;
@@ -2568,6 +2597,16 @@ void qsa_block_scores(const float* pooled, const float* dead, const float* q_idx
         block_scores_tail_kernel<<<(unsigned) nq, 32, 0, (cudaStream_t) stream>>>(dead, q_idx, steps, max_blocks, scores);
         const cudaError_t e = cudaGetLastError();
         if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_scores thread: %s\n", cudaGetErrorString(e)); std::exit(1); }
+        return;
+    }
+    if (active_blocks > 0 && scores_prompt_halve_on()) {
+        static std::atomic<bool> said{false};
+        if (!said.exchange(true))
+            std::fprintf(stderr, "qsa select: tiled halve prompt scorer (8-query tile, "
+                                 "STRATA_SCORES_PROMPT_HALVE=1)\n");
+        launch_prompt_halve(pooled, dead, q_idx, steps, nq, max_blocks, reach, scores, (cudaStream_t) stream);
+        const cudaError_t e = cudaGetLastError();
+        if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_scores halve prompt: %s\n", cudaGetErrorString(e)); std::exit(1); }
         return;
     }
 #endif

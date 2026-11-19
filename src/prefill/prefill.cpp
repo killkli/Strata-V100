@@ -4331,15 +4331,13 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         pt.mark(kPfQsa, cs);
                         pf_step("reading the prompt (batched, step sync): the K/V staged from RAM at layer", l);
                     }
-                    // #579 #613 (HIP, opt-in A/B, STRATA_KV_HOST_DMA=1): the append writes the staging pool and the
-                    // resident slots only, and one DMA copies the chunk's blocks from the staging pool to the host copy
-                    // - no kernel writes host memory over PCIe.  The bytes every reader sees are the same (the staged
-                    // first block is complete; past the chunk's last cell nothing is read until a later append writes
-                    // it).  CUDA: never.
-#if defined(STRATA_USE_HIP)
-                    static const bool kv_host_dma = [] { const char* e = std::getenv("STRATA_KV_HOST_DMA"); return e && e[0] == '1'; }();
-#else
+                    // STRATA_KV_HOST_DMA=1 (opt-in): append to the staging pool and resident slots, then DMA the
+                    // chunk's blocks into the host copy instead of writing host memory from the GPU kernel.
+                    // The staged first block is complete; cells beyond the chunk are not read until appended.
+#if defined(STRATA_GPU_METAL)
                     constexpr bool kv_host_dma = false;
+#else
+                    static const bool kv_host_dma = [] { const char* e = std::getenv("STRATA_KV_HOST_DMA"); return e && e[0] == '1'; }();
 #endif
                     const bool host_by_dma = staged && kv_host_dma;
                     const strata::kernels::KvHostPools* host_w = host_by_dma ? nullptr : &st.host;
