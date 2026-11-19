@@ -47,10 +47,24 @@ def _drafter_is_dflash2(cfg: dict) -> bool:
     """Does this run config's drafting choice mean DFlash2 on this computer (Auto included)? Never raises."""
     try:
         from strata_control import drafting
-        backend, archs = drafting.detect_hardware()
+        backend, archs = drafting.hardware_for(cfg.get("backend"))   # #5109: the config's card family on a mixed NVIDIA + AMD computer
         return cfg.get("mtp") is not False and drafting.choice_of(cfg.get("drafting"), model_name=cfg.get("model_name"), backend=backend, archs=archs) == "dflash2"
     except Exception:                                    # noqa: BLE001 - unknown means the MTP, which stays required
         return False
+
+
+def _drafter_needs_mtp(cfg: dict) -> bool:
+    """Will a start of this run config load the MTP layer? Not when the saved Drafting choice is Off, and not when the choice means DFlash2 (Auto
+    included). Only then is the --mtp folder a required file (0.2.15 release test: an app model saved with Off and no MTP folder was reported as missing
+    "rt" after a restart and could not load). A config that switched the layer off by hand ("mtp": false) is unchanged. Never raises; unknown keeps it
+    required."""
+    try:
+        from strata_control import drafting
+        if drafting.normalize(cfg.get("drafting")) == "off":
+            return False
+    except Exception:                                    # noqa: BLE001 - unknown: decided below
+        pass
+    return not _drafter_is_dflash2(cfg)
 
 
 def _item(name: str, path: Path, kind: str, *, required: bool = True) -> dict:
@@ -180,6 +194,15 @@ def inspect(config_path: Path | None, *, profile_id: str | None = None, live: bo
     if components[-1]["status"] == "ok" and os.name != "nt" and not os.access(exe, os.X_OK):
         components[-1]["status"] = "invalid"
         components[-1]["reason"] = "engine file is not executable"
+    try:                                                 # (#5114) a local build added with `strata components add-build`: said, never hidden
+        from strata_control import engine_component as _ec
+        if _ec.read_manifest(exe.parent).local:
+            components[-1]["local_build"] = True
+            report["issues"].append({"code": "LOCAL_ENGINE_BUILD", "severity": "info",
+                                     "message": "the engine is a local build from this computer, not signed by Strata "
+                                                "(`strata components use newest` goes back to the released engines)"})
+    except (_ec.ComponentProblem, OSError):
+        pass
     build = exe.parent / "BUILD.json"
     if build.is_file():
         try:
@@ -216,9 +239,9 @@ def inspect(config_path: Path | None, *, profile_id: str | None = None, live: bo
                 except ValueError:
                     pass
             kind = "file"
-        # The MTP layer is one of two drafters, never both: a model whose drafter is DFlash2 has no layer on disk, and the run config keeps `--mtp <folder>` for a
-        # later switch to the MTP. Its absence then does not make the model unusable (strata_control/drafting.py loads the drafter that is there).
-        components.append(_item(arg.lstrip("-"), _location(raw, cfg, config_path), kind, required=not (arg == "--mtp" and _drafter_is_dflash2(cfg))))
+        # The MTP layer is one of two drafters, never both: a model whose drafter is DFlash2, or Off, has no layer on disk, and the run config keeps `--mtp <folder>`
+        # for a later switch to the MTP. Its absence then does not make the model unusable (strata_control/drafting.py loads the drafter that is there).
+        components.append(_item(arg.lstrip("-"), _location(raw, cfg, config_path), kind, required=not (arg == "--mtp" and not _drafter_needs_mtp(cfg))))
 
     vision = cfg.get("vision")
     if isinstance(vision, dict):

@@ -21,6 +21,9 @@ import package_engine  # noqa: E402
 
 WINDOWS = os.name == "nt"
 HERE = components.host_platform()
+#: the PC the fake engine packages below are built for: a CUDA package is only read on a PC that takes CUDA, and a Mac
+#: takes Metal, so the start tests speak about a Linux PC instead of the machine running them.
+PC = "linux-x86_64" if HERE == "macos-arm64" else HERE
 EXE = "strata.exe" if WINDOWS else "strata"
 LIB = "cudart64_13.dll" if WINDOWS else "libcudart.so.13"
 
@@ -94,30 +97,13 @@ class Manifest(unittest.TestCase):
         import feed_tool
         folder = self.package()
         elf = bytes([0x7f]) + b"ELF" + bytes(60)
-        for name in ("strata-dsv41", "strata-vision"):                    # ELF programs without execute bits (copied over from Windows)
+        for name in ("strata-split-2", "strata-vision"):                  # ELF programs without execute bits (copied over from Windows)
             (folder / name).write_bytes(elf)
             os.chmod(folder / name, 0o644)
         (folder / "libx.so").write_bytes(elf)
         if WINDOWS:                                                       # a Linux package packed on Windows: the ELF header decides
-            self.assertEqual(feed_tool._mode(folder / "strata-dsv41", "strata-dsv41", "strata"), 0o755)
+            self.assertEqual(feed_tool._mode(folder / "strata-split-2", "strata-split-2", "strata"), 0o755)
             self.assertEqual(feed_tool._mode(folder / "strata-vision", "strata-vision", "strata"), 0o755)
-
-    def test_strata_dsv41_travels_beside_the_engine_and_can_be_required(self):
-        dsv = "strata-dsv41.exe" if WINDOWS else "strata-dsv41"
-        with self.assertRaises(SystemExit):
-            self.package(require_dsv41=True)                                  # a package without it is refused when it is required
-        self.assertNotIn(dsv, {f[0] for f in ec.read_manifest(self.package()).files})   # optional by default (Intel, Mac, Pascal ...)
-        (self.src / dsv).write_bytes(b"dsv41-binary-" * 50)
-        other = self.root / "again"
-        other.mkdir()
-        folder = package_engine.build(self.src, "cuda", "0.1.46", HERE, other, archs=("sm_86",), build_id="x", require_dsv41=True)
-        self.assertIn(dsv, {f[0] for f in ec.read_manifest(folder).files})
-        self.assertEqual(package_engine.main(["--verify", str(folder), "--require-dsv41"]), 0)
-        (self.src / dsv).unlink()
-        plain = self.root / "plain"
-        plain.mkdir()
-        bare = package_engine.build(self.src, "cuda", "0.1.47", HERE, plain, archs=("sm_86",), build_id="x")
-        self.assertEqual(package_engine.main(["--verify", str(bare), "--require-dsv41"]), 1)
 
     def test_a_gpu_package_without_archs_is_refused_by_the_packager(self):
         with self.assertRaises(SystemExit):
@@ -226,47 +212,6 @@ class Arch(unittest.TestCase):
         self.assertFalse(ec.arch_native(["sm_89"], []))
         self.assertTrue(ec.arch_native(["sm_75", "sm_89"], ["sm_75", "sm_120"]))
 
-    def test_the_deepseek_package_lists_89_and_an_rtx_40_card_is_accepted(self):
-        """#3935: the build scripts and the CMake default name sm_89, the manifest list a build of them gets covers an sm_89 card
-        with its own image, and the engine picker takes it for an RTX 4090 with no refusal and prefers it to a package without it."""
-        import re
-        from strata_control import feed
-
-        def package_archs(spec):
-            """CMAKE_CUDA_ARCHITECTURES to the package's archs list: N-real = sm_N, N = sm_N + compute_N."""
-            out = []
-            for item in spec.split(";"):
-                number, _, kind = item.partition("-")
-                out.append(f"sm_{number}")
-                if not kind:
-                    out.append(f"compute_{number}")
-            return out
-
-        sh = (ROOT / "packaging" / "build_dsv41_cuda.sh").read_text(encoding="utf-8")
-        bat = (ROOT / "packaging" / "build_dsv41_windows.bat").read_text(encoding="utf-8")
-        # CMakeLists.txt is cut into cmake/*.cmake macros (cleanup 5.4): the CUDA architecture default is in cmake/backends/cuda.cmake
-        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8") + (ROOT / "cmake" / "backends" / "cuda.cmake").read_text(encoding="utf-8")
-        linux = re.search(r"^ARCH=\$\{ARCH:-([^}]+)\}", sh, re.M).group(1)
-        windows = re.search(r'set "DSV41_ARCH=([^"]+)"', bat).group(1)
-        self.assertEqual(linux, windows, "Windows and Linux ship the same DeepSeek architectures")
-        self.assertEqual(package_archs(linux), ["sm_86", "sm_89", "sm_120", "compute_120"])
-        self.assertIn('set(CMAKE_CUDA_ARCHITECTURES "86-real;89-real;120" CACHE', cmake)
-
-        def package(archs):
-            return feed.EnginePackage(version="0.1.50", platform="linux-x86_64", backend="cuda", variant="cuda13", archs=tuple(archs),
-                                      min_driver={}, min_runtime=None, build_id="b", url="u", format="tar.gz", size=1, sha256="a" * 64,
-                                      manifest_sha256="b" * 64, installed_bytes=1)
-
-        hw = {"platform": "linux-x86_64", "backend": "cuda", "cuda_archs": ["sm_89"], "nvidia_driver": None}
-        old, new = package(["sm_86", "sm_120", "compute_120"]), package(package_archs(linux))
-        self.assertFalse(feed.engine_fit_reasons(new, hw), "an RTX 4090 is accepted")
-        self.assertFalse(feed.engine_fit_reasons(old, hw), "the old package still fits through sm_86 (no refusal)")
-        for order in ((old, new), (new, old)):
-            best, _ = feed.select_engine(list(order), hw)
-            self.assertIs(best, new, "the package with sm_89 machine code wins an otherwise equal choice")
-        best, _ = feed.select_engine([old, new], {**hw, "cuda_archs": ["sm_86"]})
-        self.assertIsNotNone(best)
-
     def test_the_packages_of_each_engine(self):
         """The Qwen engine (sm_86 + PTX 89) and the DeepSeek engine (sm_86 + sm_120 + PTX 120) on the RTX 20 to 50 families."""
         from strata_control import feed
@@ -303,8 +248,12 @@ class Start(unittest.TestCase):
         self.root = Path(self.dir.name)
         self.out = self.root / "engine"
         self.out.mkdir()
-        self.folder = package_engine.build(make_source(self.root / "src"), "cuda", "0.1.45", HERE, self.out,
+        self.folder = package_engine.build(make_source(self.root / "src"), "cuda", "0.1.45", PC, self.out,
                                            archs=("sm_86",), min_driver={"nvidia": "580.65"}, build_id="b1")
+        if PC != HERE:      # a start asks this machine which family it takes: point that probe at the PC above
+            probe = mock.patch.object(ec, "host_platform", return_value=PC)
+            probe.start()
+            self.addCleanup(probe.stop)
         self.addCleanup(ec.register_signature_verifier, None)
         patch = mock.patch.object(signing, "BUILTIN_KEYS", self.root / "no-shipped-keys.json")   # a build with no shipped key; the real file: test_release_keys
         patch.start()
@@ -343,9 +292,9 @@ class Start(unittest.TestCase):
 
     def test_two_builds_of_one_version_prefer_the_newer_driver_when_both_fit(self):
         other = make_source(self.root / "src3")
-        old = package_engine.build(other, "cuda", "0.1.45", HERE, self.out, archs=("sm_60", "sm_86"),
+        old = package_engine.build(other, "cuda", "0.1.45", PC, self.out, archs=("sm_60", "sm_86"),
                                    min_driver={"nvidia": "575.51"}, build_id="b-12", variant="cuda12")
-        self.assertEqual(old.name, f"0.1.45-{HERE}-cuda-cuda12")
+        self.assertEqual(old.name, f"0.1.45-{PC}-cuda-cuda12")
         self.assertEqual(ec.read_manifest(old).variant, "cuda12")
         self.assertEqual(Path(self.start(driver="610.0")).parent.resolve(), self.folder.resolve())    # 580.65 build wins
         self.assertEqual(Path(self.start(driver="576.0")).parent.resolve(), old.resolve())            # only the CUDA 12 one fits
@@ -354,13 +303,13 @@ class Start(unittest.TestCase):
         """#3503: the Linux cuda12 package shipped with 0.2.1 had sm_75/86/89 only; P100 containers restarted in a loop."""
         other = make_source(self.root / "src4")
         with self.assertRaises(SystemExit) as caught:
-            package_engine.build(other, "cuda", "0.1.45", HERE, self.out, archs=("sm_75", "sm_86", "sm_89", "compute_89"),
+            package_engine.build(other, "cuda", "0.1.45", PC, self.out, archs=("sm_75", "sm_86", "sm_89", "compute_89"),
                                  min_driver={"nvidia": "575.51"}, build_id="b-12", variant="cuda12")
         self.assertIn("sm_60", str(caught.exception))
-        package_engine.build(other, "cuda", "0.1.45", HERE, self.out, archs=("sm_70", "sm_86"), build_id="b-13", variant="cuda12")
+        package_engine.build(other, "cuda", "0.1.45", PC, self.out, archs=("sm_70", "sm_86"), build_id="b-13", variant="cuda12")
 
     def test_a_good_package_does_not_hide_a_tampered_one(self):
-        newer = package_engine.build(make_source(self.root / "src2"), "cuda", "0.1.46", HERE, self.out,
+        newer = package_engine.build(make_source(self.root / "src2"), "cuda", "0.1.46", PC, self.out,
                                      archs=("sm_86",), build_id="b2")
         (newer / LIB).write_bytes(b"y" * (newer / LIB).stat().st_size)
         self.assertEqual(ec.read_manifest(Path(self.start()).parent).version, "0.1.45")

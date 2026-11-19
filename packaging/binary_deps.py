@@ -8,6 +8,7 @@ clean-profile test passed only because the build PC has the CUDA Toolkit on PATH
 are not covered, and `--check-deps` / the test suite run the same rule on any finished package.
 
     python packaging/binary_deps.py <package folder>          # exit 0 when every import is bundled or system, 1 with the list
+    python packaging/binary_deps.py --mac-min-os <folder>     # exit 1 when a Mach-O file needs a newer macOS than MAC_MIN_OS
 
 Library names are compared case-insensitively on Windows and by soname elsewhere.
 """
@@ -40,12 +41,14 @@ WINDOWS_DRIVER = (
 )
 
 # ---- Linux -----------------------------------------------------------------------------------------------------------------
-# Every distribution has these (glibc and the compiler runtime). Names are sonames or glob patterns.
+# The base system: what every Linux has, a container and a minimal install included (glibc, the C++ runtime). Names are sonames or glob
+# patterns. Anything else an engine file needs travels in the package. Until 0.2.14 this list also held libgomp, libatomic, libz, libnuma,
+# libdrm, libelf, libtinfo, libcrypt, libffi, libpci, libudev, libX11 and libxcb as "every distribution has these": the AMD packages then
+# shipped without libatomic.so.1 (librocm_sysdeps_numa.so.1 needs it) and a container without the libatomic1 package could not start the
+# engine (boxia, 2026-11-15). Every Linux engine package of 0.2.14 needs nothing else outside this list (archive_uncovered on the release files).
 LINUX_OS = (
     "linux-vdso.so.1", "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1", "libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0",
-    "librt.so.1", "libutil.so.1", "libresolv.so.2", "libnss_*.so.*", "libgcc_s.so.1", "libstdc++.so.6", "libgomp.so.1",
-    "libatomic.so.1", "libz.so.1", "libnuma.so.1", "libdrm.so.2", "libdrm_amdgpu.so.1", "libelf.so.1", "libtinfo.so.*",
-    "libcrypt.so.1", "libffi.so.*", "libpci.so.3", "libudev.so.1", "libX11.so.6", "libxcb.so.1",
+    "librt.so.1", "libutil.so.1", "libresolv.so.2", "libnss_*.so.*", "libgcc_s.so.1", "libstdc++.so.6",
 )
 # From the GPU driver package: never bundled.
 LINUX_DRIVER = (
@@ -56,6 +59,7 @@ LINUX_DRIVER = (
 
 # ---- macOS -----------------------------------------------------------------------------------------------------------------
 MAC_OS_PREFIXES = ("/usr/lib/", "/System/Library/")
+MAC_MIN_OS = (15, 0)
 
 
 def _match(name: str, patterns: tuple[str, ...], fold: bool) -> bool:
@@ -117,9 +121,13 @@ def pe_imports(path: Path) -> list[str]:
 
 def elf_needed(path: Path) -> list[str]:
     """DT_NEEDED sonames of an ELF file (what ldd lists); libraries opened with dlopen are not visible here."""
-    data = path.read_bytes()
+    return elf_needed_bytes(path.read_bytes(), str(path))
+
+
+def elf_needed_bytes(data: bytes, where: str = "the file") -> list[str]:
+    """elf_needed() for the bytes of an ELF file (a member of a package archive that is never unpacked)."""
     if data[:4] != b"\x7fELF":
-        raise ValueError(f"{path}: not an ELF file")
+        raise ValueError(f"{where}: not an ELF file")
     is64 = data[4] == 2
     le = "<" if data[5] == 1 else ">"
     if is64:
@@ -152,8 +160,7 @@ def elf_needed(path: Path) -> list[str]:
     return out
 
 
-def macho_dylibs(path: Path) -> list[str]:
-    """Install names a Mach-O file loads (LC_LOAD_DYLIB, weak, reexport). A fat file reads its first slice."""
+def _macho_commands(path: Path):
     data = path.read_bytes()
     magic = struct.unpack_from(">I", data, 0)[0]
     base = 0
@@ -165,15 +172,49 @@ def macho_dylibs(path: Path) -> list[str]:
     is64 = struct.unpack_from("<I", data, base)[0] == 0xFEEDFACF
     ncmds, = struct.unpack_from("<I", data, base + 16)
     o = base + (32 if is64 else 28)
-    out = []
     for _ in range(ncmds):
         cmd, size = struct.unpack_from("<II", data, o)
+        yield data, cmd, o
+        o += size
+
+
+def macho_dylibs(path: Path) -> list[str]:
+    """Install names a Mach-O file loads (LC_LOAD_DYLIB, weak, reexport). A fat file reads its first slice."""
+    out = []
+    for data, cmd, o in _macho_commands(path):
         if cmd in (0xC, 0x80000018, 0x8000001F):     # LOAD_DYLIB, LOAD_WEAK_DYLIB, REEXPORT_DYLIB
             name_off, = struct.unpack_from("<I", data, o + 8)
             s = o + name_off
             out.append(data[s:data.index(b"\0", s)].decode("utf-8", "replace"))
-        o += size
     return out
+
+
+def macho_min_os(path: Path) -> tuple[int, int] | None:
+    """The oldest macOS a Mach-O file says it runs on (LC_BUILD_VERSION, or LC_VERSION_MIN_MACOSX), or None."""
+    for data, cmd, o in _macho_commands(path):
+        if cmd in (0x32, 0x24):
+            v, = struct.unpack_from("<I", data, o + (12 if cmd == 0x32 else 8))
+            return v >> 16, (v >> 8) & 0xFF
+    return None
+
+
+def too_new_for_mac(folder: Path, files: list[str] | None = None, floor: tuple[int, int] = MAC_MIN_OS) -> list[tuple[str, str]]:
+    """(file, its minimum macOS) for every Mach-O file that needs a newer macOS than the app's minimum."""
+    folder = Path(folder)
+    rels = files if files is not None else [p.relative_to(folder).as_posix() for p in sorted(folder.rglob("*")) if p.is_file() and not p.is_symlink()]
+    problems = []
+    for rel in rels:
+        p = folder / rel
+        try:
+            with p.open("rb") as f:
+                if f.read(4) not in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"):
+                    continue
+            minos = macho_min_os(p)
+        except (ValueError, OSError, struct.error):
+            continue
+        if minos is not None and minos > floor:
+            problems.append((rel, f"{minos[0]}.{minos[1]}"))
+    return problems
 
 
 def imports(path: Path) -> tuple[str, list[str]]:
@@ -230,10 +271,50 @@ def uncovered(folder: Path, files: list[str] | None = None) -> list[tuple[str, s
     return problems
 
 
+def archive_uncovered(archive: Path, base: tuple[str, ...] | None = None) -> list[tuple[str, str]]:
+    """The Linux rule of `uncovered` for a finished package archive (.tar.gz), read member by member and never unpacked: (file, imported
+    library) pairs whose library is neither a file in the archive nor on ``base`` (default LINUX_OS) nor a GPU driver library. A symlink in the
+    archive does not count as bundled: the package manifest and the install never keep symlinks (package_engine.py, engine_component.verify)."""
+    import tarfile
+    base = LINUX_OS if base is None else base
+    needs: list[tuple[str, str]] = []
+    bundled: set[str] = set()
+    with tarfile.open(archive, "r:*") as tar:
+        for member in tar:
+            if not member.isfile():
+                continue
+            bundled.add(member.name.rsplit("/", 1)[-1])
+            stream = tar.extractfile(member)
+            if stream is None or stream.read(4) != b"\x7fELF":
+                continue
+            data = b"\x7fELF" + stream.read()
+            try:
+                needs += [(member.name, n) for n in elf_needed_bytes(data, member.name)]
+            except (ValueError, struct.error):
+                continue
+    return [(rel, name) for rel, name in needs if name not in bundled and not _match(name, base, False) and not _match(name, LINUX_DRIVER, False)]
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--mac-min-os":
+        # #4634: every Mach-O under a folder (a Mac engine package, or Strata.app before its dmg) must start on the app's minimum
+        # macOS; the 0.2.14 / 0.2.15 Mac engines needed macOS 27.2 because no deployment target was set
+        bad = too_new_for_mac(Path(argv[2]))
+        for rel, minos in bad:
+            print(f"{rel}: needs macOS {minos}, newer than the app's minimum macOS {'.'.join(map(str, MAC_MIN_OS))}")
+        if not bad:
+            print(f"{argv[2]}: every Mach-O file starts on macOS {'.'.join(map(str, MAC_MIN_OS))}")
+        return 1 if bad else 0
     if len(argv) != 2:
         print(__doc__)
         return 2
+    if argv[1].endswith((".tar.gz", ".tgz", ".tar")) and Path(argv[1]).is_file():
+        bad = archive_uncovered(Path(argv[1]))
+        for rel, name in bad:
+            print(f"{rel}: needs {name}, which is not in the package and not an OS or driver library")
+        if not bad:
+            print(f"{argv[1]}: every imported library is bundled or belongs to the OS / GPU driver")
+        return 1 if bad else 0
     bad = uncovered(Path(argv[1]))
     for rel, name in bad:
         print(f"{rel}: needs {name}, which is not in the package and not an OS or driver library")

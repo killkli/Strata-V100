@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,16 +66,13 @@ FITS, SLOWER, TIGHT, NO = "fits", "slower", "tight", "no"
 def verdict(on_this_pc: str | None) -> tuple[str, str]:
     """(category, plain words) from the catalog's own `on_this_pc` text (strata_control/fit_label.py through strata_mcp: "fits" or "may run slower").
 
-    The one other word is not about memory: DeepSeek's "tight: needs more disk space".  No card and a Mac with little memory get "may run slower" too (owner 11-08);
-    an older Control's "does not fit..." is read the same way.  Never a block: the person can always try, and the screen says so."""
+    No card and a Mac with little memory get "may run slower" too (owner 11-08); an older Control's "does not fit..." is read the same way.  Never a block: the person can always try, and the screen says so."""
     text = (on_this_pc or "").strip()
     low = text.lower()
     if not text:
         return TIGHT, "not checked (this computer's memory could not be read)"
     if low.startswith("does not fit"):
         return SLOWER, "may run slower"
-    if "free disk space" in low:                           # DeepSeek: fits in memory, not on the disk (still allowed)
-        return TIGHT, "tight: needs more disk space"
     if low == "may run slower":
         return SLOWER, "may run slower"
     if low == "fits":
@@ -151,15 +149,6 @@ class Computer:
         return None
 
     @property
-    def rx7000_card(self) -> bool:
-        """Is a usable AMD card an RX 7000 (gfx1100, gfx1101, gfx1102)?  DeepSeek has a package for those cards since the 0.2.9 update, built and not run on a real one."""
-        from strata_control import engine_component as ec, gpu_fit
-        for c in gpu_fit.usable_cards(gpu_fit.for_vendor(self.gpus, self.engine_vendor)[0])[0]:
-            if c.get("vendor") == "amd" and (str(c.get("arch") or "") or ec.gfx_from_name(str(c.get("name", "")))) in ("gfx1100", "gfx1101", "gfx1102"):
-                return True
-        return False
-
-    @property
     def main_vram_gb(self) -> float:
         return max((float(g.get("vram_gb") or 0) for g in self.usable_gpus), default=0.0)
 
@@ -201,8 +190,8 @@ def install_root(explicit: str | os.PathLike | None = None, src: str | os.PathLi
     return discovery.find_install(here=installer_folder(src))[0]
 
 
-# Intel Arc cards by PCI id: (name, memory in GB).  The kernel does not tell an ordinary user how much memory the card has, so the discrete
-# cards are listed (the same ids as sycl/setup_intel.py; tests/terminal/test_intel_cards_029.py keeps the two in step).  An id that is not
+# Intel Arc cards by PCI id: (name, memory in GB).  The memory figure is the fallback: a card's own size (arc_vram_gb: sysfs, else Level
+# Zero sysman) is used when it can be read, and the kernel does not always tell an ordinary user. The discrete cards are listed (the same ids as sycl/setup_intel.py; tests/terminal/test_intel_cards_029.py keeps the two in step).  An id that is not
 # here is NOT counted: it is skipped, because an Intel chip built into the processor shares this vendor id and must never be named as a card.
 # (A770: the 8 GB model shares the id of the 16 GB one, so the smaller figure is used.)
 INTEL_ARC = {"0x56a1": ("Arc A750", 8.0), "0x56a2": ("Arc A580", 8.0), "0x56a0": ("Arc A770", 8.0), "0x56a5": ("Arc A380", 6.0),
@@ -229,6 +218,46 @@ def _arc_entry(did: str) -> tuple[str, float] | None:
     return None
 
 
+#: Files under /sys/class/drm/cardN that hold an Intel card's own memory size in bytes, where the kernel lets an ordinary user read them
+#: (xe: the tile's physical VRAM; i915: the local memory total). A card's PCI BAR is not used: it is a power of two (a 24 GB card has a
+#: 32 GiB BAR) or a 256 MiB window.
+ARC_VRAM_FILES = ("device/tile0/physical_vram_size_bytes", "lmem_total_bytes", "device/lmem_total_bytes")
+_PCI_ADDRESS = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]")
+_SYSMAN_TOTAL: dict[str, int | None] = {}
+
+
+def _sysman_total(pci: str) -> int | None:
+    """The card's memory size in bytes from Level Zero sysman (serve/telemetry.py _Zes, the Monitor's reader), asked once per card."""
+    if pci not in _SYSMAN_TOTAL:
+        try:
+            from serve.telemetry import _Zes
+            _SYSMAN_TOTAL[pci] = _Zes(pci).read()[1]
+        except Exception:                                    # noqa: BLE001 - no runtime, no card: the table's figure is used
+            _SYSMAN_TOTAL[pci] = None
+    return _SYSMAN_TOTAL[pci]
+
+
+def arc_vram_gb(card: Path) -> float | None:
+    """An Intel card's own memory in GiB (one decimal, as the NVIDIA and AMD readers count it): a sysfs size file, else sysman; None when
+    neither says, and then the id table's figure stands."""
+    size = None
+    for rel in ARC_VRAM_FILES:
+        try:
+            size = int((card / rel).read_text().strip(), 0)
+        except (OSError, ValueError):
+            continue
+        if size > 0:
+            break
+        size = None
+    if size is None:
+        try:
+            pci = os.path.basename(os.path.realpath(card / "device")).lower()
+        except OSError:
+            pci = ""
+        size = _sysman_total(pci) if _PCI_ADDRESS.fullmatch(pci) else None
+    return round(size / 2**30, 1) if size and size > 0 else None
+
+
 def intel_arc_cards(root: str = "/sys/class/drm") -> list[dict]:
     """The Intel Arc cards on this Linux computer, read from the kernel's device list (empty elsewhere). One unreadable entry or a card number
     above 9 never hides the others, and the cards of other makes beside them (an AMD APU's graphics) do not matter here (#4971, #5111)."""
@@ -251,6 +280,7 @@ def intel_arc_cards(root: str = "/sys/class/drm") -> list[dict]:
         if entry is None:
             continue
         name, gb = entry
+        gb = arc_vram_gb(card) or gb                         # the card's own size; the table (an unlisted id: the family's smallest) when unread
         cards.append({"vendor": "intel", "name": "Intel " + name, "vram_gb": gb, "usable": True, "index": len(cards)})
     return cards
 
@@ -299,10 +329,12 @@ class Catalog:
         hw["gpus"] = self._admit_old_nvidia(list(hw.get("gpus") or []))
         if not str(hw.get("os", "")).startswith("Windows"):
             arc = intel_arc_cards()
-            if arc:
-                # the shared hardware reader knows NVIDIA and AMD only; an Arc is added here, also beside other makes (the plan then says the
-                # Intel cards exist and how to use them: --backend intel); their numbers are the Intel engine's own (0, 1, ...)
-                have = list(hw.get("gpus") or [])
+            have = list(hw.get("gpus") or [])
+            if arc and not any(g.get("vendor") == "intel" for g in have):
+                # the shared hardware reader adds the Arc only on a PC with no usable NVIDIA / AMD card and the Intel engine
+                # (strata_control/intel_app.py cards_to_add, the same reader); the rest get it here, also beside other makes (the plan
+                # then says the Intel cards exist and how to use them: --backend intel); their numbers are the Intel engine's own
+                # (0, 1, ...). Added once: an A750 with the Intel engine was listed twice ("Arc A750 8 GB x2", p1006 11-16).
                 hw["gpus"] = have + arc
         return hw
 
@@ -365,24 +397,8 @@ class Catalog:
         return [int(c) for c in self.tables()[2]]
 
     def contexts_for(self, family: str | None, model: str | None = None) -> list[int]:
-        """The context sizes to offer for this model: DeepSeek-V4.1-Flash goes up to 1M (its installed pack's own limit when it has one), the
-        others keep the shared list."""
-        if family and self.strata.multi_family(family):
-            from strata_control import dsv41_context
-            return dsv41_context.choices(self.pack_limit(family, model))
+        """The context sizes to offer for this model: the shared list."""
         return self.contexts()
-
-    def pack_limit(self, family: str | None, model: str | None) -> int | None:
-        """The installed DeepSeek pack's own context limit (ds4.txt), None when it is not installed or the file does not say."""
-        if not (family and model and self.strata.multi_family(family)):
-            return None
-        try:
-            from strata_control import dsv41_context
-            from strata_cli.launch.runner import read_config
-            path = self.installed_config(self.tag_of(family, model))
-            return dsv41_context.limit_of_config(read_config(path)) if path else None
-        except Exception:                                  # noqa: BLE001 - no file, no limit: the choices stay as they are
-            return None
 
     def recommendation(self, hw: dict | None = None) -> dict:
         return self.strata.recommend(hw or self.hardware())
@@ -393,17 +409,11 @@ class Catalog:
         vram = comp.main_vram_gb
         rec = self.recommendation(hw)
         out: list[ModelRow] = []
-        own = self.strata.own_families()                # Qwen3.6 is listed for the app; the Terminal's launch list is Flash-Next's
-        dsv41 = None
+        # #5869: every family of the shared table, Qwen3.6-35B-A3B (an engine path of its own) included, as the app lists them: its rows
+        # are a group of their own (family_title), the Flash-Next rows are as before
         for fam in self.strata.model_table(hw):
-            if fam["family"] in own and not own[fam["family"]].get("multi_file"):
-                continue
             for size in fam["sizes"]:
                 f = fit_on(size, hw.get("ram_gb"), vram)
-                if size.get("multi_file"):            # DeepSeek-V4.1-Flash: shared over every card (strata_control/dsv41_fit.py)
-                    dsv41 = self.strata.dsv41_plan(hw, model=size["model"])
-                    f = {"vramUseGb": _round1(dsv41["vram_experts_gb"] + sum(c["dense_gb"] for c in dsv41["cards"])),
-                         "ramUseGb": _round1(dsv41.get("ram_needed_gb") or dsv41["cpu_experts_gb"]), "spillGb": _round1(dsv41.get("spill_gb") or 0.0)}
                 cat, words = verdict(size.get("on_this_pc"))
                 out.append(ModelRow(
                     family=fam["family"], family_title=fam["title"], model=size["model"], id=size["id"],
@@ -423,22 +433,11 @@ class Catalog:
         except Exception:                                  # noqa: BLE001 - a line for information
             return []
 
-    def own_files_verdict(self, hw: dict | None, model: str) -> tuple[str, str]:
-        """DeepSeek-V4.1-Flash with the person's own files used where they are (--model-path): nothing is downloaded or copied, so the disk
-        part of the menu row (which counts the whole download of a set that is not in Strata's folder) does not apply: the memory words alone."""
-        return verdict(self.strata._dsv41_memory_words(hw or self.hardware(), model))
-
     def resolve(self, model: str, family: str | None = None) -> tuple[str, str]:
         """`iq3_xxs` or `IQ3_XXS` (and an optional family) -> (family, model); raises ValueError with the closest match."""
         models, families, _ctx, _src = self.tables()
         names = list(models)
-        for fam_name, fam_d in families.items():       # DeepSeek-V4.1-Flash's size is not one of setup's MODELS
-            if fam_d.get("multi_file"):
-                names += [m for m in self.strata.sizes_of(models, fam_name) if m not in names]
-        import re
-        wanted = re.sub(r"(?i)^ista-das(?=-\d)", "IST-DAS", model)     # the set's name on screen is ISTA-DAS; its ids keep the first spelling
-        wanted = re.sub(r"(?i)^ist-das(?=-coder$)", "ISTA-DAS", wanted)  # (the Coder has only the longer spelling; the shorter one is accepted)
-        match = next((n for n in names if n.lower() == wanted.lower()), None)
+        match = next((n for n in names if n.lower() == model.lower()), None)
         if match is None:
             near = S.closest(model, names)
             raise ValueError(f"There is no model called '{model}'." + (f" Did you mean '{near}'?" if near else "")
@@ -447,10 +446,6 @@ class Catalog:
             near = S.closest(family, list(families))
             raise ValueError(f"There is no model family called '{family}'." + (f" Did you mean '{near}'?" if near else "")
                              + " Families: " + ", ".join(families) + ".")
-        from strata_control import dsv41_fit
-        line = dsv41_fit.not_here(match) or (dsv41_fit.MAC_NOT_YET_LINE if match in dsv41_fit.MAC_NOT_YET and self._mac_hardware() else None)
-        if line:
-            raise ValueError(line + " Use ist-das-2.00bpw or ist-das-2.25bpw.")
         offered = [f for f in families if match in self.strata.sizes_of(models, f)]
         if family is not None:
             if family not in offered:
@@ -459,8 +454,6 @@ class Catalog:
             return family, match
         if not offered:
             raise ValueError(f"{match} is not offered by any model family here.")
-        if len(offered) > 1 and "deepseek41" in offered:     # UD-IQ1_M is Unsloth's name in two families (round 0214): the bare name stays DeepSeek's, as it was; the Qwen set is --family unsloth
-            return "deepseek41", match
         return ("qwen" if "qwen" in offered else offered[0]), match
 
     def model_name_of(self, family: str | None, model: str | None) -> str | None:
@@ -478,20 +471,31 @@ class Catalog:
         """The folder a model's files are in under `base/models`. setup.py names it with the case kept (`models/IQ3_S`), the run-config tag is
         lower case (`iq3_s`): on a case-sensitive disk the two are different folders, so the one that exists wins, and a folder that differs
         only in case is found (#3996). When none exists yet it is setup's own name, because that is where the download will go."""
+        return self.model_folder_trace(base, family, model)["folder"]
+
+    def model_folder_trace(self, base: Path, family: str, model: str) -> dict:
+        """model_folder's lookup with its steps (#4887, `strata models explain`): {"folder", "rule", "tried": [{"path", "rule", "exists"}]}. rule: "exact" (setup's
+        spelling), "lower" (the run-config tag), "case" (a folder that differs only in letter case) or "fallback" (none is there: setup's spelling, where a download goes)."""
         _m, families, _c, _s = self.tables()
         models = Path(base) / "models"
         own = models / (families[family].get("tag", "") + model)
         lower = models / self.tag_of(family, model)
-        for candidate in (own, lower):
-            if candidate.is_dir():
-                return candidate
+        tried = []
+        for candidate, rule in ((own, "exact"), (lower, "lower")):
+            if any(t["path"] == candidate for t in tried):
+                continue                                     # (a tag that is lower case already: one folder)
+            here = candidate.is_dir()
+            tried.append({"path": candidate, "rule": rule, "exists": here})
+            if here:
+                return {"folder": candidate, "rule": rule, "tried": tried}
         try:
             for entry in models.iterdir():
                 if entry.name.lower() == lower.name and entry.is_dir():
-                    return entry
+                    tried.append({"path": entry, "rule": "case", "exists": True})
+                    return {"folder": entry, "rule": "case", "tried": tried}
         except OSError:
             pass
-        return own
+        return {"folder": own, "rule": "fallback", "tried": tried}
 
     def kv_gb(self, tokens: int, kv: str = "int8") -> float:
         """The conversation memory for this many tokens, in GB (setup.py's UD_FIT_KV_BYTES: 13 attention layers)."""
@@ -504,7 +508,7 @@ class Catalog:
         the one rule of the app, the Terminal and setup). A Mac keeps its unified-memory rule."""
         from strata_control import default_context
         hw = hw or self.hardware()
-        if hw.get("mac") and hw.get("ram_gb") and not self.strata.multi_family(family):
+        if hw.get("mac") and hw.get("ram_gb"):
             mac = self.strata.mac()                           # a Mac: the context by unified memory (strata_control/mac_fit.py)
             if mac is not None:
                 return int(mac.recommend_context(float(hw["ram_gb"])))
@@ -550,12 +554,6 @@ class Catalog:
         comp = self.computer()
         vram = comp.main_vram_gb
         return VR.default_mode(vram, "intel" if comp.engine_vendor == "intel" else "") if vram > 0 else "cpu"      # no usable card: nothing to read on, the CPU reader
-
-    def _mac_hardware(self) -> bool:
-        try:
-            return bool(self.hardware().get("mac"))
-        except Exception:                                    # noqa: BLE001 - no hardware report: not a Mac as far as this check knows
-            return False
 
     def is_mac(self) -> bool:
         """An Apple Silicon Mac: the chip's memory is the system's (the Metal engine; strata_control/vision_reader.py)."""

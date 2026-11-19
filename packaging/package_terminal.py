@@ -15,7 +15,8 @@ What goes in
   `packaging/lock_wheels.py`), installed into that interpreter with
   `pip install --require-hashes --no-deps --only-binary=:all:` at BUILD time only: every package, direct or
   transitive, is named with an exact version and the SHA-256 of the wheel(s) accepted, so nothing else can land in
-  the bundle. pip itself is the one the interpreter shipped with (not upgraded);
+  the bundle. pip itself is the one the interpreter shipped with (not upgraded), and it is removed from the bundle
+  after that install, with ensurepip's spare wheel (drop_pip, #5303): the bundle never runs pip;
 * the application: `strata.py`, `strata_control`, `strata_cli`, `serve`, a `VERSION` file and the docs the CLI
   references;
 * the read-only tooling under `tools/` that the terminal paths import. Everything else under `tools/` is engine
@@ -127,16 +128,31 @@ INSTALLER_FILES = ("setup.py", "ref/load.py")   # ref/load.py: strata_pack.py (t
 INSTALLER_TOOLS = ("strata_mcp", "iq_pack", "strata_pack", "pack_index", "mtp_fetch", "mtp_pack", "mtp_rt", "draft_vocab",
                    "strata_tokenizer", "gguf_reader", "calibrate")
 #: tools run BY PATH (`python tools/.../x.py`) by setup.py, strata_cli or strata_control: no import names them, so setup_tool_imports() cannot find
-#: them.  DeepSeek's setup and launch run dsv41/pack_gguf.py (the model folder), dsv41/smoke.py (the engine's first answer) and dsv41/tune.py
-#: (the short tune); setup.py's other by-path tools (nvfp4_local_pack, strata_bench, strata_inspect) were missing from the bundle the same way.
+#: them.  setup.py's by-path tools (nvfp4_local_pack, strata_bench, strata_inspect) were missing from the bundle once.
 #: tests/terminal/test_bundle_tools_paths.py reads the by-path references out of the source and fails when one is missing from the bundle.
-INSTALLER_SCRIPTS = ("dsv41/pack_gguf", "dsv41/smoke", "dsv41/tune", "nvfp4_local_pack", "strata_bench", "strata_inspect")
+INSTALLER_SCRIPTS = ("nvfp4_local_pack", "strata_bench", "strata_inspect")
 INSTALLER_DATA = "data"           # draft vocabularies, expert profiles: 2 MB
+#: gguf-py and llama.cpp's HF converter at the llama.cpp pin (third_party/strata-gguf-py, 1.8 MB, MIT): the preparation tools import them, so
+#: no llama.cpp download is needed to prepare a model (before 0.2.15 the installed Terminal fetched the 170 MB zip for this)
+INSTALLER_THIRD_PARTY = ("third_party/strata-gguf-py",)
 #: the Mac install's tools (setup.py's mac_control_setup runs them by path): Unsloth's many-shard sets become ONE GGUF for the Metal engine (stdlib only, 15 KB)
 INSTALLER_METAL_TOOLS = ("metal_repack", "stream_experts")
 
 #: packages the bundle must import after the install (the API server's and the CLI's).
 PROBE = "import jinja2, yaml, regex, psutil, requests, numpy, PIL, tqdm; print('deps ok')"
+
+
+def run_probe(py: Path, root: Path, code: str = PROBE) -> "subprocess.CompletedProcess[str]":
+    """Run the import probe with the bundled interpreter, from the bundle folder, without leaving anything in it.
+
+    The probe imports the runtime packages, which would write a __pycache__ folder next to every module it loads; those compiled files
+    would then be in the archive whenever the caller had not set PYTHONDONTWRITEBYTECODE itself, so the archive's file set depended on who
+    built it. The probe turns bytecode writing off for itself (the variable and -B).
+    """
+    env = {**os.environ, "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+    for k in ("PYTHONHOME", "PYTHONPATH"):
+        env.pop(k, None)
+    return subprocess.run([str(py), "-B", "-c", code], capture_output=True, text=True, cwd=str(root), env=env)
 
 
 def host_target() -> str:
@@ -246,6 +262,41 @@ def drop_build_path_launchers(root: Path, staging: Path, target: str) -> list[st
     return gone
 
 
+def drop_pip(root: Path, target: str) -> dict:
+    """#5303: pip leaves the bundle once the lock is installed. Only the build runs it (install_locked); at user time the bundle never
+    does (setup.run refuses `python -m ...` in the app's install mode, pip_install returns before pip there, and the start / serve side
+    may not import pip at all: tests/terminal/test_no_acquisition.py). What it carried was dead weight a scanner flags: its own old
+    copies of certifi, urllib3, msgpack and setuptools under pip/_vendor, and ensurepip's spare pip wheel with older ones still.
+    Removed: site-packages/pip and its dist-info, pip launchers left in the interpreter's bin / Scripts, and ensurepip/_bundled/*.whl
+    (the ensurepip module stays; `python -m venv` from the bundle then needs --without-pip, which nothing in Strata does).
+    -> {"version": the removed pip's version or None, "paths": the removed paths relative to root}."""
+    windows = target.startswith("windows")
+    lib = root / "python" / ("Lib" if windows else f"lib/python{PYTHON_VERSION.rsplit('.', 1)[0]}")
+    site = lib / "site-packages"
+    gone: list[str] = []
+    version = None
+
+    def remove(path: Path) -> None:
+        gone.append(path.relative_to(root).as_posix())
+        shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
+
+    for info in sorted(site.glob("pip-*.dist-info")):
+        version = info.name[len("pip-"):-len(".dist-info")]
+        remove(info)
+    if (site / "pip").is_dir():
+        remove(site / "pip")
+    bundled = lib / "ensurepip" / "_bundled"
+    if bundled.is_dir():
+        for wheel in sorted(bundled.glob("*.whl")):
+            remove(wheel)
+    bindir = root / "python" / ("Scripts" if windows else "bin")
+    if bindir.is_dir():
+        for f in sorted(bindir.iterdir()):
+            if re.fullmatch(r"pip(3(\.\d+)*)?(\.exe)?", f.name, re.IGNORECASE):
+                remove(f)
+    return {"version": version, "paths": gone}
+
+
 def local_imports(folder: Path, entry: tuple[str, ...]) -> list[str]:
     """The tools/ modules `entry` imports, transitively (static: import and from-import statements)."""
     import ast
@@ -259,7 +310,7 @@ def local_imports(folder: Path, entry: tuple[str, ...]) -> list[str]:
         source = folder / "tools" / f"{name}.py"
         if not source.exists():
             raise SystemExit(f"installer tool missing: tools/{name}.py")
-        sub = name.rsplit("/", 1)[0] + "/" if "/" in name else ""     # (tools/dsv41/tune.py imports its neighbour smoke.py)
+        sub = name.rsplit("/", 1)[0] + "/" if "/" in name else ""     # (a nested tool imports its neighbours first)
         for node in ast.walk(ast.parse(source.read_text(encoding="utf-8-sig"))):
             names = [a.name.split(".")[0] for a in node.names] if isinstance(node, ast.Import) else                 [node.module.split(".")[0]] if isinstance(node, ast.ImportFrom) and node.module and node.level == 0 else []
             for m in names:
@@ -304,6 +355,11 @@ def add_installer(folder: Path, source: Path = ROOT) -> dict:
     if (folder / INSTALLER_DATA).exists():
         shutil.rmtree(folder / INSTALLER_DATA)
     shutil.copytree(source / INSTALLER_DATA, folder / INSTALLER_DATA, ignore=shutil.ignore_patterns("__pycache__"))
+    for name in INSTALLER_THIRD_PARTY:
+        if (folder / name).exists():
+            shutil.rmtree(folder / name)
+        shutil.copytree(source / name, folder / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        copied.append(name + "/")
     return {"files": copied, "data": INSTALLER_DATA, "setup_sha256": sha256(folder / "setup.py"),
             "mode": "STRATA_CONTROL_INSTALL=1: downloads the chosen model, prepares it, installs no package and no engine"}
 
@@ -429,18 +485,18 @@ def main() -> int:
 
         installed: dict[str, str] = {}
         removed: list[str] = []
+        pip_removed: dict | None = None
         if not args.skip_deps:
             print("installing the locked runtime wheels into the bundled interpreter (build time only)")
             installed = install_locked(py, lock, root, Path(args.wheelhouse).resolve() if args.wheelhouse else None)
             removed = drop_build_path_launchers(root, staging, target)
+            pip_removed = drop_pip(root, target)            # #5303: the build's tool, not the bundle's
+            print(f"  removed pip {pip_removed['version']} and its spare wheel ({len(pip_removed['paths'])} paths)")
             # nothing the bundle writes while it is built may stay: compiled files are rebuilt on first use
             for cache_dir in list(root.rglob("__pycache__")):
                 shutil.rmtree(cache_dir, ignore_errors=True)
 
-        env = {**os.environ, "PYTHONNOUSERSITE": "1"}
-        for k in ("PYTHONHOME", "PYTHONPATH"):
-            env.pop(k, None)
-        probe = subprocess.run([str(py), "-c", PROBE], capture_output=True, text=True, cwd=str(root), env=env)
+        probe = run_probe(py, root)
         print("  " + (probe.stdout.strip() or probe.stderr.strip()[:200]))
         if not args.skip_deps and probe.returncode != 0:
             raise SystemExit("the bundled interpreter cannot import the runtime packages")
@@ -468,6 +524,7 @@ def main() -> int:
                      "install": "pip install --require-hashes --no-deps --only-binary=:all: (build time only)"},
             "installed": installed,
             "launchers_removed": removed,
+            "pip_removed": pip_removed,
             "payload": list(PAYLOAD),
             "tools_subset": list(TOOLS_SUBSET),
             "installer": installer,

@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -184,7 +186,7 @@ inline ConversationCheckpointSplit conversation_checkpoints_split(std::vector<Co
         for (size_t k = 0; k < stages; ++k) {
             auto& dst = out.parts[k][w];
             auto& src = c.stage_parts[k];
-            dst.gdn = std::move(src.gdn); dst.ple = std::move(src.ple);
+            dst.gdn = std::move(src.gdn); dst.dev_tag = src.dev_tag; dst.ple = std::move(src.ple);
             dst.tails = std::move(src.tails); dst.dead = std::move(src.dead);
             dst.block_pos = std::move(src.block_pos);
         }
@@ -470,6 +472,18 @@ public:
     /// images that already hold the K/V and checkpoints, without building a
     /// temporary reuse candidate just to account for the shared prefix.
     size_t shared_bytes(const SavedConversation& image) const { return charged_shared(image); }
+    /// STRATA_PARK_SEGPOOL_MIB: the segment pool whose idle (resident, unused) bytes count against this cache's budget
+    /// beside the images: make_room() gives them back BEFORE the budget could push an image out, so the pool never causes
+    /// an eviction, a refused park or a failed RAM check that the cache would not have had without it.  Not owned; the
+    /// pool outlives the cache.  bytes() stays the images' (what the logs and every caller have always meant).
+    void set_pool(SegmentPoolBudget* pool) { pool_ = pool; }
+    /// The SSD tier (P2 of the cache admission design): a conversation the budget or the RAM gate evicts is handed to `sink`
+    /// instead of being destroyed (its RAM is freed when the sink returns).  Not for the copies drop_superseded() drops (the
+    /// outgoing chain holds them) or for clear() (#879: after non-finite logits nothing is kept).  Empty: as before.
+    void set_evict_sink(std::function<void(SavedConversation&&)> sink) { sink_ = std::move(sink); }
+    size_t pool_idle_bytes() const { return pool_ != nullptr ? pool_->idle_bytes() : 0; }
+    /// What the cache holds in RAM: its images, the retained K/V and the pool's idle bytes
+    size_t resident_bytes() const { return bytes() + pool_idle_bytes(); }
     size_t size() const { return entries_.size(); }
     size_t evictions() const { return evictions_; }
     bool pinned(size_t index) const { return entries_.at(index).pinned; }
@@ -739,11 +753,13 @@ public:
                 guard_blocked_ = true; return false;
             }
         }
+        trim_pool(held + incoming);
         if (bytes() > budget_ - held - incoming) release_reuse();
         while (!entries_.empty() && (entries_.size() >= slots_ || bytes() > budget_ - held - incoming)) {
             // Evict ordinary conversations first, then roots. Explicit checkpoint pins stay protected.
             if (!evict_oldest()) return false;
         }
+        trim_pool(held + incoming);   // (an evicted image that lived in the pool left its bytes idle)
         return true;
     }
 
@@ -764,20 +780,39 @@ public:
     // A piece another entry still shares stays charged to that entry.
     // False when none can go (empty, or only entries that hold a pinned shared prefix are left).
     bool evict_oldest() {
-        auto victim = std::find_if(entries_.begin(), entries_.end(),
-                                   [&](const Entry& e) { return !e.pinned && !e.image.pinned() && e.serial != guarded_; });
-        if (victim == entries_.end())
-            victim = std::find_if(entries_.begin(), entries_.end(),
-                                  [&](const Entry& e) { return e.pinned && !e.image.pinned() && e.serial != guarded_; });
+        const auto victim = eviction_candidate();
         if (victim == entries_.end()) return false;
         uncharge(victim->image);
         if (eviction_handler_)
             eviction_handler_(std::move(victim->image), victim->pinned, eviction_context_);
+        else if (sink_)
+            sink_(std::move(victim->image));
         entries_.erase(victim);
         ++evictions_;
         release_free_heap();
         return true;
     }
+    // Count shared allocations only when the last cache owner would go.
+    size_t oldest_evictable_bytes() {
+        const auto candidate = eviction_candidate();
+        if (candidate == entries_.end()) return 0;
+        ConversationLedger remaining;
+        remaining.adopt(reuse_);
+        for (auto it = entries_.begin(); it != entries_.end(); ++it)
+            if (it != candidate) remaining.adopt(it->image);
+        return candidate->image.private_bytes() + ledger_.bytes() - remaining.bytes();
+    }
+    size_t evictable_bytes() const {
+        ConversationLedger retained;
+        retained.adopt(reuse_);
+        size_t released = 0;
+        for (const Entry& entry : entries_) {
+            if (entry.image.pinned() || entry.serial == guarded_) retained.adopt(entry.image);
+            else released += entry.image.private_bytes();
+        }
+        return released + ledger_.bytes() - retained.bytes();
+    }
+
     // #879: every parked conversation (pinned ones too) and the retained K/V go - after non-finite logits any of them
     // may carry the poison.  Returns how many were parked.
     size_t clear() {
@@ -898,6 +933,13 @@ public:
     }
 
 private:
+    // gives the pool's idle bytes back as far as images + idle + `incoming` would pass the budget (images alone never
+    // need more than the loop in make_room leaves them)
+    void trim_pool(size_t incoming_and_held) {
+        if (pool_ == nullptr) return;
+        const size_t total = bytes() + pool_->idle_bytes();
+        if (incoming_and_held > budget_ || total > budget_ - incoming_and_held) pool_->shrink(total - (budget_ - std::min(budget_, incoming_and_held)));
+    }
     // Keep the candidate's shared allocations charged during eviction. Removing
     // its old cache owner must not make that still-live prefix look like free RAM.
     struct Reservation {
@@ -916,6 +958,15 @@ private:
         uint64_t serial = 0;
         bool pinned = false;   // a shared system-prompt prefix: evicted last (--conversation-cache-keep-root)
     };
+    std::deque<Entry>::iterator eviction_candidate() {
+        auto root = entries_.end();
+        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+            if (it->image.pinned() || it->serial == guarded_) continue;
+            if (!it->pinned) return it;
+            if (root == entries_.end()) root = it;
+        }
+        return root;
+    }
     std::deque<Entry> entries_; // least recently active first
     uint64_t next_serial_ = 1, guarded_ = 0;
     size_t borrowed_ = 0;
@@ -944,6 +995,8 @@ private:
         uncharge_reuse(reuse_);
         reuse_ = {};
     }
+    SegmentPoolBudget* pool_ = nullptr;   // STRATA_PARK_SEGPOOL_MIB (not owned)
+    std::function<void(SavedConversation&&)> sink_;   // P2: where an evicted conversation goes (set_evict_sink)
 };
 
 } // namespace strata::core

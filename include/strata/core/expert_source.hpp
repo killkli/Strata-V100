@@ -91,10 +91,12 @@ struct HostMemory {
 /// Linux reads `meminfo`, `self_cgroup` and the cgroup tree under `cgroup_root` (the parameters are for tests; the
 /// defaults are the real files).  cgroup v2 as before (an unreadable limit of a group that has one fails); cgroup v1's
 /// memory controller (`<root>/memory/<path>`: memory.limit_in_bytes - memory.usage_in_bytes); no cgroup line at all is
-/// MemAvailable alone.  False when the RAM cannot be determined.
+/// MemAvailable alone.  False when the RAM cannot be determined.  #5519: MemAvailable plus the ZFS ARC's share above its floor
+/// (`zfs_arcstats`; no ZFS: nothing), which MemAvailable leaves out though ZFS gives it back.
 bool host_available_memory(HostMemory& m, const std::string& meminfo = "/proc/meminfo",
                            const std::string& self_cgroup = "/proc/self/cgroup",
-                           const std::string& cgroup_root = "/sys/fs/cgroup");
+                           const std::string& cgroup_root = "/sys/fs/cgroup",
+                           const std::string& zfs_arcstats = "/proc/spl/kstat/zfs/arcstats");
 
 /// #4051: wait for the RAM an arena needs to come back.  An engine that was still exiting (or a program that was ending)
 /// holds memory a few seconds longer than its process; loading into that shortfall sent a 60 GiB host into reclaim for
@@ -925,6 +927,16 @@ public:
     /// 32 measured 2.35 GB/s with experts.bin mapped and 3.57 GB/s without.  After this every file read goes through
     /// read_direct (mapped_blob answers nullptr).  Returns whether the view was closed; `why` says why not.
     bool drop_mapping(std::string& why);
+    /// A GPU that shares the system RAM (cudaDevAttrIntegrated: the DGX Spark's GB10) and holds every expert in its cache
+    /// reads nothing from the files again, and the pages the start read from them are a second copy of the cache's bytes.
+    /// CUDA counts only the RAM the kernel has free (MemFree, not the page cache it could reclaim), so with those pages
+    /// kept a second CUDA program (the picture reader) found no room.  Gives them back, expert by expert:
+    /// madvise(MADV_DONTNEED) on the blob's pages in this source's mappings, then posix_fadvise(DONTNEED) on the same
+    /// file range (clean pages, no root needed; only whole pages inside the blob, a page shared with a neighbour stays).
+    /// `keep(layer, expert)` true keeps that expert's pages (the experts of the slots the prompt path borrows: their
+    /// refill reads them again).  The mappings stay; a later read faults the bytes in from the file.  Returns the bytes
+    /// released (0: nothing, or not Linux).
+    uint64_t drop_cached_pages(const std::function<bool(int64_t, int64_t)>& keep);
     /// Windows, experts.bin, a file tier that reads through the file cache (--resident-experts): the startup reads -
     /// the GPU cache's fill from the profile and the RAM copy (pin_cache_complement) - go unbuffered (read_direct)
     /// with the view closed meanwhile.  Through the mapping they put the file's pages in the working set beside the

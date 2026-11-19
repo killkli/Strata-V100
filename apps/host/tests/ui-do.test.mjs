@@ -15,11 +15,11 @@ const load = async name => {
 const withI18n = async entry => {
   const built = await build({ stdin: { contents: `export * from './src/lib/i18n'; export * from './src/lib/${entry}';`, resolveDir: process.cwd() }, bundle: true, write: false, format: 'esm', platform: 'node', loader: { '.json': 'json' } });
   const mod = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
-  for (const l of ['zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr']) await mod.loadCatalog(l);  // the non-English catalogs load on first use (src/lib/i18n.ts loadCatalog); load them before the first tr()
+  for (const l of ['zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr', 'he']) await mod.loadCatalog(l);  // the non-English catalogs load on first use (src/lib/i18n.ts loadCatalog); load them before the first tr()
   return mod;
 };
 
-const languages = ['en', 'zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr'];
+const languages = ['en', 'zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr', 'he'];
 
 test('the ui catalogs have the same keys and placeholders in all nine languages, none still English, none in another catalog', () => {
   const en = locale('ui-en');
@@ -347,7 +347,7 @@ test('#4783 the composer acts on the choice, the default keeps today\'s behaviou
   assert.match(chat, /if \(plan === 'interrupt'\) \{\s*updateDraft\(''\);\s*clearQuotes\(session\.id\);\s*parkMessage\(session\.id, out\);\s*stopStreaming\(\);\s*return;\s*\}/);
   assert.match(chat, /if \(plan === 'goal'\) \{ clearQuotes\(session\.id\); parkMessage\(session\.id, out\); return; \}/);
   assert.match(chat, /pushToast\('info', tr\('The assistant is still answering'\)/, 'Wait still says so');
-  assert.match(chat, /if \(!session \|\| streaming \|\| !parked\?\.length\)\s*return;\s*const next = takeParked\(session\.id\);/);
+  assert.match(chat, /if \(!session \|\| !parkedReady\(session\.id, activeId, streaming, parked\?\.length \?\? 0\)\)\s*return;\s*const next = takeParked\(session\.id\);/);
   const store = src('lib/store.ts');
   assert.match(store, /whileBusy: validWhileBusy\(parsed\.whileBusy\) \? parsed\.whileBusy : 'wait'/, 'an old or invalid saved value reads as Wait');
   assert.match(store, /\n  whileBusy: 'wait',\n/);
@@ -394,8 +394,9 @@ test('#4785 quoting is wired: the menu, the selection, the box above the compose
   assert.equal((chat.match(/addQuote\(activeSession, m\.content, m\.id, '(user|assistant)'\)/g) ?? []).length, 2, 'a Quote item in the menu of both kinds of message');
   assert.match(chat, /document\.addEventListener\('selectionchange', read\)/);
   assert.match(chat, /data-message-id=\{m\.id\}/);
-  assert.match(chat, /return quotes\.length && !text\.startsWith\('\/'\) \? composeQuoted\(quotes\.map\(q => q\.text\), text\) : text;/, 'a command goes out as typed');
-  assert.match(chat, /void sendMessage\(session \? quotedMessage\(quotes, text\) : text\);/);
+  assert.match(chat, /if \(!quotes\.length \|\| text\.startsWith\('\/'\)\) return text;/, 'a command goes out as typed');
+  assert.match(chat, /if \(!numbered\) return composeQuoted\(quotes\.map\(q => q\.text\), text\);/, '#5993: with "Number quotes" off the form is the one of #4785');
+  assert.match(chat, /void sendMessage\(session \? quotedMessage\(quotes, text, numberQuotes\) : text\);/);
   assert.match(chat, /const sentQuote = m\.role === 'user' \? parseQuoted\(m\.content\) : null;/);
 });
 

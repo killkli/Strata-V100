@@ -57,6 +57,7 @@ V100 のサポートは、上流のすべての機能や他のすべての GPU �
 
 ## ドキュメント
 
+<a id="the-other-sizes"></a>
 [docs/README.md](docs/README.md) に、すべてのページとその目的の一覧があります。次のページがリファレンスです。
 
 - [エンジンのフラグ](docs/ENGINE_FLAGS.md)：すべてのコマンドラインオプション、その値、既定値。
@@ -108,6 +109,7 @@ V100 のサポートは、上流のすべての機能や他のすべての GPU �
 測定した任意の組み合わせは `STRATA_TQ_SUB8=1 STRATA_EXPERT_PAIR=0
 STRATA_PF_HC_REGION=1 STRATA_PF_GROUP_SCRATCH=1 STRATA_PF_WMMA=0` です。グループスクラッチは浮動小数点の丸めを変える場合があります。PLE の割り当ての変更にフラグは不要です。ゼロスピンの修正は `STRATA_POOL_SPIN_US=0` で適用されます。日常の設定である 100 での節約は確認していません。
 
+<sub>ファイル: `Strata-0.2.15-windows-x64-setup.exe` · `Strata-0.2.15-linux-x86_64.AppImage` · `Strata-0.2.15-macos-arm64.dmg`</sub>
 個別の測定、オプションのガード、数値の確認、ビルドの制限、採用しなかった試験的な候補は、[V100 の移植のレポート](docs/NVIDIA_V100.md#selected-upstream-0211-ports-gyro-m-2026-11-05)を参照してください。サービスの既定値は変更しません。
 
 ### 上流の選択的な同期 — 2026年10月19日

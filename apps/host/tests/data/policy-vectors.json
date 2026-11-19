@@ -63,11 +63,16 @@
   "qwen36": {
    "arch": "qwen35moe"
   },
-  "deepseek": {
-   "arch": "deepseek41"
+  "qwen_pictures": {
+   "vision": {
+    "exe": "strata-vision"
+   }
   },
-  "deepseek_exe": {
-   "exe": "C:/x/strata-dsv41.exe"
+  "qwen36_pictures": {
+   "arch": "qwen35moe",
+   "vision": {
+    "exe": "strata-vision"
+   }
   }
  },
  "switches": [
@@ -76,7 +81,8 @@
    "backend": "cuda",
    "card": "rtx4090",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -85,7 +91,8 @@
    "card": "rtx3060",
    "shows": [
     "faster_12gb_nvidia",
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -93,7 +100,8 @@
    "backend": "cuda",
    "card": "rtx4060ti16",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -101,7 +109,8 @@
    "backend": "cuda",
    "card": "spark",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -109,7 +118,8 @@
    "backend": "cuda",
    "card": "r9700",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -117,7 +127,8 @@
    "backend": "cuda",
    "card": "rx7900",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -125,7 +136,8 @@
    "backend": "cuda",
    "card": "rx9070",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -133,7 +145,8 @@
    "backend": "cuda",
    "card": "strix",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -141,7 +154,8 @@
    "backend": "cuda",
    "card": "arc",
    "shows": [
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -150,7 +164,8 @@
    "card": "nameonly3060",
    "shows": [
     "faster_12gb_nvidia",
-    "faster_long_prompts"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
@@ -191,7 +206,8 @@
    "card": "r9700",
    "shows": [
     "faster_long_prompts",
-    "faster_radeon_9000"
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
@@ -208,7 +224,8 @@
    "card": "rx9070",
    "shows": [
     "faster_long_prompts",
-    "faster_radeon_9000"
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
@@ -479,61 +496,81 @@
    "model": "qwen36",
    "backend": "cuda",
    "card": "rtx4090",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "rtx3060",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "rtx4060ti16",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "spark",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "r9700",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "rx7900",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "rx9070",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "strix",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "arc",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
    "backend": "cuda",
    "card": "nameonly3060",
-   "shows": []
+   "shows": [
+    "route_tail_skip"
+   ]
   },
   {
    "model": "qwen36",
@@ -564,7 +601,8 @@
    "backend": "hip",
    "card": "r9700",
    "shows": [
-    "faster_radeon_9000"
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
@@ -578,7 +616,8 @@
    "backend": "hip",
    "card": "rx9070",
    "shows": [
-    "faster_radeon_9000"
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
@@ -840,1044 +879,895 @@
    "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "rtx4090",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "rtx3060",
    "shows": [
-    "deepseek_speedups"
+    "faster_12gb_nvidia",
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "rtx4060ti16",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "spark",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "r9700",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "rx7900",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "rx9070",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "strix",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "arc",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cuda",
    "card": "nameonly3060",
    "shows": [
-    "deepseek_speedups"
+    "faster_12gb_nvidia",
+    "faster_long_prompts",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "rtx4090",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "rtx3060",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "rtx4060ti16",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "spark",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "r9700",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "rx7900",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "rx9070",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts",
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "strix",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "arc",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "hip",
    "card": "nameonly3060",
    "shows": [
-    "deepseek_speedups"
+    "faster_long_prompts"
    ]
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "sycl",
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "metal",
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": "cpu",
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek",
+   "model": "qwen_pictures",
    "backend": null,
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "rtx4090",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "rtx3060",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "rtx4060ti16",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "spark",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "r9700",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "rx7900",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "rx9070",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "strix",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "arc",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cuda",
    "card": "nameonly3060",
    "shows": [
-    "deepseek_speedups"
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "r9700",
    "shows": [
-    "deepseek_speedups"
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "rx9070",
    "shows": [
-    "deepseek_speedups"
+    "faster_radeon_9000",
+    "route_tail_skip"
    ]
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "hip",
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "sycl",
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "metal",
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": "cpu",
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "rtx4090",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "rtx3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "rtx4060ti16",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "spark",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "r9700",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "rx7900",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "rx9070",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "strix",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "arc",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   },
   {
-   "model": "deepseek_exe",
+   "model": "qwen36_pictures",
    "backend": null,
    "card": "nameonly3060",
-   "shows": [
-    "deepseek_speedups"
-   ]
+   "shows": []
   }
  ],
  "names": [
   {
    "name": "qwen3.8-flash-next",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "name": "qwen3.8-flash-next-iq3_s",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "name": "qwen3.8-flash-next-Q2_0",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "name": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "name": "qwen3.8-flash-next-unsloth-ud-iq4_xs-v31",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "name": "qwen3.8-flash-next-gyro-iq4",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "name": "qwen3.8-flash-next-coder-iq1_m",
-   "supported": false
+   "supported": false,
+   "named": true
   },
   {
    "name": "qwen3.8-flash-next-swift-iq3_s",
-   "supported": false
+   "supported": false,
+   "named": false
   },
   {
    "name": "swift-1.5-iq3_s",
-   "supported": false
+   "supported": false,
+   "named": false
   },
   {
    "name": "qwen3.6-35b-a3b-ud-q4_k_xl",
-   "supported": false
-  },
-  {
-   "name": "deepseek-v4.1-flash",
-   "supported": false
+   "supported": false,
+   "named": false
   },
   {
    "name": "",
-   "supported": false
+   "supported": false,
+   "named": false
   }
  ],
  "families": [
   {
    "family": "qwen",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "family": "gyro",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "family": "unsloth",
-   "supported": true
+   "supported": true,
+   "named": true
   },
   {
    "family": "swift",
-   "supported": false
+   "supported": false,
+   "named": false
   },
   {
    "family": "coder",
-   "supported": false
+   "supported": false,
+   "named": true
   },
   {
    "family": "nvfp4",
-   "supported": false
-  },
-  {
-   "family": "deepseek41",
-   "supported": false
+   "supported": false,
+   "named": false
   }
  ]
 }

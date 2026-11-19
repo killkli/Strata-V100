@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/client';
+import { useImeKeys } from '../lib/ime-keys';
 import { tr } from '../lib/i18n';
 import { askNotificationPermission, playDoneSound } from '../lib/attention';
-import { setApprovalNotify, setDoneSound, useStore } from '../lib/store';
+import { setApprovalNotify, setDoneSound, setNumberQuotes, useStore } from '../lib/store';
 import { Btn } from './ui';
 
 /** What the host says about the desktop shell (GET /api/shell): null in a browser or while it loads. */
@@ -46,6 +47,12 @@ export function ApprovalNotifySetting() {
         onClick={() => { if (!on) void askNotificationPermission(); setApprovalNotify(!on); }}/>;
 }
 
+/** Settings > General > Number quotes (#5993): off by default; on, a message that quotes several passages numbers them. */
+export function NumberQuotesSetting() {
+    const on = useStore(s => s.numberQuotes);
+    return <button className="st-toggle" role="switch" aria-checked={on} aria-label={tr("Number quotes")} onClick={() => setNumberQuotes(!on)}/>;
+}
+
 /** Keep the app running in the tray when its window is closed (#3477). Desktop app on Windows and macOS only. */
 export function TraySetting({ shell, save }: { shell: ShellState; save: (patch: { tray: boolean }) => Promise<string | null> }) {
     return <button className="st-toggle" role="switch" aria-checked={shell.minimizeToTray} aria-label={tr("Minimise to tray")} onClick={() => void save({ tray: !shell.minimizeToTray })}/>;
@@ -53,7 +60,7 @@ export function TraySetting({ shell, save }: { shell: ShellState; save: (patch: 
 
 /** The port the app's window and local address use (#3402). Empty lets Strata choose; the choice applies the next time Strata starts. */
 export function PortSetting({ shell, save }: { shell: ShellState; save: (patch: { port: number | null }) => Promise<string | null> }) {
-    const [text, setText] = useState(shell.pinnedPort ? String(shell.pinnedPort) : ''), [problem, setProblem] = useState('');
+    const [text, setText] = useState(shell.pinnedPort ? String(shell.pinnedPort) : ''), [problem, setProblem] = useState(''), ime = useImeKeys();
     useEffect(() => { setText(shell.pinnedPort ? String(shell.pinnedPort) : ''); }, [shell.pinnedPort]);
     const commit = async () => {
         const trimmed = text.trim();
@@ -66,7 +73,7 @@ export function PortSetting({ shell, save }: { shell: ShellState; save: (patch: 
     return <span className="stack">
         <span className="row">
             <input className="st-input" inputMode="numeric" size={7} aria-label={tr("Port (empty = automatic)")} placeholder={String(shell.defaultPort)} value={text}
-                onChange={e => setText(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))} onBlur={() => void commit()} onKeyDown={e => { if (e.key === 'Enter') void commit(); }}/>
+                onChange={e => setText(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))} onBlur={() => void commit()} {...ime.events} onKeyDown={e => { if (ime.owns(e)) return; if (e.key === 'Enter') void commit(); }}/>
         </span>
         <span className="xs muted">{tr("Using port {0} now.", [shell.port])}</span>
         {problem ? <span className="xs" role="alert">{problem}</span> : null}

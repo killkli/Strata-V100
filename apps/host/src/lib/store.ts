@@ -1,17 +1,19 @@
-import { workspaceIdForSession } from './session-workspace';
+import { moveSessionToWorkspace, workspaceIdForSession } from './session-workspace';
 import { shortTitle } from './title-text';
 import { DEFAULT_CONTENT_FS, DEFAULT_UI_SCALE, SIZE_DEFAULTS_VERSION, savedSizes } from './default-sizes';
 import { detectLanguage } from './language-detect';
 import { validWhileBusy, type WhileBusy } from './while-busy';
-import { addToQuotes, type Quote } from './quotes';
+import { validReplyWidth, type ReplyWidth } from './reply-width';
+import { repairSession } from './session-repair';
+import { addToQuotes, takeQuoteSources, type Quote } from './quotes';
 import { readAsk, type AgentAnswer, type AgentAsk } from './agent-ask';
-import { plainFailure, plainFailureText } from './plain-errors';
+import { chatFailure, plainFailureText } from './plain-errors';
 import { showcaseMessages, SHOWCASE_AGENTS } from './chat-showcase';
 import { settleAgents, updateAgent } from './agents';
 import { LOOP_USAGE, parseLoop, type LoopCommand } from './loop';
 import { LoopScheduler } from './loop-runner';
 import { applyStatusFrame, clearStatus } from './live-status';
-import { approvalNeeded, workFinished } from './attention';
+import { approvalNeeded, questionAsked, workFinished } from './attention';
 import { applyGoalFrame } from './goal';
 import { tidyAnswer } from './answer-text';
 import { appendText, mergeDeliverable, readDeliverable, readGroup, readSkills, upsertGroup } from './deliverables';
@@ -27,6 +29,7 @@ import { noModelNotice } from './no-model';
 import { taskHandoverMessage, taskHandoverTitle, chatHandoverMessage, chatHandoverTitle } from './task-handover';
 import type { Task } from './tasks';
 import { postWithFolderFallback } from './folder-pick';
+import { mcpToolsPatch } from './mcp-tools-switch';
 import { createSessionWriter, exportSessions, readBrowserSessions, HOST_FLAG_KEY, PENDING_KEY, type SaveResult, type StorageLike } from './session-persist';
 import { createHttpTransport, hydrateChats, keepLastMomentCopy, WINDOW_ID } from './chat-sync';
 import { copyText } from './clipboard';
@@ -56,6 +59,7 @@ import type {
   MonitorState,
   ServingState,
   Session,
+  ChatMode,
   SetupState,
   Skill,
   WorkspaceFile,
@@ -89,6 +93,8 @@ export interface AppState {
   /** Conversation prose size in px, 10–22. Does not touch the UI chrome. */
   contentFontSize: number;
   density: 'comfortable' | 'compact';
+  /** How wide the text of an answer may run (#5066). */
+  replyWidth: ReplyWidth;
   motion: 'system' | 'full' | 'reduced';
   /** Translucent materials, or flat surfaces for anyone who prefers them. */
   transparency: 'translucent' | 'opaque';
@@ -101,8 +107,12 @@ export interface AppState {
   doneSound: boolean;
   /** Opt-in: a desktop notification when Manual mode waits for an approval (#3477). */
   approvalNotify: boolean;
+  /** #5993: a message that quotes two or more passages numbers them and names who wrote each (off by default). */
+  numberQuotes: boolean;
   /** What Enter does while an answer is being written: wait, send after, or interrupt (#4783). */
   whileBusy: WhileBusy;
+  /** What a new conversation starts with (Settings → General): mode, reasoning effort, thinking limit. */
+  chatDefaults: ChatDefaults;
   /** Governs anonymous usage reporting. Nothing is sent in this build; the
    *  choice is recorded so a version that does offer it starts from it. */
   shareTelemetry: boolean;
@@ -150,6 +160,11 @@ export interface AppState {
    *  The chats stay whole in memory and are tried again at every save; `unsavedSessionsJson()` gives them as text.
    *  A host that does not answer is not this: those saves are simply retried. */
   sessionSave: { failedIds: string[]; reason: 'disk-full' | 'permission' | 'other' } | null;
+  /** The chat files the host has a name for but cannot read (a hand-edited file, a truncated one, a format from a later release) (#5421).
+   *  They are not chats: nothing is in memory for them. The sidebar lists them so the person can delete one. */
+  damagedChats: string[];
+  /** Chats saved by a newer Strata: listed with a note to update Strata, never offered for deletion (#5421 review). */
+  newerChats: string[];
 }
 
 const PREFS_KEY = 'strata.prefs.v2';
@@ -172,6 +187,8 @@ export interface Prefs {
   focus: boolean;
   contentFontSize: number;
   density: 'comfortable' | 'compact';
+  /** How wide the text of an answer may run (#5066). */
+  replyWidth: ReplyWidth;
   motion: 'system' | 'full' | 'reduced';
   transparency: 'translucent' | 'opaque';
   uiScale: number;
@@ -179,11 +196,42 @@ export interface Prefs {
   electricityCurrency: string;
   doneSound: boolean;
   approvalNotify: boolean;
+  numberQuotes: boolean;
   /** What Enter does while an answer is being written: wait, send after, or interrupt (#4783). */
   whileBusy: WhileBusy;
+  /** What a new conversation starts with: its mode, reasoning effort and thinking limit. */
+  chatDefaults: ChatDefaults;
   /** Governs anonymous usage reporting. Nothing is sent in this build; the
    *  choice is recorded so a version that does offer it starts from it. */
   shareTelemetry: boolean;
+}
+
+/** What a new conversation starts with, before the person changes it in that chat's own composer.
+ *  These are the values a chat with no preference falls back to today, so leaving them untouched
+ *  keeps a new chat exactly as it was. */
+export interface ChatDefaults {
+  mode: ChatMode;
+  /** The reasoning effort name the composer shows ('Off' … 'Max'). */
+  thinking: string;
+  /** The most tokens one reply may spend thinking; 0 = no limit. */
+  thinkingBudget: number;
+}
+
+export const CHAT_MODE_CHOICES: ChatMode[] = ['manual', 'plan', 'bypass'];
+export const CHAT_EFFORT_CHOICES = ['Off', 'Low', 'Medium', 'High', 'Max'];
+export const CHAT_BUDGET_CHOICES: number[] = [0, 2048, 8192, 32768];
+
+export const CHAT_DEFAULTS: ChatDefaults = { mode: 'manual', thinking: 'Medium', thinkingBudget: 0 };
+
+/** Keep only what the composer can actually offer: a hand-edited or older stored value must not leave a chat showing a choice that does nothing. */
+function validChatDefaults(value: unknown): ChatDefaults {
+  const raw = (value ?? {}) as Partial<ChatDefaults>;
+  const thinking = typeof raw.thinking === 'string' && CHAT_EFFORT_CHOICES.includes(raw.thinking) ? raw.thinking : CHAT_DEFAULTS.thinking;
+  return {
+    mode: CHAT_MODE_CHOICES.includes(raw.mode as ChatMode) ? raw.mode as ChatMode : CHAT_DEFAULTS.mode,
+    thinking,
+    thinkingBudget: CHAT_BUDGET_CHOICES.includes(Number(raw.thinkingBudget)) ? Number(raw.thinkingBudget) : CHAT_DEFAULTS.thinkingBudget,
+  };
 }
 
 const PREFS_DEFAULTS: Prefs = {
@@ -195,6 +243,7 @@ const PREFS_DEFAULTS: Prefs = {
   focus: false,
   contentFontSize: DEFAULT_CONTENT_FS,
   density: 'comfortable',
+  replyWidth: 'comfortable',
   motion: 'system',
   transparency: 'translucent',
   uiScale: DEFAULT_UI_SCALE,
@@ -202,7 +251,9 @@ const PREFS_DEFAULTS: Prefs = {
   electricityCurrency: '',
   doneSound: false,
   approvalNotify: false,
+  numberQuotes: false,
   whileBusy: 'wait',
+  chatDefaults: CHAT_DEFAULTS,
   shareTelemetry: false,
 };
 
@@ -219,7 +270,8 @@ const browserStorage: StorageLike = {
   get length() { return localStorage.length; },
 };
 /** A chat as the page works with it: a reply that was streaming when the page went away is marked interrupted, not left running. */
-function fixSession(session: Session): Session {
+function fixSession(raw: Session): Session {
+  const session = repairSession(raw);   // a damaged or older chat file must never take the page down (missing date, title, message text)
   return {
     ...session,
     ...(session.showcase && !session.showcaseAgentStates ? {agents:SHOWCASE_AGENTS,showcaseAgentStates:true}:{}),
@@ -268,7 +320,10 @@ function loadPrefs(): Prefs {
         electricityCurrency: typeof parsed.electricityCurrency === 'string' && /^[A-Za-z]{3}$/.test(parsed.electricityCurrency) ? parsed.electricityCurrency.toUpperCase() : '',
         doneSound: parsed.doneSound === true,
         approvalNotify: parsed.approvalNotify === true,
+        numberQuotes: parsed.numberQuotes === true,
         whileBusy: validWhileBusy(parsed.whileBusy) ? parsed.whileBusy : 'wait',
+        replyWidth: validReplyWidth(parsed.replyWidth),
+        chatDefaults: validChatDefaults(parsed.chatDefaults),
       };
     } catch {
       /* fall through to the next key */
@@ -300,6 +355,7 @@ let state: AppState = {
   focus: prefs.focus,
   contentFontSize: prefs.contentFontSize,
   density: prefs.density,
+  replyWidth: prefs.replyWidth,
   motion: prefs.motion,
   transparency: prefs.transparency,
   uiScale: prefs.uiScale,
@@ -307,10 +363,12 @@ let state: AppState = {
   electricityCurrency: prefs.electricityCurrency,
   doneSound: prefs.doneSound,
   approvalNotify: prefs.approvalNotify,
+  numberQuotes: prefs.numberQuotes,
   whileBusy: prefs.whileBusy,
   parked: {},
   quotes: {},
   agentAsks: {},
+  chatDefaults: prefs.chatDefaults,
   paletteOpen: false,
   shortcutsOpen: false,
   settingsSection: 'Appearance',
@@ -333,6 +391,8 @@ let state: AppState = {
   setupOpen: false,
   sessions: loadSessions(),
   sessionSave: null,
+  damagedChats: [],
+  newerChats: [],
   activeSession: null,
   streaming: false,
   liveChats: 0,
@@ -496,12 +556,14 @@ function applyPrefs() {
   const root = document.documentElement;
   void setTranslationLanguage(state.language);
   root.lang = state.language === 'zh' ? 'zh-CN' : state.language;
+  root.dir = state.language === 'he' ? 'rtl' : 'ltr';             // #6060: Hebrew reads right to left
   if(state.fontFamily)root.style.setProperty('--st-font',`${JSON.stringify(state.fontFamily)},system-ui,-apple-system,"Segoe UI",sans-serif`);
   else root.style.removeProperty('--st-font');
   root.dataset.theme = state.theme === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' : state.theme;
   document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', root.dataset.theme === 'dark' ? '#0e1113' : '#f9fafb');
   root.dataset.contrast = state.contrast;
   root.dataset.density = state.density;
+  root.dataset.measure = state.replyWidth;
   root.style.setProperty('--st-content-fs', `${state.contentFontSize}px`);
   // The interface size (#3970): the whole page is scaled, so every text, button, menu and dialog follows, not only the parts that were
   // written with the scale token. The token stays at 1 so nothing is scaled twice. The reading size stays separate: someone who needs
@@ -533,6 +595,7 @@ function savePrefs() {
     focus: state.focus,
     contentFontSize: state.contentFontSize,
     density: state.density,
+    replyWidth: state.replyWidth,
     motion: state.motion,
     transparency: state.transparency,
     uiScale: state.uiScale,
@@ -540,7 +603,9 @@ function savePrefs() {
     electricityCurrency: state.electricityCurrency,
     doneSound: state.doneSound,
     approvalNotify: state.approvalNotify,
+    numberQuotes: state.numberQuotes,
     whileBusy: state.whileBusy,
+    chatDefaults: state.chatDefaults,
     shareTelemetry: state.shareTelemetry,
   };
   try {
@@ -609,6 +674,7 @@ export function resetAppearance() {
     contrast: PREFS_DEFAULTS.contrast,
     contentFontSize: PREFS_DEFAULTS.contentFontSize,
     density: PREFS_DEFAULTS.density,
+    replyWidth: PREFS_DEFAULTS.replyWidth,
     motion: PREFS_DEFAULTS.motion,
     transparency: PREFS_DEFAULTS.transparency,
     uiScale: PREFS_DEFAULTS.uiScale,
@@ -637,6 +703,11 @@ export function setContentFontSize(px: number) {
 
 export function setDensity(density: 'comfortable' | 'compact') {
   set({ density });
+  savePrefs();
+}
+
+export function setReplyWidth(replyWidth: ReplyWidth) {
+  set({ replyWidth: validReplyWidth(replyWidth) });
   savePrefs();
 }
 
@@ -679,7 +750,11 @@ export function addAgentAsk(sessionId: string, frame: { callId?: unknown; questi
   const ask = readAsk(frame);
   // A /loop runs without anyone there: the question is skipped at once, so the loop never waits for an answer.
   if (ask && loopScheduler.isRunning(sessionId)) { void answerAgentAsk(sessionId, ask.callId, null).catch(() => {}); return; }
-  if (ask) setAsks(sessionId, [...(state.agentAsks[sessionId] ?? []).filter(a => a.callId !== ask.callId), ask]);
+  if (!ask) return;
+  const known = (state.agentAsks[sessionId] ?? []).some(a => a.callId === ask.callId);
+  setAsks(sessionId, [...(state.agentAsks[sessionId] ?? []).filter(a => a.callId !== ask.callId), ask]);
+  // #5617: a question waits for the person like an approval does: the same opt-in notification, once per question
+  if (!known) void questionAsked(state.approvalNotify);
 }
 export function removeAgentAsk(sessionId: string, callId?: string) {
   const rest = callId === undefined ? [] : (state.agentAsks[sessionId] ?? []).filter(a => a.callId !== callId);
@@ -728,6 +803,18 @@ export function setDoneSound(doneSound: boolean) {
 
 export function setApprovalNotify(approvalNotify: boolean) {
   set({ approvalNotify });
+  savePrefs();
+}
+
+/** Settings > General > Number quotes (#5993). */
+export function setNumberQuotes(numberQuotes: boolean) {
+  set({ numberQuotes: numberQuotes === true });
+  savePrefs();
+}
+
+/** Change what a new conversation starts with. Existing chats keep what they already have. */
+export function setChatDefaults(patch: Partial<ChatDefaults>) {
+  set({ chatDefaults: validChatDefaults({ ...state.chatDefaults, ...patch }) });
   savePrefs();
 }
 
@@ -845,6 +932,10 @@ function applyEvent(e: StreamEvent) {
     case 'goal':
       if (typeof data.chatId === 'string') applyGoalFrame(data.chatId, data.goal);
       break;
+    case 'chat-wake':
+      // The agent answers by itself (a background command finished after its turn ended): that reply streams in as a new message.
+      if (typeof data.chatId === 'string' && typeof data.requestId === 'string' && state.sessions.some(s => s.id === data.chatId) && !liveTurns.has(data.chatId)) void sendMessage('', { reattach: data.chatId, requestId: data.requestId, wake: true });
+      break;
     case 'plan':
       if (typeof data.chatId === 'string') applyPlanFrame(data.chatId, data.plan);
       break;
@@ -959,7 +1050,8 @@ export async function bootstrap() {
         reconnect = false;
         // The restarted host may have new logs, config or readiness. Refresh
         // those facts in place while retaining conversations and unsent drafts.
-        void bootstrap();
+        // A reply the agent began by itself while the event stream was down was announced to no one: ask for it now.
+        void bootstrap().then(() => takeOverTurns());
         return;
       }
       set({ connection: status });
@@ -1175,6 +1267,12 @@ export async function setServingAccess(patch: { otherDevices?: boolean; apiKey?:
   set({ serving: newestServingState(state.serving, result) });
 }
 
+/** #5661: let apps on this computer use this model's MCP tools through the API (off by default). */
+export async function setMcpTools(model: string, on: boolean) {
+  const result = await api.patch<ServingState>('/api/serving', mcpToolsPatch(model, on));
+  set({ serving: newestServingState(state.serving, result) });
+}
+
 export async function pauseServing(paused: boolean) {
   const result = await api.patch<ServingState>('/api/serving', { pauseServing: paused });
   set({ serving: newestServingState(state.serving, result) });
@@ -1318,7 +1416,7 @@ export async function loadChatsFromHost() {
   chatsRead = true;
   const sessions = result.sessions.map(fixSession);
   for (const s of sessions) { const rev = result.revs.get(s.id); if (rev !== undefined && !result.recovered.includes(s.id)) sessionWriter.adopt(s, rev); }
-  set({ sessions });
+  set({ sessions, damagedChats: result.damaged, newerChats: result.newer });
   // Whatever the host does not have yet (a chat it refused during the move, a last-moment copy) is sent now; a refusal raises the notice.
   sessionWriter.schedule(sessions);
   sessionWriter.enable();
@@ -1329,10 +1427,12 @@ export async function loadChatsFromHost() {
 export async function applyChatChange(id: string, rev: number | null, deleted: boolean) {
   const here = state.sessions.find(s => s.id === id);
   if (deleted) {
+    // A damaged file is not a session, so it is dropped from its own list: the other window's delete clears the row here too (#5421).
+    const damaged = state.damagedChats.includes(id) ? state.damagedChats.filter(d => d !== id) : null;
     if (here && !liveTurns.has(id) && !sessionWriter.dirty(here)) {
       sessionWriter.forget(id);
-      set({ sessions: state.sessions.filter(s => s.id !== id), ...(state.activeSession === id ? { activeSession: null } : {}) });
-    }
+      set({ sessions: state.sessions.filter(s => s.id !== id), ...(state.activeSession === id ? { activeSession: null } : {}), ...(damaged ? { damagedChats: damaged } : {}) });
+    } else if (damaged) set({ damagedChats: damaged });
     return;
   }
   if (rev !== null && sessionWriter.rev(id) >= rev) return;
@@ -1353,7 +1453,20 @@ async function syncChatsFromHost() {
   const onHost = new Set(list.chats.map(c => c.id));
   for (const entry of list.chats) await applyChatChange(entry.id, entry.rev, false);
   for (const s of state.sessions) if (!onHost.has(s.id) && sessionWriter.rev(s.id) > 0) await applyChatChange(s.id, null, true);
+  set({ damagedChats: list.damaged ?? [], newerChats: list.newer ?? [] });   // a file deleted in another window leaves the list here (#5421)
   sessionWriter.enable();
+}
+
+/** Delete a chat file the host cannot read. The file goes; nothing else changes (#5421). */
+export async function deleteDamagedChat(id: string) {
+  try {
+    await chatTransport.remove(id);
+    set({ damagedChats: state.damagedChats.filter(d => d !== id) });
+    // dmg09 (coordinator 11-16) says what happened, so it is the toast after the delete, not the question before it
+    pushToast('success', tr('{0} was deleted. Your other chats are not affected.', [`${id}.json`]));
+  } catch (e) {
+    pushToast('error', 'The chat file could not be deleted', e instanceof Error ? e.message : String(e));
+  }
 }
 
 export function newSession(): Session {
@@ -1367,7 +1480,12 @@ export function newSession(): Session {
     workspace: state.workspaces.find(w => w.id === state.activeWorkspace)?.path ?? state.workspacePath,
     tokensIn: 0,
     tokensOut: 0,
-    ...(state.activeSession === null && state.remoteModel ? { preferences: { remoteModel: state.remoteModel } } : {}),
+    // A new chat starts from what the person set in Settings (#4847; with the stored defaults untouched these are the very values a
+    // chat with no preference showed before), on the model the composer shows: the open chat's model, or the choice made before any chat was open.
+    preferences: {
+      ...state.chatDefaults,
+      ...(state.remoteModel ? { remoteModel: state.remoteModel } : {}),
+    },
   };
   const sessions = [session, ...state.sessions];
   persistSessions(sessions);
@@ -1384,6 +1502,12 @@ export function setChatPreferences(id: string | undefined, preferences: NonNulla
 export function setPreviewTabClosed(sessionId:string|undefined, artifactId:string, closed:boolean, selected:string|null) {
   if(!sessionId)return;
   patchSession(sessionId,s=>({...s,closedPreviews:closed?[...new Set([...(s.closedPreviews??[]),artifactId])]:(s.closedPreviews??[]).filter(id=>id!==artifactId),previewOpen:selected??undefined}));
+}
+/** #5548: the preview panel was closed. The chat forgets which preview was open, so the next start does not open the panel again; the tabs
+ * stay, and picking one opens and remembers it as before. */
+export function setPreviewPanelClosed(sessionId: string | undefined) {
+  if (!sessionId) return;
+  patchSession(sessionId, s => s.previewOpen === undefined ? s : { ...s, previewOpen: undefined });
 }
 export function createChatShowcase() {
   const session=newSession();const at=new Date().toISOString();
@@ -1454,6 +1578,19 @@ export function deleteSession(id: string) {
   const sessions = state.sessions.filter((s) => s.id !== id);
   persistSessions(sessions);
   set({ sessions, activeSession: state.activeSession === id ? (sessions[0]?.id ?? null) : state.activeSession });
+  // Tell the host too: its agent keeps a Harness session per chat id, and nothing else drops it.
+  void api.post('/api/agent/chat/forget', { chatId: id }).catch(() => undefined);
+}
+
+/** Move a chat to another workspace (#6051). False when it was not moved (it is working, or it is already there). */
+export function moveSession(id: string, workspaceId: string): boolean {
+  const result = moveSessionToWorkspace(state.sessions, id, state.workspaces, workspaceId, new Set(liveChatIds()));
+  if (result.refused) return false;
+  persistSessions(result.sessions);
+  const follow = state.activeSession === id && state.activeWorkspace !== workspaceId;
+  set(follow ? { sessions: result.sessions, activeWorkspace: workspaceId } : { sessions: result.sessions });
+  if (follow) void loadWorkspaceFiles();
+  return true;
 }
 
 export function renameSession(id: string, title: string) {
@@ -1941,7 +2078,7 @@ export async function approvePlan(sessionId: string, planId: string) {
 /** "Start as goal" (and Resume on a paused plan): the host streams the run like any chat turn. */
 export async function startPlanGoal(planId: string) { await sendMessage('', { planId }); }
 
-export async function sendMessage(text: string, options: { fromLoop?: boolean; goalAction?: 'resume'; planId?: string; shown?: string; title?: string; markdown?: boolean; reattach?: string; requestId?: string } = {}) {
+export async function sendMessage(text: string, options: { fromLoop?: boolean; goalAction?: 'resume'; planId?: string; shown?: string; title?: string; markdown?: boolean; reattach?: string; requestId?: string; wake?: boolean } = {}) {
   // `reattach`: a turn the host is still running for this chat (or finished while the page was away) is taken over again after a reload, not started.
   const reattach = options.reattach;
   if (state.streaming && !reattach) {
@@ -1980,10 +2117,12 @@ export async function sendMessage(text: string, options: { fromLoop?: boolean; g
   let sessionId = reattach ?? state.activeSession;
   if (!sessionId) sessionId = newSession().id;
 
-  const userMsg: ChatMessage = { id: uid('m'), role: 'user', content: options.shown ?? body, at: new Date().toISOString(),...(pictures.length?{photos:pictures}:{}),...(options.markdown?{markdown:true}:{}) };
+  const quoteSources = takeQuoteSources(body);   // #5993: the numbers of a numbered quote and the messages they came from
+  const userMsg: ChatMessage = { id: uid('m'), role: 'user', content: options.shown ?? body, at: new Date().toISOString(),...(pictures.length?{photos:pictures}:{}),...(options.markdown?{markdown:true}:{}),...(quoteSources?{quotes:quoteSources}:{}) };
   // A taken-over turn goes on in the reply the page already has (the last one, if it is the assistant's).
   const lastReply = reattach ? [...(state.sessions.find(s => s.id === sessionId)?.messages ?? [])].reverse()[0] : undefined;
-  const resumedReply = lastReply?.role === 'assistant' ? lastReply : undefined;
+  // A turn the agent started by itself (a background command finished) is a new reply, not the end of the last one.
+  const resumedReply = lastReply?.role === 'assistant' && (!options.wake || lastReply.requestId === options.requestId) ? lastReply : undefined;
   let assistantId = resumedReply?.id ?? uid('m');
   const assistantMsg: ChatMessage = {
     id: assistantId,
@@ -2123,7 +2262,7 @@ export async function sendMessage(text: string, options: { fromLoop?: boolean; g
             // The host has just sent it into the run: it becomes an ordinary message here, and the answer to it starts a new reply.
             const before = assistantId; assistantId = uid('m');
             const next: ChatMessage = { id: assistantId, role: 'assistant', content: '', at: new Date().toISOString(), streaming: true };
-            patchSession(sessionId, sess => ({ ...sess, messages: [...sess.messages.map(m => m.id === before ? { ...m, streaming: false } : m), { id: uid('m'), role: 'user', content: sent.text as string, at: new Date().toISOString() }, next] }));
+            patchSession(sessionId, sess => ({ ...sess, messages: [...sess.messages.map(m => m.id === before ? { ...m, streaming: false } : m), { id: uid('m'), role: 'user', content: sent.text as string, at: new Date().toISOString(), ...(((q) => (q ? { quotes: q } : {}))(takeQuoteSources(String(sent.text ?? '')))) }, next] }));
           }
         } else if (type === 'queued-release') {
           // The goal ended with messages left: they go out now, in order, as ordinary messages once this turn has finished.
@@ -2193,8 +2332,11 @@ export async function sendMessage(text: string, options: { fromLoop?: boolean; g
         } else if (type === 'error') {
           clearStatus(sessionId);
           // A sentence the host wrote for the person (it carries its catalog key) is shown in their language as it is; anything else is made plain here.
-          const said = typeof frame.key === 'string' ? tr(frame.key, Array.isArray(frame.values) ? frame.values : undefined) : plainFailure(String(frame.message ?? 'Engine error')).message;
-          patchAssistant((m) => ({ ...m, drafts: undefined, error: said, streaming: false, ...(typeof frame.code === 'string' ? { errorCode: frame.code } : {}), ...(typeof frame.details === 'string' && frame.details ? { errorDetail: frame.details } : {}) }));
+          // An engine's own line (or a stop it restarts from) becomes a plain sentence; the line itself is kept for Details (chatFailure, 11-16 review).
+          const failure = typeof frame.key === 'string' ? null : chatFailure(String(frame.message ?? 'Engine error'));
+          const said = typeof frame.key === 'string' ? tr(frame.key, Array.isArray(frame.values) ? frame.values : undefined) : failure!.message;
+          const detail = typeof frame.details === 'string' && frame.details ? frame.details : failure && failure.kind !== 'plain' && failure.detail && failure.detail !== said ? failure.detail : undefined;
+          patchAssistant((m) => ({ ...m, drafts: undefined, error: said, streaming: false, ...(typeof frame.code === 'string' ? { errorCode: frame.code } : {}), ...(detail ? { errorDetail: detail } : {}) }));
         } else if (type === 'done') {
           clearStatus(sessionId);
           workFinished(state.doneSound, Number(frame.durationMs ?? performance.now() - started));
@@ -2268,7 +2410,10 @@ function answerAgentTool(sessionId: string, messageId: string, tool: ToolCall, a
   }));
   setState(approved ? 'running' : 'denied');
   api.post('/api/chat/approval', { sessionId, toolId: tool.id, decision: approved ? 'approve' : 'deny' }).catch(error => {
-    setState('proposed');
+    // #5308: 409 is the host saying nothing is waiting for this answer any more (the turn ended, the assistant restarted): it can never be
+    // delivered, so the card ends with the host's sentence instead of asking again; any other failure puts the question back to try again.
+    if (error instanceof ApiError && error.status === 409) setState('error', error.message);
+    else setState('proposed');
     pushToast('error', 'That answer was not delivered', error instanceof Error ? error.message : undefined);
   });
 }
@@ -2282,7 +2427,7 @@ export function resolveTool(messageId: string, toolId: string, approved: boolean
   const sessionId = state.activeSession;
   if (!sessionId) return;
   const tool = state.sessions.find(s => s.id === sessionId)?.messages.find(m => m.id === messageId)?.tools?.find(t => t.id === toolId);
-  if (tool?.live) { answerAgentTool(sessionId, messageId, tool, approved); return; }
+  if (tool?.live) { if (tool.state === 'proposed') answerAgentTool(sessionId, messageId, tool, approved); return; }   // an ended card (#5308) is not answered again
 
   patchSession(sessionId, (s) => ({
     ...s,
@@ -2351,10 +2496,16 @@ async function resumeSessions() {
  * going away is asked about too: if its turn ended meanwhile, the host still holds the end of it and shows it whole; if not, nothing changes.
  */
 async function takeOverTurns() {
-  let running: { chatId: string }[] = [];
-  try { running = (await api.get<{ turns: { chatId: string }[] }>('/api/chat/active')).turns; } catch { /* an older host, or none reachable: nothing to take over */ }
+  let running: { chatId: string; requestId?: string; wake?: boolean }[] = [];
+  let woken: { chatId: string; requestId: string }[] = [];
+  try { const active = await api.get<{ turns: { chatId: string; requestId?: string; wake?: boolean }[]; woken?: { chatId: string; requestId: string }[] }>('/api/chat/active'); running = active.turns; woken = active.woken ?? []; } catch { /* an older host, or none reachable: nothing to take over */ }
   const live = new Set(running.map(t => t.chatId));
-  for (const id of live) if (state.sessions.some(s => s.id === id) && !liveTurns.has(id)) void sendMessage('', { reattach: id });
+  for (const t of running) if (state.sessions.some(s => s.id === t.chatId) && !liveTurns.has(t.chatId)) void sendMessage('', { reattach: t.chatId, ...(t.wake && t.requestId ? { requestId: t.requestId, wake: true } : {}) });
+  // Replies the agent began by itself while no page was open (a background command finished), read whole.
+  // A chat can have several (two background commands finished): each becomes its own reply, in order, one after the other.
+  const wokenByChat = new Map<string, string[]>();
+  for (const w of woken) if (state.sessions.some(s => s.id === w.chatId) && !live.has(w.chatId)) wokenByChat.set(w.chatId, [...(wokenByChat.get(w.chatId) ?? []), w.requestId]);
+  for (const [chatId, requestIds] of wokenByChat) if (!liveTurns.has(chatId)) void requestIds.reduce<Promise<unknown>>((before, requestId) => before.then(() => sendMessage('', { reattach: chatId, requestId, wake: true })), Promise.resolve());
   // Cut-off replies of chats with no turn running: the most recent few, asked once each.
   const cut = state.sessions.filter(s => !live.has(s.id) && !liveTurns.has(s.id)).slice().sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 12).flatMap(s => {
     const last = s.messages[s.messages.length - 1];

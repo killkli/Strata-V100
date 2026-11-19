@@ -12,7 +12,7 @@ const compiled = await build({
   bundle: true, write: false, platform: 'node', format: 'esm',
 });
 const lib = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString('base64')}`);
-for (const l of ['zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr']) await lib.loadCatalog(l);  // the non-English catalogs load on first use (src/lib/i18n.ts loadCatalog); load them before the first tr()
+for (const l of ['zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr', 'he']) await lib.loadCatalog(l);  // the non-English catalogs load on first use (src/lib/i18n.ts loadCatalog); load them before the first tr()
 
 const job = (progress, state = 'running') => ({ id: 'j1', kind: 'install', state, startedAt: '', summary: '', error: null, result: { install: progress } });
 const stateWith = (jobs, extra = {}) => ({ available: true, repo: '', summary: '', error: null, catalog: null, installed: null, hardware: null, instances: [], jobs, ...extra });
@@ -104,11 +104,6 @@ test('the recommended four come first; the others are what the "More versions" l
   assert.deepEqual(lib.recommendedVersions([v('qwen36', 'UD-Q4_K_XL')]), [], 'Qwen3.6 has no recommended set: its versions are all shown');
 });
 
-test("the DeepSeek versions have their names, the ISTA-DAS Coder under the owner's spelling", () => {
-  lib.setTranslationLanguage('en');
-  assert.deepEqual(['IST-DAS-1.75bpw', 'IST-DAS-2.00bpw', 'IST-DAS-2.25bpw', 'ISTA-DAS-Coder'].map(m => lib.nativeVersionLabel(m)), ['Smallest', 'Balanced', 'Best quality', 'ISTA-DAS Coder']);
-});
-
 test('the three NVFP4 versions have clear names and one line that tells them apart', () => {
   lib.setTranslationLanguage('en');
   const names = ['NVFP4', 'NVFP4-NVIDIA', 'NVFP4-QAD'].map(m => lib.nativeVersionLabel(m));
@@ -121,7 +116,7 @@ test('the three NVFP4 versions have clear names and one line that tells them apa
   assert.match(lines[2], /faster on short prompts/);
   assert.equal(lib.versionNote('IQ3_S'), '');
   assert.equal(lib.nativeShortName('nvfp4-nvfp4-nvidia'), 'NVFP4 (NVIDIA’s version)');
-  for (const language of ['zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr']) {
+  for (const language of ['zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr', 'he']) {
     lib.setTranslationLanguage(language);
     const local = ['NVFP4', 'NVFP4-NVIDIA', 'NVFP4-QAD'].map(m => lib.nativeVersionLabel(m));
     assert.equal(new Set(local).size, 3, `${language}: three different names`);
@@ -165,7 +160,7 @@ test('no recognised engine: the app still downloads, warns in the card, and load
   assert.equal((source.match(/ENGINE_NOT_RECOGNISED\+/g) ?? []).length, 2, 'both load paths use it');
   const models = readSource(new URL('../src/components/NativeModels.tsx', import.meta.url), 'utf8');
   const guided = readSource(new URL('../src/components/GuidedSetup.tsx', import.meta.url), 'utf8');
-  assert.match(models, /<EngineWarning native=\{native\}\/>/);
+  assert.match(models, /<EngineWarning native=\{native\}( onSetup=\{\(\) => go\('setup'\)\})?\/>/);   // #5529: the Models page adds a way to the guided setup
   assert.match(guided, /<EngineWarning native=\{native\}\/>/);
   const warn = readSource(new URL('../src/components/EngineWarning.tsx', import.meta.url), 'utf8');
   assert.match(warn, /The model will download, but it may not run until the right engine is installed \(Settings → About\)\./);

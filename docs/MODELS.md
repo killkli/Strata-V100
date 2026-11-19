@@ -1,14 +1,32 @@
 # Which model? Sizes, versions and what fits
 
-Strata's main model is [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next), in several **sizes**
-(the same model, compressed more or less) and several **versions** (the original, a coding version, a fine-tune, other
-makers' compressions). It also runs a smaller model, [Qwen3.6-35B-A3B](#qwen36-35b-a3b). The desktop app, the Terminal
-(`strata launch`) and the installer recommend one for your PC; this page explains the choice. Back to the
-[README](../README.md).
+This page helps you choose a model and check that your computer can run it. It covers
+Qwen3.8-Flash-Next (and its variants) and Qwen3.6-35B-A3B. For installing, see [INSTALL.md](INSTALL.md).
 
-> **On this page:** [Pick by memory](#pick-by-memory) · [Speed](#how-fast-is-each-size) · [The sizes](#the-sizes) ·
-> [Will it fit?](#will-it-fit) · [The versions](#the-versions) · [Qwen3.6](#qwen36-35b-a3b) ·
-> [Adding another model](#adding-or-switching-models)
+> **On this page:** [Quick start](#quick-start) · [Pick by memory](#pick-by-memory) ·
+> [Qwen3.8-Flash-Next](#qwen38-flash-next) ·
+> [Qwen3.6-35B-A3B](#qwen36-35b-a3b) · [Adding or switching models](#adding-or-switching-models) ·
+> [History](#history--older-measurements)
+
+## Quick start
+
+1. Find your memory in [Pick by memory](#pick-by-memory) and choose the first provider that fits.
+2. Print the plan. Nothing is downloaded or changed:
+
+   ```sh
+   strata launch --plan --family qwen --model iq2_xs
+   ```
+
+3. Start it with `strata launch` (guided), or run the same command without `--plan` and add `--yes --no-tui`.
+
+**Provider order:** ISTA-DASLab, then Unsloth, then Gyro, then others, using the first compatible pack that fits the
+model and your hardware. ISTA-DASLab is the default recommendation. Gyro saves memory and is slower. Swift 1.5, NVFP4
+and OrcaRouter are other options. An explicit choice by the user always wins. The order applies within a model family:
+Qwen3.6 has Unsloth packs only. The order is a recommendation. It says nothing about which
+provider wins a given quality or speed comparison.
+
+Setup may preselect something else: a Swift or Gyro size at a low memory tier, or Unsloth on Strix Halo. Read the plan
+and pass `--family` and `--model` when you want a particular provider.
 
 ## Pick by memory
 
@@ -80,40 +98,64 @@ in a pull request.
 | **IQ3_XXS** | 47.0 GB | slower | great |
 | **IQ3_S** | 54.8 GB | slowest | best: matches the full model on the published tests |
 
-The download is 66-76 GB for the three smaller sizes ([details](DETAILS.md#which-model)); the first start also
-fetches the MTP draft layer (~6 GB, +1 GB with images).
+- **Less memory, coding only:** [Coder](#coder) runs around 32 GB of RAM with a suitable GPU.
+- **Less memory, general use:** compare Unsloth, then [Gyro](#gyro-s-and-gyro-m-agentionai), which uses the least memory and is slower.
+- **More memory:** [Unsloth's 4 to 8 bit files](#unsloths-files-ud-iq4_xs-to-q8_0) need 72 to 136 GB for all experts in RAM.
+- **A smaller model:** [Qwen3.6-35B-A3B](#qwen36-35b-a3b), 32 to 52 GB of RAM.
 
 ## Will it fit?
 
-Shard 1 is the part of the model that gets loaded when it starts: its experts go into your **RAM**, the rest onto
-your graphics card (the second shard, a 29 GB lookup table, stays on the SSD). So it fits when your **RAM is at least
-the experts + about 10 GB** for Windows and your other programs - the experts are most of shard 1: 34 GB for Q2_0,
-35.5 for IQ2_XS, 43 for IQ3_XXS, 50 for IQ3_S, 23 for the Coder (the dense weights in shard 1 go to the graphics
-card). With 64 GB of RAM every size fits (IQ3_S with little else open); with 48 GB, Q2_0 and IQ2_XS. A bigger graphics card makes it faster, but it doesn't lower the RAM needed
-- except in the low-RAM mode below.
+<a id="the-versions"></a><a id="the-sizes"></a>
 
-### A big graphics card and little RAM
+## Qwen3.8-Flash-Next
 
-On a PC whose RAM cannot hold the experts beside the system, setup maps them from the model's files instead and keeps
-in RAM only what the graphics card does not hold (the [low-RAM mode](DETAILS.md#speed-measured), chosen by setup). For
-example, a 32 GB PC with a 24 GB GPU runs Q2_0, IQ2_XS and the Coder this way, and a 32 GB PC with a 12-16 GB GPU the
-Coder. With a small card most experts then come from the SSD and it is much slower (setup says so).
-`START-HERE.bat --setup --low-ram on|off` overrides the choice.
+Four ISTA-DASLab sizes are the original model; the versions below are variants or other providers' packs of it.
+Every version in setup's menu reads pictures. [Picture rules](#pictures).
 
-## The versions
+### Will it fit?
 
-**Pictures.** The versions in setup's menu read pictures, and pictures are on by default wherever a model can
-read them. The picture reader runs on the CPU when the graphics card has less than 24 GB (a few seconds per
-picture, nothing taken from the card) and on the graphics card from 24 GB (about 1-1.4 GB of VRAM; 0.1-0.5 s per
-picture). The rule is the same on NVIDIA and AMD cards. `--vision off` (or "No" in the app and in `strata launch`) turns
-pictures off; `--vision cpu` or `--vision gpu` picks the reader. On AMD, `strata-vision-hip` is the card's reader; if it
-cannot start, Strata uses the CPU reader by itself ([AMD_HIP.md](AMD_HIP.md)). The Mac app and the Mac Terminal have no
-picture reader yet ([the upstream Mac guide](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md)), and neither does the Intel Arc engine ([INTEL.md](INTEL.md#not-done)). More: [Images](DETAILS.md#images-vision).
+Shard 1 is loaded at start: its experts go into **RAM**, the rest onto the graphics card. The second shard (a 29 GB
+lookup table) stays on the SSD. The model fits when **RAM is at least the experts plus about 10 GB** for the OS and
+other programs.
 
-### Qwen3.8-Flash-Next
+| Size | Experts in shard 1 |
+| --- | ---: |
+| Q2_0 | 34 GB |
+| IQ2_XS | 35.5 GB |
+| IQ3_XXS | 43 GB |
+| IQ3_S | 50 GB |
+| Coder | 23 GB |
 
-The original, in all four sizes. With images, and with the
-[experimental speed projection](DETAILS.md#experimental-speed-projection-experimental-off-by-default) as an option.
+With 64 GB of RAM every size fits (IQ3_S with little else open). With 48 GB, Q2_0 and IQ2_XS fit. A bigger graphics
+card makes it faster and does not lower the RAM needed, except in low-RAM mode.
+
+<a id="a-big-graphics-card-and-little-ram"></a>
+
+**Big graphics card, little RAM.** When RAM cannot hold the experts beside the system, setup maps them from the model
+files and keeps in RAM only what the card does not hold. A 32 GB PC with a 24 GB GPU runs Q2_0, IQ2_XS and the Coder
+this way, and a 32 GB PC with a 12 to 16 GB GPU runs the Coder. With a small card most experts come from the SSD and it
+is much slower; setup says so. A source checkout can force the mode with `--low-ram on|off`
+([SOURCE_INSTALL.md](SOURCE_INSTALL.md)). `strata launch` has no `--low-ram` flag.
+
+The download is 66 to 76 GB for the three smaller sizes ([details](DETAILS.md#which-model)). The first start also
+fetches the MTP draft layer (about 6 GB, 1 GB more with pictures).
+
+### Pictures
+
+Pictures are on by default wherever a model can read them. The reader runs on the CPU when the card has less than
+24 GB (a few seconds per picture, no VRAM used) and on the card from 24 GB (about 1 to 1.4 GB of VRAM, 0.1 to 0.5 s per
+picture). The rule is the same on NVIDIA and AMD.
+
+| Setting | Effect |
+| --- | --- |
+| `--vision off` | no pictures (also "No" in the app and in `strata launch`) |
+| `--vision cpu` / `--vision gpu` | choose the reader |
+
+- **AMD:** `strata-vision-hip` is the card's reader. If it cannot start, Strata uses the CPU reader ([AMD_HIP.md](AMD_HIP.md)).
+- **Mac:** pictures run on the GPU ([MAC.md](MAC.md)).
+- **Intel Arc:** an Arc with 24 GB or more keeps the CPU reader unless you pass `--vision gpu`. A Battlemage card (B580, B70) has pictures off until you pass `--vision on` ([INTEL.md](INTEL.md)).
+
+More: [Images](DETAILS.md#images-vision).
 
 ### Coder
 

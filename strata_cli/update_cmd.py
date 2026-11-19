@@ -92,21 +92,26 @@ def add_parsers(sp, components_sp) -> list:
     install_file = components_sp.add_parser("install-file", help="install an engine package you downloaded yourself (no network; the package's signature is checked)")
     install_file.add_argument("file", help="the engine package (.tar.gz or .zip) from the release page")
     _common(install_file)
-    return [update, comp_update, rollback, install_file, engines, use, remove]
+    add_build = components_sp.add_parser("add-build", help="use an engine you built on this computer (./setup --build): added as a local, unsigned engine "
+                                                           "and used from now on; `strata components use newest` goes back")
+    add_build.add_argument("folder", help="the folder with the engine program you built (strata, its libraries and BUILD.json)")
+    _common(add_build)
+    return [update, comp_update, rollback, install_file, engines, use, remove, add_build]
 
 
 class _EngineFamilies(tuple):
-    """The --family values of `strata components use | remove`: qwen, deepseek, and the engine of a Qwen4 model shape as shape:<shape> (what the app
-    passes, strata_control/engine_library.py SHAPE_PREFIX). Help and error texts list the two as before."""
+    """The --family values of `strata components use | remove`: qwen, and the engine of a Qwen4 model shape as shape:<shape> (what the app
+    passes, strata_control/engine_library.py SHAPE_PREFIX). "deepseek" is accepted but not listed: engine_library answers it in plain words
+    (strata_control/retired.py)."""
 
     def __contains__(self, value) -> bool:
         if tuple.__contains__(self, value):
             return True
-        from strata_control import engine_library
-        return engine_library.shape_of_family(value) is not None
+        from strata_control import engine_library, retired
+        return engine_library.shape_of_family(value) is not None or retired.is_name(value)
 
 
-_ENGINE_FAMILIES = _EngineFamilies(("qwen", "deepseek"))
+_ENGINE_FAMILIES = _EngineFamilies(("qwen",))
 
 
 def _emit_factory(a, lines: list):
@@ -183,17 +188,6 @@ def _line(name: str, result: dict) -> str:
         if status == "failed":
             return f"{name:<8}{before or 'none'}   NOT changed: {result.get('error')}"
         return f"{name:<8}{before or 'none'}   {result.get('note') or status}"
-    if result.get("component") == "dsv41":
-        if status == "none-installed":
-            return f"{name:<8}no DeepSeek engine installed"
-        before, after = result.get("installed_before"), result.get("installed_after")
-        if status == "updated":
-            return f"{name:<8}{before} -> {after}   updated (tested: it starts). {result.get('note') or ''}".rstrip()
-        if status == "current":
-            return f"{name:<8}{before}   up to date"
-        if status == "failed":
-            return f"{name:<8}{before or '?'}   NOT changed: {result.get('error')}"
-        return f"{name:<8}{before or '?'}   {result.get('note') or status}"
     if result.get("shape"):                              # the engine of a model shape (strata_control/shape_engine.py)
         from strata_control import shape_engine
         if status == "failed":
@@ -242,9 +236,6 @@ def _print_check(report: dict) -> None:
         print("  Control  not part of this feed")
     else:
         print(f"  Control  {ctl['installed'] or _source_version() or '?'}: {ctl['status']}" + (f" ({ctl['offered']})" if ctl["offered"] else ""))
-    ds = report.get("dsv41") or {}
-    if ds.get("status") not in (None, "none-installed"):
-        print(f"  DeepSeek {ds.get('installed')}: " + (f"update available -> {ds['offered']} ({_mib(ds['download_bytes'])})" if ds["status"] == "available" else ds["status"]))
     if app["status"] != "not-in-feed":
         if app["status"] == "unknown-installed":
             print(f"  App      latest is {app['offered']}; this terminal cannot tell which version of the app is installed (the app checks itself)")
@@ -254,7 +245,7 @@ def _print_check(report: dict) -> None:
         from strata_control import engine_update
         names = ", ".join(m.label for m in engine_update.running_models(report["serving"]))
         print(f"  {names} is running. An update asks before it stops it, downloads while it keeps serving, and asks whether to start it again.")
-    if (eng.get("status") in ("available", "install") or ds.get("status") == "available") and not report.get("serving"):
+    if eng.get("status") in ("available", "install") and not report.get("serving"):
         print("  To update: strata update")
 
 
@@ -289,6 +280,26 @@ def default_components_dir(ec) -> Path:
     return chosen if found else own
 
 
+def requested_hardware(backend: str, environ=None) -> dict:
+    """What the package choice reads when the person named the engine family (--backend amd | hip | hip-rx6000 | nvidia ...).
+
+    The cards of THAT make are read (their gfx names, driver, archs), the same way a start that was given STRATA_ENGINE_BACKEND reads them. Before,
+    only the family was changed: on a PC with an NVIDIA card and an AMD card the hardware stayed the NVIDIA card's, so `--backend amd` found
+    "no engine for this PC" (the word was not even turned into the hip family) and `--backend hip` could not tell which AMD build the card needs."""
+    from strata_control import engine_component as ec, updater
+    environ = os.environ if environ is None else environ
+    family, variant = ec.split_backend(backend)          # --backend hip-rdna2 = the hip family, the rdna2 package (#4013); amd = hip
+    if family in ec.BACKEND_MATRIX:
+        hardware = updater.detect_hardware({**environ, ec.ENV_BACKEND: family})
+    else:                                                # a word that names no family: the feed is asked for it as it is, and says it has none
+        hardware = updater.detect_hardware(environ)
+        hardware["backend"] = family
+    if variant:
+        hardware["variant_wanted"] = variant
+    hardware["backend_source"] = "requested"             # the person's own decision: the make guard lets it through
+    return hardware
+
+
 def run(a) -> int:
     from strata_control import acquisition, engine_component as ec, feed as feedmod, signing, updater
     machine = a.output in ("json", "jsonl")
@@ -302,12 +313,7 @@ def run(a) -> int:
 
     root = Path(a.components_dir) if a.components_dir else default_components_dir(ec)
     try:
-        hardware = updater.detect_hardware()
-        if a.backend:
-            hardware["backend"], variant = ec.split_backend(a.backend)    # --backend hip-rdna2 = the hip family, the rdna2 package (#4013)
-            if variant:
-                hardware["variant_wanted"] = variant
-            hardware["backend_source"] = "requested"             # the person's own decision: the make guard lets it through
+        hardware = requested_hardware(a.backend) if a.backend else updater.detect_hardware()
         lines: list = []
         cancel = threading.Event()
         ctx = updater.Context(components=root, source="", trusted={}, hardware=hardware, emit=_emit_factory(a, lines), cancel=cancel,
@@ -330,6 +336,8 @@ def run(a) -> int:
             return 0
         if getattr(a, "components_command", None) in ("engines", "use", "remove"):
             return _engines_command(a, ctx, machine, fail)
+        if getattr(a, "components_command", None) == "add-build":
+            return _add_build_command(a, ctx, machine, root)
         if getattr(a, "components_command", None) == "install-file":
             ctx.trusted = signing.load_trusted_keys()
             ctx.serving = updater.serving_now
@@ -414,6 +422,26 @@ def _gb(n: int | None) -> str:
     return f"{n / 1e9:.1f} GB" if n >= 1e9 else f"{max(1, round(n / 1e6))} MB"
 
 
+def _add_build_command(a, ctx, machine: bool, root: Path) -> int:
+    """`strata components add-build FOLDER` (#5114): the build becomes a local, unsigned engine package and the engine in use, by this choice."""
+    from strata_control import engine_library as lib, local_engine, updater
+    ctx.serving = updater.serving_now
+    _maybe_wait(a, ctx, machine)
+    try:
+        added = local_engine.add_build(root, Path(a.folder), backend=a.backend, detected=None if a.backend else ctx.hardware.get("backend"))
+    except local_engine.AddBuildError as exc:
+        raise updater.UpdateError(str(exc), exc.exit_code) from None
+    out = lib.use_engine(ctx, lib.QWEN, added["folder"])
+    if machine:
+        print(json.dumps({"schema_version": 1, "ok": True, "added": added, **out}, ensure_ascii=False))
+        return 0
+    print(f"Engine {added['version']} from {Path(a.folder).expanduser()} is added as a local build ({added['folder']}) and is now in use.")
+    print("It is not signed by Strata: it runs because you chose it, and Strata never picks it by itself.")
+    print("`strata components use newest` goes back to the released engines; `strata components remove "
+          f"{added['folder']}` deletes it (after switching away from it).")
+    return 0
+
+
 def _engines_command(a, ctx, machine: bool, fail) -> int:
     """`strata components engines | use | remove`: the same list and the same switch / delete the app's Settings > Engine uses (strata_control/engine_library.py)."""
     from strata_control import engine_library as lib, updater
@@ -428,7 +456,8 @@ def _engines_command(a, ctx, machine: bool, fail) -> int:
         for family in listing["families"]:
             print(f"\n{family['title'] or family.get('shape') or family['family']}")      # a model shape's engine: its shape's name, as shape_engine.py names it here
             for e in family["engines"]:
-                tags = ["in use" if e["active"] else "", "newest" if e["newest"] else "", "" if e["fits"] else "not for this computer"]
+                tags = ["in use" if e["active"] else "", "newest" if e["newest"] else "", "local build, not signed" if e.get("local") else "",
+                        "" if e["fits"] else "not for this computer"]
                 print(f"  {e['version']:<12}{_gb(e['bytes']):>9}  {e['backend'] + ('-' + e['variant'] if e['variant'] else ''):<14}{', '.join(t for t in tags if t)}")
                 if e["why_not"] and not e["fits"]:
                     print(f"      {e['why_not']}")
@@ -442,10 +471,19 @@ def _engines_command(a, ctx, machine: bool, fail) -> int:
         out = lib.use_engine(ctx, entry["family"], entry["folder"], entry.get("root"))
         if machine:
             print(json.dumps({"schema_version": 1, "ok": True, **out}, ensure_ascii=False))
-        elif out["status"] == "already":
+        elif out["status"] == "already" and not out.get("backend_saved"):
             print(f"Engine {out['to']} is already in use. Nothing was changed.")
+        elif out["status"] == "already":                 # the engine of the PC's other card: keeping that make's choice is the switch
+            from strata_control import engine_component as ec
+            print(f"Engine {out['to']} is now in use. Models you start from now on run on it.")
+            print(f"The engine for {ec.MAKE_NAMES[out['backend_saved']]} cards is used, now and next time. "
+                  "`strata launch --backend auto` goes back to the PC's own choice.")
         else:
             print(f"Engine {out['to']} is now in use (was {out.get('from') or 'none'}). Models you start from now on run on it.")
+            if out.get("backend_saved"):
+                from strata_control import engine_component as ec
+                print(f"The engine for {ec.MAKE_NAMES[out['backend_saved']]} cards is used, now and next time. "
+                      "`strata launch --backend auto` goes back to the PC's own choice.")
             print("Saved tuning presets are marked for the short re-check; none were deleted." if out.get("presets_marked") else
                   "Saved tuning presets are unchanged.")
             print("`strata update` makes the newest engine the one in use again." if not out.get("automatic") else

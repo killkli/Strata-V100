@@ -95,7 +95,7 @@ strata launch --show-key
 | `--context SIZE` | `32k`, `64k`, `128k`, `256k` or a number of tokens. |
 | `--kv FORMAT` | Conversation memory format: `int8` (default), `q4_0` (half the memory), `k8v4`, `fp16`. |
 | `--vision off\|on\|gpu\|cpu` | Picture reading. Default: on when the model and the engine can. |
-| `--parallel N` | Requests answered at the same time, 1 to 8. Default: fit to your card; DeepSeek: one at a time. |
+| `--parallel N` | Requests answered at the same time, 1 to 8. Default: fit to your card. |
 | `--mtp on\|off` | The draft layer. `off` saves about 1 GB of graphics memory and is slower. Default: on. |
 | `--drafting auto\|mtp\|dflash2\|off` | Which drafter guesses ahead. `dflash2` is for Qwen3.8-Flash-Next only and downloads its drafter once (0.34 GB for the models that have a tuned drafter, 0.52 GB on Intel Arc, else 1.2 GB). If it cannot run, MTP is used and the start says why. |
 | `--gpu LIST`, `--gpu-roles LIST` | Which cards to use, and a role per card. |
@@ -134,29 +134,17 @@ The Auto drafter policy rebuilds its options at every start and keeps only layer
 settings? Answers in progress stop." With `--no-tui` the command refuses with one line naming the running model, its port and settings. Add
 `--restart` or run `strata launch --stop` first. A different `--port` runs beside the first server; two big models may not fit in graphics memory together, and the launch says so.
 
-## DeepSeek V4.1-Flash
+## Defaults for every launch
 
-DeepSeek V4.1-Flash runs in the Terminal and in the app, on NVIDIA RTX 30, 40 and 50 (Windows and Linux) and on the Radeon AI PRO R9700 (Linux). Hardware, sizes and speeds are in [MODELS.md](MODELS.md#deepseek-v41-flash).
+Settings you want for every model and preset can go in one file, `run-defaults.json`, next to the `launch-presets` folder: `~/.config/strata/run-defaults.json` on Linux and macOS, `%APPDATA%\Strata\run-defaults.json` on Windows. Without the file nothing changes.
 
-```sh
-strata launch --plan --family deepseek41 --model ist-das-2.00bpw
-strata launch --family deepseek41 --model ist-das-2.00bpw
+It holds one JSON object with server settings only: the keys of the web page's Settings view (`sampling` with `temperature`, `top_p`, `top_k`, `min_p`; `reasoning_budget_tokens`, `fit_max_tokens`, `anthropic_thinking`, `effort_position`, `aliases`, `idle_unload_s`, `lazy_load`, `engine_silence_s`, `api_monitor`) and `undeclared_tool_calls` (`"text"` or `"call"`). Each value is checked with the Settings view's rules; a key that is not allowed or has a wrong value is skipped and named at the start, the others still apply. Engine options and `mtp` do not go here.
+
+```json
+{ "undeclared_tool_calls": "call", "sampling": { "temperature": 0.6 } }
 ```
 
-| Model name | Download |
-| --- | ---: |
-| `ist-das-1.75bpw` | 239 GB |
-| `ist-das-2.00bpw` | 257 GB |
-| `ist-das-2.25bpw` | 274 GB |
-| `ud-q8_k_xl` | 508 GB |
-
-- The context is 8192 tokens (8K), the size the engine was checked at.
-- `--speed faster|full` picks how many of the model's 6 experts it uses per word. Faster uses 5 (a small quality change, usually not noticeable) and is the default on a PC with 16 GB of graphics memory or less and on PCs whose graphics share the computer's memory. Full uses all 6. `--full-quality` is the same as `--speed full`. Both need DeepSeek engine 0.1.50 or newer, which `strata launch` fetches. The engine's own flag is `--experts N`.
-- It answers one request at a time. `--parallel 2` to `8` answers that many conversations at the same time (off unless you ask); `--plan --parallel 4` says what it does and the numbers it was measured with, and [DEEPSEEK41.md](DEEPSEEK41.md#several-conversations-at-once---parallel) has the rest.
-- It reads pictures (on by default) with the engine's own vision tower, loaded with the model; `--vision off` turns them off. Setup fetches the tower's weights (mmproj-BF16.gguf, 1 GB) with the other shared files and packs them with the model.
-- `--tune` runs DeepSeek's own short tuner (drafter on or off, CPU threads), not the Qwen tuner.
-- `--model-path DIR` starts from the shards you already have.
-- `--plan` shows where the model goes on your cards and how much is held in RAM.
+These are the lowest layer. A setting in the model's own config wins over them, as does a value you change in the Settings view or this launch's own choice (`--set idle-unload=60`). If you edit the file, the next launch uses the new values. `strata launch` says which defaults it used. The app does not read this file.
 
 ## After the start: the monitor
 
@@ -174,8 +162,13 @@ app sends them. The list keeps two columns apart. **Vendor tested** is the app v
 
 `q` asks whether to keep serving in the background or stop. Stopping unloads the model and frees graphics memory.
 
-With two or more cards the Overview shows the busiest card's load, all cards' memory, the hottest card and the total power, and a
-"Cards" strip lists up to 4 cards (`5` opens Hardware). The CPU tile shows sockets and cores.
+With two or more cards the Overview shows the busiest card's load, all cards' memory, the hottest card, the total power and the
+slowest card's PCIe link, and a "Cards" strip lists up to 4 cards with the link each one trained (`5` opens Hardware). Each card
+trains its own link, so a card in an x4 slot reads `Gen5 x4` beside a card at `Gen5 x8`. A card that runs narrower than its own
+card could go shows both numbers (`Gen5 x8 of x16`): that is what a card capped to x8 in a x16 slot, or trained down by the board,
+looks like. The Power tile says whose power the number is (`2 cards · limit 360 W`); the Hardware page gives each card its own
+ceiling (`Power 180 W of 300 W`).
+The CPU tile shows sockets and cores.
 
 **Windows console.** In the classic Windows 10 console the monitor switches that window's font to Cascadia Mono when it is installed
 and draws the full look. Otherwise it draws a solid-block look and shows one line suggesting Windows Terminal. Nothing is saved and
@@ -224,6 +217,11 @@ models), else Strata's default.
 `strata models import PATH --plan` recognises the Gyro-S and Gyro-M files (TQK6/TQK7 and TQ2_T experts) and every file set setup
 installs, also under another name when the header matches. It says which run config, prepared pack, draft layer and picture reader
 already exist. Nothing is copied or moved.
+
+`strata models explain NAME` (`IQ3_S`, `iq3_s` or `qwen/IQ3_S`) shows where `strata launch` looks for that model's files: the data folder it
+uses, each folder name it tries under `models/` (setup's spelling, the lower-case tag, the same name in other letter case) and whether it is there,
+the folder it will use and the `.gguf` files in it. When none is there it names the folders that are. `--data-dir FOLDER` looks in another data
+folder, `--output json` prints the same as JSON. It only reads folder names and file sizes.
 
 ## When there is no engine for this computer
 

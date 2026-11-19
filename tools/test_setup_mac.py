@@ -80,7 +80,7 @@ class Recommendation(unittest.TestCase):
         rec, notes = M.recommend_model(32)
         self.assertEqual(rec, "Q2_0")
         self.assertTrue(notes and "stream" in notes[0] and "~14 tok/s" in notes[0])
-        self.assertTrue(M.streams("Q2_0", 32) and M.streams("Q2_0", 48) and not M.streams("Q2_0", 64))
+        self.assertTrue(M.streams("Q2_0", 32) and M.streams("Q2_0", 64) and not M.streams("Q2_0", 96))
 
     def test_a_bigger_choice_is_kept_with_a_note(self):
         notes = M.model_note("IQ3_XXS", 64)
@@ -277,6 +277,16 @@ class RepackGuard(unittest.TestCase):
         self.assertTrue(M.streams("UD-Q5_K_XL", 128))
         self.assertTrue(M.streams("UD-Q4_K_XL", 96))
 
+    def test_setup_decides_streaming_as_the_engine_does(self):
+        # setup writes STRATA_METAL_STREAM=0/1 and the engine follows it: both must use stream.cpp's rule (the mapped bytes
+        # + 12 GiB against resident_cap), or a pack is forced resident where the engine would stream.  Gyro-S on a 48 GB
+        # M4 Pro (working set 40.2 GB): 29.7 + 12.9 GB does not fit, the forced resident run paged until the watchdog stopped it
+        self.assertAlmostEqual(M.OVERHEAD_GB, 12 * 2 ** 30 / 1e9, places=6)
+        self.assertTrue(M.streams("Gyro-S", 48))
+        self.assertFalse(M.streams("Gyro-S", 64))
+        self.assertTrue(M.streams("Gyro-M", 96))
+        self.assertAlmostEqual(M.gpu_budget_gb(16), 16 * 1.073741824 - 7.0, places=3)      # a small Mac: macOS keeps 7 GB
+
     @unittest.skipIf(sys.platform == "win32", "os.kill(pid, 0) is a probe on macOS and Linux only")
     def test_a_live_lock_is_seen_a_stale_one_is_dropped(self):
         import os
@@ -375,7 +385,8 @@ class ControlMode(unittest.TestCase):
             mock.patch.object(setup, "get_llama_cpp", lambda: Path(self.tmp.name) / "llama"),
             mock.patch.object(setup, "whole_shard", lambda s: True), mock.patch.object(setup, "check_shards", lambda s: None),
             mock.patch.object(setup, "run", tool or fake_tool), mock.patch.object(setup, "free_gb", lambda p: free),
-            mock.patch.object(setup, "say", lambda *a, **k: None), mock.patch.object(setup, "ok", lambda *a, **k: None),
+            mock.patch.object(setup, "say", lambda *a, **k: self.said.append(" ".join(str(x) for x in a))),
+            mock.patch.object(setup, "ok", lambda *a, **k: None),
             mock.patch.object(setup, "step", lambda *a, **k: None),
             mock.patch.object(setup, "warn", lambda *a, **k: self.warnings.append(" ".join(str(x) for x in a))),
             mock.patch.object(mac_fit.platform, "machine", return_value="arm64"),
@@ -383,7 +394,7 @@ class ControlMode(unittest.TestCase):
             mock.patch.object(setup, "mac_setup", side_effect=AssertionError("setup_mac.py must not run in Control mode")),
             mock.patch.object(setup.subprocess, "call", side_effect=AssertionError("nothing is started or built")),
         ]
-        self.warnings = []
+        self.warnings, self.said = [], []
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
@@ -414,6 +425,39 @@ class ControlMode(unittest.TestCase):
         self.assertTrue(ran[0][1].endswith("iq_pack.py"))
         self.assertFalse((ROOT / "build-metal").exists() and any((ROOT / "build-metal").glob("*.stamp")))
 
+    def test_a_model_without_a_draft_layer_is_said_on_a_streaming_mac_too(self):
+        # a feed model whose entry says "drafter: none" (mac_fit's no_mtp) on a Mac that streams (no draft layer there anyway): the model
+        # list's line is said as on Windows and Linux (tools/feed_model_install_gate.py; GitHub's macOS runner did not get it)
+        from strata_control import mac_fit
+        with mock.patch.dict(mac_fit.MAC_MODELS["Q2_0"], {"no_mtp": True}):
+            rc, _ = self.run_setup()
+        self.assertEqual(rc, 0)
+        self.assertIn("  The model list says this model has no draft layer (MTP), so none is fetched or used.", self.said)
+        self.assertNotIn("--mtp", self.config()["args"])
+        rc, _ = self.run_setup()                                  # the Flash-Next size itself says nothing of the kind
+        self.assertFalse([s for s in self.said if "model list says" in s])
+
+    def test_a_model_without_a_draft_layer_plans_and_starts_no_drafter(self):
+        # the run config of such a model says what Windows and Linux write ("mtp": false, "drafting": "off"), so the plan and the start say
+        # "Drafting: Off"; before, neither key was written and both said "Drafting: MTP" with nothing to load (TRIAGE-0215)
+        from strata_control import drafting, mac_fit
+        for hw in (M4, M5):                                       # a Mac that streams and one that keeps the model in memory
+            with mock.patch.dict(mac_fit.MAC_MODELS["Q2_0"], {"no_mtp": True}):
+                rc, _ = self.run_setup(hw=hw)
+            self.assertEqual(rc, 0)
+            cfg = self.config()
+            self.assertIs(cfg.get("mtp"), False, hw)
+            self.assertEqual(cfg.get("drafting"), "off", hw)
+            self.assertNotIn("--mtp", cfg["args"])
+            for name in (cfg["model_name"], "feedfam-q4_k_m"):    # the feed model's own name as well
+                d = drafting.apply(dict(cfg, model_name=name), data_dir=self.data, backend="metal", archs=[])
+                self.assertEqual((d.drafter, drafting.summary_line(d)), ("off", "Drafting: Off"), (hw, name))
+        (self.home / "strata-q2_0.json").unlink()                 # (a fresh install: nothing carried over from the runs above)
+        rc, _ = self.run_setup(hw=M5)                             # the Flash-Next size keeps its drafter: neither key is written
+        cfg = self.config()
+        self.assertNotIn("drafting", cfg)
+        self.assertNotIn("mtp", cfg)
+
     def test_a_big_mac_keeps_the_pack_in_memory_and_adds_the_draft_layer(self):
         rc, ran = self.run_setup(hw=M5, argv=("--yes", "--no-start", "--model", "IQ3_XXS"))
         self.assertEqual(rc, 0)
@@ -425,7 +469,8 @@ class ControlMode(unittest.TestCase):
     def test_no_command_line_tools_needed_and_ud_iq1_s_is_not_offered(self):
         rc, _ = self.run_setup(clt_rc=2)
         self.assertEqual(rc, 0)
-        with self.assertRaises(SystemExit):                # UD-IQ1_S: never offered
+        # UD-IQ1_S: never offered.  A name the built-in tables do not know is looked up in the signed feed first (a feed model): no feed here
+        with self.assertRaises(SystemExit), mock.patch.object(setup, "feed_models_setup", lambda *a, **k: None):
             self.run_setup(argv=("--yes", "--no-start", "--model", "UD-IQ1_S"))
 
     def test_gyro_is_offered_on_a_mac_as_one_file_with_a_compat_bf16_pack(self):

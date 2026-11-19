@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react';
 import { Screen } from './layout';
 import { Btn, ErrorNotice, Icon } from './ui';
 import { api } from '../lib/client';
+import { useImeKeys } from '../lib/ime-keys';
 import { parseLocation } from '../lib/router';
 import { nativeAction, useNative, type NativeJob } from '../lib/native';
 import { nativeCatalogModels, catalogVersionLabel } from '../lib/native-catalog';
 import { sizeGb } from '../lib/format';
 import { NativeProgress } from './NativeModels';
+import { ownFilesVision } from '../lib/own-files-vision';
 
 interface Preview { path: string; preview: { model_dir?: string; plain_issues?: string[]; already_set_up?: { data_dir?: string | null; pack?: string | null } | null; file_count: number; total_bytes: number; file_set_status: string; issues: string[]; messages?: string[]; projectors?: { name: string; status: string; pinned: boolean; plain: string }[]; reads_pictures?: boolean; candidate_selection: { family: string; model: string } | null } }
 
@@ -28,7 +30,7 @@ function problem(issues: string[]): { message: string; next: string } {
 /** "Use a local GGUF": choose the folder of a model you already have, Strata checks it, and prepares and loads it without copying
  *  or downloading the model files. The same page layout and cards as the optimized models page. */
 export function NativeLocalModel({ onBack }: { onBack: () => void }) {
-    const native = useNative();
+    const native = useNative(), ime = useImeKeys();
     const [typed, setTyped] = useState(''), [checked, setChecked] = useState<Preview | null>(null), [pending, setPending] = useState(false), [error, setError] = useState(''), [jobId, setJobId] = useState('');
     const job = native?.jobs.find(j => j.id === jobId);
     const active = native?.jobs.find(j => j.state === 'running');
@@ -61,7 +63,7 @@ export function NativeLocalModel({ onBack }: { onBack: () => void }) {
         setPending(true);
         setError('');
         try {
-            const result = await nativeAction<NativeJob>('operations', { kind: 'install', args: { family: selection.family, model: selection.model, gguf_dir: checked.preview.model_dir ?? checked.path, ...(ownDataFolder ? { data_dir: ownDataFolder } : {}), context: native?.catalog?.recommendation?.context ?? 32768, vision: checked.preview.projectors?.some(p => p.status === 'ok' && p.pinned) && native?.visionReader ? 'yes' : 'no', kv: 'int8', loadAfter: true } });
+            const result = await nativeAction<NativeJob>('operations', { kind: 'install', args: { family: selection.family, model: selection.model, gguf_dir: checked.preview.model_dir ?? checked.path, ...(ownDataFolder ? { data_dir: ownDataFolder } : {}), context: native?.catalog?.recommendation?.context ?? 32768, vision: ownFilesVision(checked.preview.projectors, native?.visionReader, native?.installed?.models), kv: 'int8', loadAfter: true } });
             setJobId(result.id);
         }
         catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -73,7 +75,7 @@ export function NativeLocalModel({ onBack }: { onBack: () => void }) {
    <div className="stack stack--lg">
     <section className="st-card native-choice"><h2 className="h3">{tr("Use a local GGUF…")}</h2>
      <p className="small muted">{tr("Already have a supported model on this computer? Choose the folder that holds its files, or one of its .gguf files. Strata checks them, prepares the model and loads it. Nothing is copied or downloaded.")}</p>
-     <label className="input-field"><span>{tr("Folder with the GGUF files, or one .gguf file")}</span><input className="st-input" value={typed} placeholder={tr("Full path to the folder or the file")} spellCheck={false} onChange={e => setTyped(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && typed.trim()) void check(typed); }}/></label>
+     <label className="input-field"><span>{tr("Folder with the GGUF files, or one .gguf file")}</span><input className="st-input" value={typed} placeholder={tr("Full path to the folder or the file")} spellCheck={false} onChange={e => setTyped(e.target.value)} {...ime.events} onKeyDown={e => { if (ime.owns(e)) return; if (e.key === 'Enter' && typed.trim()) void check(typed); }}/></label>
      <div className="native-settings-actions"><Btn icon="folder" disabled={pending || !!active} onClick={() => void check('')}>{tr("Choose folder")}</Btn><Btn disabled={pending || !typed.trim() || !!active} onClick={() => void check(typed)}>{tr(pending && !jobId ? 'Checking…' : 'Check files')}</Btn></div>
     </section>
     {tr(checked ? <section className="st-card native-choice">{tr(usable ? <>

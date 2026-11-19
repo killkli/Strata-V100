@@ -1,5 +1,7 @@
+import { takeCustomConnectionRequest } from '../lib/connect-only';
 import { tr } from '../lib/i18n';
 import { useEffect, useRef, useState } from 'react';
+import { useImeKeys } from '../lib/ime-keys';
 import { removeModelConnection, saveModelConnection, useStore } from '../lib/store';
 import type { ApiModel, ModelConnection, ModelConnectionDraft, ModelProtocol } from '../lib/types';
 import { Btn, Dialog, ErrorNotice, Icon, Select } from './ui';
@@ -16,11 +18,14 @@ export function SettingsModels() {
     const [draft, setDraft] = useState<ModelConnectionDraft | null>(null);
     const [available, setAvailable] = useState<ApiModel[]>([]), [filter, setFilter] = useState('');
     const [modelId, setModelId] = useState(''), [modelName, setModelName] = useState('');
+    const ime = useImeKeys();
     const [pending, setPending] = useState(false), [fetching, setFetching] = useState(false);
     const [error, setError] = useState(''), [notice, setNotice] = useState(''), [remove, setRemove] = useState(false);
     const discovery = useRef<AbortController | null>(null);
     const editor = useRef<HTMLDivElement>(null);
     useEffect(() => () => discovery.current?.abort(), []);
+    // #5529: the first-run engine card's "Only connect to Strata on another computer" opens this page with a Custom model API connection started
+    useEffect(() => { if (takeCustomConnectionRequest()) { reset(); setDraft({ kind: 'custom', provider: null, name: '', baseUrl: '', protocol: 'openai-chat', apiKey: '', models: [] }); } }, []);
     const saved = providers?.connections.find(c => c.id === draft?.id);
     const preset = providers?.catalog.find(p => p.id === draft?.provider);
     function reset() { discovery.current?.abort(); setFetching(false); setAvailable([]); setFilter(''); setModelId(''); setModelName(''); setError(''); setNotice(''); }
@@ -120,7 +125,9 @@ export function SettingsModels() {
           {tr(notice ? <p className="small muted" role="status">{tr(notice)}</p> : null)}
           {tr(available.length ? <><input className="st-input" type="search" aria-label={tr("Filter available models")} placeholder={tr("Filter models…")} value={filter} onChange={e => setFilter(e.target.value)}/><div className="provider-model-list">{tr(available.filter(m => `${m.name} ${m.id}`.toLowerCase().includes(filter.toLowerCase())).map(m => <label className="provider-model-row" key={m.id}><input type="checkbox" checked={draft.models.some(v => v.id === m.id)} onChange={e => update({ models: e.target.checked ? [...draft.models, m] : draft.models.filter(v => v.id !== m.id) })}/><span><strong>{m.name}</strong><small className="muted">{m.id}</small></span></label>))}</div></> : null)}
           {tr(draft.models.length ? <div className="stack stack--sm">{tr(draft.models.map(m => <div className="provider-selected" key={m.id}><Icon name="check" size={15}/><span><strong>{m.name}</strong><small className="muted">{m.id}</small>{tr(draft.protocol === 'openai-chat' ? <label className="row xs"><input type="checkbox" checked={m.vision ?? m.reads ?? true} onChange={e => update({ models: draft.models.map(v => v.id === m.id ? { ...v, vision: e.target.checked } : v) })}/>{tr("Read pictures with this model")}{tr(m.vision != null ? null : <span className="muted"> {tr(m.reads === false ? "(its server says it cannot)" : "(on by default)")}</span>)}</label> : null)}</span><button type="button" className="st-iconbtn" aria-label={tr("Remove {0} from chat picker", [m.name])} onClick={() => update({ models: draft.models.filter(v => v.id !== m.id) })}><Icon name="x" size={16}/></button></div>))}</div> : <p className="small muted">{tr("No models selected yet. Fetch the list or add a model ID.")}</p>)}
-          <div className="provider-manual"><label className="input-field"><span>{tr("Model ID")}</span><input className="st-input" value={modelId} placeholder={tr("Model ID from your provider or server")} spellCheck={false} onChange={e => setModelId(e.target.value)} onKeyDown={e => {
+          <div className="provider-manual"><label className="input-field"><span>{tr("Model ID")}</span><input className="st-input" value={modelId} placeholder={tr("Model ID from your provider or server")} spellCheck={false} onChange={e => setModelId(e.target.value)} {...ime.events} onKeyDown={e => {
+                if (ime.owns(e))
+                    return;
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     if (modelId.trim() && !draft.models.some(m => m.id === modelId.trim())) {

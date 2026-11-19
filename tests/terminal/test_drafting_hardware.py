@@ -61,9 +61,9 @@ class IntelCardsAreToldByName(unittest.TestCase):
 
     def test_the_probe_gives_the_card_class_on_a_sycl_computer(self):
         from strata_control import engine_component
-        with mock.patch.object(drafting, "_HARDWARE", []), mock.patch.object(engine_component, "detect_backend", return_value=("sycl", "test")),                 mock.patch.object(engine_component, "cuda_archs_present", return_value=[]), mock.patch.object(engine_component, "hip_archs_present", return_value=[]),                 mock.patch.object(drafting, "sycl_archs_present", return_value=["arc_a"]):
+        with mock.patch.object(drafting, "_HARDWARE", []), mock.patch.object(drafting, "_HARDWARE_MISS", []), mock.patch.object(engine_component, "detect_backend", return_value=("sycl", "test")),                 mock.patch.object(engine_component, "cuda_archs_present", return_value=[]), mock.patch.object(engine_component, "hip_archs_present", return_value=[]),                 mock.patch.object(drafting, "sycl_archs_present", return_value=["arc_a"]):
             self.assertEqual(drafting.detect_hardware(), ("sycl", ["arc_a"]))
-        with mock.patch.object(drafting, "_HARDWARE", []), mock.patch.object(engine_component, "detect_backend", return_value=("sycl", "test")),                 mock.patch.object(engine_component, "cuda_archs_present", return_value=[]), mock.patch.object(engine_component, "hip_archs_present", return_value=[]),                 mock.patch.object(drafting, "sycl_archs_present", return_value=["arc_b"]):
+        with mock.patch.object(drafting, "_HARDWARE", []), mock.patch.object(drafting, "_HARDWARE_MISS", []), mock.patch.object(engine_component, "detect_backend", return_value=("sycl", "test")),                 mock.patch.object(engine_component, "cuda_archs_present", return_value=[]), mock.patch.object(engine_component, "hip_archs_present", return_value=[]),                 mock.patch.object(drafting, "sycl_archs_present", return_value=["arc_b"]):
             self.assertEqual(drafting.hardware_support(*drafting.detect_hardware()).level, "untested")
 
     def test_the_adapters_of_a_windows_pc_and_the_sysfs_cards_of_a_linux_one(self):
@@ -75,6 +75,35 @@ class IntelCardsAreToldByName(unittest.TestCase):
         cards = [{"index": 0, "driver": "i915", "devid": "56a1"}, {"index": 1, "driver": "xe", "devid": "e223"}]
         with mock.patch.object(drafting.os, "name", "posix"), mock.patch.object(intel_spec, "sysfs_cards", return_value=cards):
             self.assertEqual(drafting.sycl_archs_present(), ["arc_a", "arc_b"])
+
+
+class ADriverThatIsNotReadyYet(unittest.TestCase):
+    """A service started at boot: `strata serve` looks at the card about 0.4 s after it starts. On Ubuntu with an RTX 4080 SUPER that was before the
+    NVIDIA driver answered (nvidia-smi exit 9, only the boot framebuffer in /sys/class/drm), and the start 12 s later chose the MTP with "DFlash2 isn't
+    available on this graphics card" on every boot; a restart of the service gave DFlash2."""
+
+    def probes(self, backend, archs):
+        from strata_control import engine_component
+        return mock.patch.multiple(engine_component, detect_backend=mock.Mock(return_value=(backend, "test")),
+                                   cuda_archs_present=mock.Mock(return_value=list(archs)), hip_archs_present=mock.Mock(return_value=[]))
+
+    def test_a_lookup_that_found_no_card_is_made_again(self):
+        clock = [100.0]
+        with mock.patch.object(drafting, "_HARDWARE", []), mock.patch.object(drafting, "_HARDWARE_MISS", []), \
+                mock.patch.object(drafting.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.probes(None, []):
+                self.assertEqual(drafting.detect_hardware(), (None, []))
+            with self.probes("cuda", ["sm_89"]):
+                clock[0] += 1.0
+                self.assertEqual(drafting.detect_hardware(), (None, []), "the callers of one start share a miss for a few seconds")
+                clock[0] += drafting.HARDWARE_MISS_S
+                self.assertEqual(drafting.detect_hardware(), ("cuda", ["sm_89"]), "later (the start 12 s after boot) it is asked again")
+
+    def test_a_card_that_was_found_is_looked_up_once(self):
+        from strata_control import engine_component
+        with mock.patch.object(drafting, "_HARDWARE", []), mock.patch.object(drafting, "_HARDWARE_MISS", []), self.probes("cuda", ["sm_89"]):
+            self.assertEqual([drafting.detect_hardware(), drafting.detect_hardware()], [("cuda", ["sm_89"])] * 2)
+            self.assertEqual(engine_component.detect_backend.call_count, 1)
 
 
 class WhereTheEngineCanRunIt(unittest.TestCase):
@@ -278,7 +307,9 @@ class OneRequestAtATime(unittest.TestCase):
                 self.assertTrue(want(mode, model_name=GYRO, backend="cuda", archs=["sm_121"]), mode)
             for mode in ("mtp", "off"):
                 self.assertFalse(want(mode, model_name=GYRO, backend="cuda", archs=["sm_121"]), mode)
-            self.assertFalse(want("dflash2", model_name="qwen3.8-flash-next-coder-iq1_m", backend="cuda", archs=["sm_121"]))
+            self.assertTrue(want("dflash2", model_name="qwen3.8-flash-next-coder-iq1_m", backend="cuda", archs=["sm_121"]), "#5240: the Coder named")
+            self.assertFalse(want("auto", model_name="qwen3.8-flash-next-coder-iq1_m", backend="cuda", archs=["sm_121"]))
+            self.assertFalse(want("dflash2", model_name="qwen3.8-flash-next-swift-iq2_xs", backend="cuda", archs=["sm_121"]))
             self.assertTrue(want("auto", model_name=GYRO, backend="sycl", archs=[]), "Intel runs DFlash2 one request at a time")
             self.assertFalse(want("auto", model_name=GYRO, backend="cpu", archs=[]))
             self.assertTrue(want("auto", model_name=GYRO, backend="metal", archs=[]))
@@ -350,13 +381,13 @@ class TheQ4Pack(unittest.TestCase):
 
 
 class TheTerminalStep(unittest.TestCase):
-    """strata launch: the Drafting step exists only where there is something to choose, like the DeepSeek-only Speed step."""
+    """strata launch: the Drafting step exists only where there is something to choose."""
 
     def flow(self, family, hardware):
         from types import SimpleNamespace
         from strata_cli.launch.screens import flow_for
         ctx = SimpleNamespace(computer=SimpleNamespace(usable_gpus=[0]), settings=SimpleNamespace(family=family))
-        with mock.patch.object(drafting, "detect_hardware", return_value=hardware), serving_dflash2(),                 mock.patch("strata_cli.launch.screens.speed_choice_available", return_value=False):
+        with mock.patch.object(drafting, "detect_hardware", return_value=hardware), serving_dflash2():
             return flow_for(ctx)
 
     def test_only_flash_next_on_a_cuda_or_hip_engine_gets_the_step(self):
@@ -365,7 +396,7 @@ class TheTerminalStep(unittest.TestCase):
         self.assertEqual(flow.index("drafting"), flow.index("pictures") + 1)
         self.assertIn("drafting", self.flow("gyro", ("hip", ["gfx1151"])))
         self.assertIn("drafting", self.flow("unsloth", ("cuda", ["sm_120"])))
-        for family in ("deepseek41", "swift", "coder", "nvfp4", "qwen36", None):
+        for family in ("swift", "coder", "nvfp4", "qwen36", None):
             self.assertNotIn("drafting", self.flow(family, ("cuda", ["sm_120"])), family)
         self.assertIn("drafting", self.flow("qwen", ("sycl", [])))
         for hardware in (("cpu", []), (None, [])):

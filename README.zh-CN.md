@@ -57,6 +57,7 @@ NVFP4 各行需要 NVIDIA 显卡（RTX 50 显卡以 FP4 宽度相乘；较老的
 
 ## 文档
 
+<a id="the-other-sizes"></a>
 [文档索引](docs/README.md)列出了每个页面及其用途。以下页面是参考：
 
 - [引擎标志](docs/ENGINE_FLAGS.md)：每个命令行选项、它的取值和默认值。
@@ -107,6 +108,7 @@ NVFP4 各行需要 NVIDIA 显卡（RTX 50 显卡以 FP4 宽度相乘；较老的
 
 实测的可选组合是 `STRATA_TQ_SUB8=1 STRATA_EXPERT_PAIR=0 STRATA_PF_HC_REGION=1 STRATA_PF_GROUP_SCRATCH=1 STRATA_PF_WMMA=0`。分组暂存可能改变浮点舍入。PLE 分配改动不需要标志。零自旋修复在 `STRATA_POOL_SPIN_US=0` 时生效；它不能证明在日常设置 100 下也有节省。
 
+<sub>文件: `Strata-0.2.15-windows-x64-setup.exe` · `Strata-0.2.15-linux-x86_64.AppImage` · `Strata-0.2.15-macos-arm64.dmg`</sub>
 各项测量、选项保护、数值检查、构建限制和未保留的测试候选见 [V100 移植报告](docs/NVIDIA_V100.md#selected-upstream-0211-ports-gyro-m-2026-11-05)。服务默认值没有改变。
 
 ### 选定的上游同步 —— 2026 年 10 月 19 日

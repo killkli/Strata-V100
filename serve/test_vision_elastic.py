@@ -124,6 +124,27 @@ class Elastic(unittest.TestCase):
         self.assertIn("the image encoder stopped after 60 s without a picture", out.getvalue())
         self.assertNotIn("expert cache", out.getvalue())
 
+    def test_the_qwen36_engine_is_not_sent_a_command_it_does_not_have(self):
+        # the Qwen3.6 engine path reports no vram_elastic and has no VRAM command: it answered "VRAM 2048" with its usage text, and the log said
+        # "the expert cache did not make room for the image encoder (expected: GEN <max_new> ...)" at every picture (0.2.15 release test, boston)
+        del self.engine.info["vram_elastic"]
+        usage = "expected: GEN <max_new> [key=value ...] <id,id,...>"
+        self.engine.vram = lambda reserve, timeout=120.0: (self.engine.calls.append(reserve), (_ for _ in ()).throw(ValueError(usage)))[1]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.picture()
+            self.svc.last_image_at = 0
+            self.assertEqual(self.svc._vision_idle_down(), "down")
+            self.picture()
+        self.assertEqual(self.engine.calls, [])             # never asked
+        self.assertEqual(self.vision.starts, 2)             # the encoder starts all the same
+        self.assertNotIn("expected: GEN", out.getvalue())
+        self.assertNotIn("did not make room", out.getvalue())
+        with self.assertRaises(ValueError) as e:            # POST /v1/vram: the server's own sentence, not the engine's usage text
+            self.svc.vram(4000)
+        self.assertEqual(str(e.exception), "this engine cannot resize its VRAM use")
+        self.assertEqual(self.engine.calls, [])
+
     def test_the_load_never_starts_an_elastic_encoder(self):
         self.assertFalse(self.svc._vision_down())
         self.svc.vision = ElasticVision(tempfile.mkdtemp(), elastic=False)
@@ -142,6 +163,15 @@ class Elastic(unittest.TestCase):
         v = Vision({"exe": "e", "mmproj": "m", "model": "t"}, lazy=True)
         self.assertFalse(v.elastic)
         self.assertEqual((v.elastic_mib, v.elastic_idle_s), (2048, 120.0))
+
+    def test_the_ask_follows_the_image_limit(self):
+        """Without the person's own elastic_mib the cache keeps the reader's need at its image limit free, never less than 2,048 MiB."""
+        base = {"exe": "e", "mmproj": "m", "model": "t", "gpu": True, "elastic": True}
+        for limit, ask in ((None, 2048), (1024, 2048), (4096, 2048), (16384, 3674), (0, 3674)):
+            cfg = dict(base) if limit is None else {**base, "max_tokens": limit}
+            self.assertEqual(Vision(cfg, lazy=True).elastic_mib, ask, limit)
+        self.assertEqual(Vision({**base, "max_tokens": 16384, "elastic_mib": 2500}, lazy=True).elastic_mib, 2500)
+        self.assertEqual(Vision({**base, "max_tokens": 1024, "elastic_mib": 5000}, lazy=True).elastic_mib, 5000)
 
 
 class OnDemandReader(unittest.TestCase):
@@ -304,12 +334,23 @@ class OnDemandByDefault(unittest.TestCase):
         from serve.server import apply_vision_defaults, vision_on_demand_by_default
         c = apply_vision_defaults(self.cfg())
         self.assertTrue(c["vision"]["elastic"])
-        self.assertNotIn("vram_elastic", c)                                          # the shrinking cache stays opt-in
-        self.assertEqual(c["args"][-2:], ["--vram-reserve-mib", "2048"])             # the reader's room, in the reserve
+        self.assertIs(c["vram_elastic"], True)                                      # owner 11-11: the cache makes the room when a picture comes
+        self.assertEqual(c["args"], self.BASE["args"])                               # ... and nothing is held back before it
         c = apply_vision_defaults(self.cfg(args=["--vision", "--vram-reserve-mib", "700"]))
-        self.assertEqual(c["args"][c["args"].index("--vram-reserve-mib") + 1], "2048")   # setup's reader default 700 becomes it
+        self.assertEqual(c["args"][c["args"].index("--vram-reserve-mib") + 1], "700")    # setup's reserve stays as written
         c = apply_vision_defaults(self.cfg(args=["--vision", "--vram-reserve-mib", "1536"]))
         self.assertEqual(c["args"][c["args"].index("--vram-reserve-mib") + 1], "1536")   # a chosen reserve is kept
+        # a config that names the shrinking cache itself keeps the old rule: the reader's room in the reserve
+        c = apply_vision_defaults(self.cfg(vram_elastic=False, args=["--vision", "--vram-reserve-mib", "700"]))
+        self.assertIs(c["vram_elastic"], False)
+        self.assertEqual(c["args"][c["args"].index("--vram-reserve-mib") + 1], "2048")
+        c = apply_vision_defaults(self.cfg(vram_elastic=False))
+        self.assertEqual(c["args"][-2:], ["--vram-reserve-mib", "2048"])
+        import serve.server as S
+        with mock.patch.object(S, "VISION_NO_RESERVE_BY_DEFAULT", False):              # the switch back: the old rule everywhere
+            c = apply_vision_defaults(self.cfg(args=["--vision", "--vram-reserve-mib", "700"]))
+            self.assertNotIn("vram_elastic", c)
+            self.assertEqual(c["args"][c["args"].index("--vram-reserve-mib") + 1], "2048")
         self.assertTrue(vision_on_demand_by_default(self.cfg(vision={"exe": "component:engine/strata-vision.exe"})))
         self.assertTrue(vision_on_demand_by_default(self.cfg(vision={"exe": "C:/e/strata-vision.exe"})))
         bs = chr(92)
@@ -322,7 +363,10 @@ class OnDemandByDefault(unittest.TestCase):
         self.assertFalse(f(amd))                                  # off by default on AMD (no slots gained: see the constant's note)
         with mock.patch.object(S, "VISION_ON_DEMAND_AMD_BY_DEFAULT", True):
             self.assertTrue(f(amd))
-            self.assertTrue(S.apply_vision_defaults(amd)["vision"]["elastic"])
+            got = S.apply_vision_defaults(amd)
+            self.assertTrue(got["vision"]["elastic"])
+            self.assertNotIn("vram_elastic", got)                 # AMD: no shrinking cache, the room stays in the reserve
+            self.assertEqual(got["args"][-2:], ["--vram-reserve-mib", "2048"])
         with mock.patch.object(__import__("serve.server").server, "VISION_ON_DEMAND_AMD_BY_DEFAULT", True):
             self.assertFalse(f(self.cfg(vision={"exe": "/e/strata-vision-hip", "cpu_exe": "/e/strata-vision"}, backend="hip", gpu=[0, 1])))
         self.assertFalse(f(self.cfg(vision={"exe": "/e/strata-vision-sycl", "cpu_exe": "/e/strata-vision"}, backend="sycl")))
@@ -339,7 +383,6 @@ class OnDemandByDefault(unittest.TestCase):
         self.assertFalse(f(self.cfg(args=["--vision", "--kv-grow"])))
         self.assertTrue(f(self.cfg(args=["--vision", "--resident-budget-gib", "30"])))   # no cache to shrink is needed
         self.assertFalse(f(self.cfg(parallel=4)))
-        self.assertFalse(f(self.cfg(arch="deepseek41")))
         c = self.cfg()
         c.pop("vision")
         self.assertFalse(f(c))

@@ -12,6 +12,7 @@ import { attachChatPhoto } from '../lib/chat-photos';
 import { uploadChatFile, FILE_ACCEPT } from '../lib/chat-attach-file';
 import { useNative } from '../lib/native';
 import { pictureStatus } from '../lib/pictures';
+import { busyDropKind } from '../lib/busy-drop';
 const modes: {
     value: ChatMode;
     label: string;
@@ -19,7 +20,7 @@ const modes: {
 }[] = [
     { value: 'manual', label: 'Manual', hint: 'Ask before making changes' },
     { value: 'plan', label: 'Plan', hint: 'Create a plan before making changes' },
-    { value: 'bypass', label: 'Bypass permissions', hint: 'Skip permission prompts' },
+    { value: 'bypass', label: 'Bypass permissions', hint: 'Skip permission prompts. Does not give administrator rights.' },
 ];
 const efforts = ['Off', 'Low', 'Medium', 'High', 'Max'];
 /** The most tokens a reply may spend thinking (the server's reasoning_budget_tokens); 0 = no limit. */
@@ -159,7 +160,14 @@ export function ComposerControls({ session, onPreview, onAttach, onError, onSlas
         };
         const website = () => { setUrlOpen(true); setError(''); };
         const preview = () => previewFile.current?.click();
-        const dropped = (e: Event) => { if (!streaming && !reading) void addFilesLatest.current((e as CustomEvent<File[]>).detail ?? []); };
+        const dropped = (e: Event) => {
+            const incoming = (e as CustomEvent<File[]>).detail ?? [];
+            if (!streaming && !reading) { void addFilesLatest.current(incoming); return; }
+            // #5960: not taken while an answer is written or a file is read; it used to vanish without a word.
+            const kind = busyDropKind(incoming);
+            if (kind === 'picture') pushToast('warn', tr('Picture not added'), tr('Strata is still busy with this chat. Add the picture again when it is done.'));
+            else if (kind === 'file') pushToast('warn', tr('The file was not added'), tr('Try dropping it again.'));
+        };
         window.addEventListener('strata:drop-files', dropped);
         window.addEventListener('keydown', key);
         window.addEventListener('strata:open-website', website);

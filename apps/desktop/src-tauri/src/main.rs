@@ -44,6 +44,8 @@ mod shell;
 // Plain std, built on every platform so its decisions are tested everywhere; only the Linux window process uses it.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod fontguard;
+// The same for the DMA-BUF renderer choice (#5417).
+mod renderer_choice;
 #[cfg(target_os = "linux")]
 mod supervisor;
 
@@ -503,6 +505,10 @@ fn start_host(app: &tauri::AppHandle) -> Result<u16, String> {
     let port = pick_stable_port()?;
     let token = random_token();
     let mut cmd = host_command(&res, port, &token)?;
+    // This process shows the page in its own window: the host says so at /api/app/mode, and the page then hands a link in an answer to
+    // the host, which opens it in the default browser (#5072, #4721). Without it the mode was null and the click called window.open,
+    // which the app window ignores. The Linux shell sets the same variable in supervisor.rs.
+    cmd.env("STRATA_UI_MODE", "window");
     // The signed app updater (Tauri) is reached by the host through a token-protected loopback bridge.
     let bridge = updater::start(app, random_token());
     updater::apply_env(&mut cmd, app, bridge.as_ref());
@@ -856,8 +862,9 @@ fn main() {
     #[cfg(target_os = "linux")]
     {
         // WebKitGTK's DMA-BUF renderer shows a blank window on several NVIDIA + Wayland desktops (and some virtual GPUs); the plain
-        // renderer is slower to start by a hair and always works. Anyone who set the variable themselves keeps their choice.
-        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // renderer always works but paints on the CPU, which made typing and scrolling crawl on a 4K Radeon desktop (#5417). It
+        // is chosen only where it is needed (renderer_choice.rs). Anyone who set the variable themselves keeps their choice.
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() && renderer_choice::disable_dmabuf_here(std::path::Path::new("/sys")) {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
     }
@@ -964,12 +971,19 @@ fn run_embedded() {
         });
 }
 
+/// Whether the window opens with the browser developer tools available (#5408): only when STRATA_DEVTOOLS is 1. A debug build has them anyway;
+/// a release build has them compiled in (Cargo.toml) but off, so the packaged window behaves as it always did unless someone asks.
+fn devtools_wanted(value: Option<&str>) -> bool {
+    value.map(str::trim) == Some("1")
+}
+
 /// The one window, on the host's own origin so the page and its API share an origin exactly as the browser build does.
 #[cfg_attr(windows, allow(unused_variables))]
 fn open_window(app: &tauri::App, port: u16, shell_token: &str) -> Result<(), Box<dyn std::error::Error>> {
     let origin = format!("http://127.0.0.1:{port}");
     let url = origin.parse().expect("a valid loopback URL");
-    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url)).title("Strata").inner_size(1440.0, 920.0).min_inner_size(900.0, 600.0);
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url)).title("Strata").inner_size(1440.0, 920.0).min_inner_size(900.0, 600.0)
+        .devtools(devtools_wanted(std::env::var("STRATA_DEVTOOLS").ok().as_deref()));
     // Dropping pictures on the chat (QA report 1, item 4). Windows: the shell's own file-drop handler is off, because with it on the system hands
     // the dropped file to the shell and the page never sees it; with it off the page gets ordinary drag and drop events (apps/host DropZone), as
     // in a browser. Linux and macOS: the page gets the drag events but WebKit gives it no files, so the handler stays on and the shell passes the
@@ -1292,6 +1306,14 @@ fn run_window_process() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn developer_tools_are_off_unless_asked_for() {
+        assert!(!devtools_wanted(None));
+        for off in ["", "0", "true", "yes", "on", "11"] { assert!(!devtools_wanted(Some(off)), "{off}"); }
+        assert!(devtools_wanted(Some("1")));
+        assert!(devtools_wanted(Some(" 1 ")));
+    }
 
     #[test]
     fn dropped_file_addresses_become_paths_and_nothing_else_does() {

@@ -362,6 +362,7 @@ Gemessen am 2026-10-02. Engine: Fork-Version 0.1.31, Build-Commit `78417ea` (SHA
 
 Rohdaten: [`summary.json`](bench/results/2026-10-02-v100-single-cooled/summary.json), [`protocol.json`](bench/results/2026-10-02-v100-single-cooled/protocol.json), [`matrix.json`](bench/results/2026-10-02-v100-single-cooled/matrix.json), [`completed-requests.json`](bench/results/2026-10-02-v100-single-cooled/completed-requests.json) und [`GPU-Telemetrie`](bench/results/2026-10-02-v100-single-cooled/gpu.csv). Siehe die [vollständige Methode und Historie](docs/DETAILS.md#tesla-v100-fork-benchmark), die [Benchmark-Anweisungen](benchmarks/README.md) und die [V100-Leistungsberichte](benchmarks/).
 
+<a id="the-other-sizes"></a>
 Neuere V100-Pull-Requests enthalten gemessene Änderungen auf Kernel-Ebene und berichten ausdrücklich, wenn durchgängige Gewinne nicht belegt sind. Zum Beispiel meldete der Prompt-Attention-Port aus Upstream-PR #600 bei seiner gemessenen Form 27.9% weniger int8-Attention-Kernelzeit, während die Änderungen am Modell-Prefill in den berichteten Läufen +1.3% bis +3.0% betrugen. Er belegte keinen zuverlässigen Decode-Gewinn. Lies den [vollständigen Bericht](benchmarks/v100-q2_0-pr600-2026-10-03.md), bevor du Ergebnisse vergleichst.
 
 ## Leistungsarbeit für die V100
@@ -407,6 +408,7 @@ Für die vollständigen Belege und den Umfang der Implementierung siehe [PR #1](
 
 Dieser Fork folgt der Installationserfahrung von Upstream. Für vollständige und aktuelle Plattformanforderungen, Modellauswahl und Optionen siehe die [Installationsanleitung](docs/INSTALL.md), den [Modellleitfaden](docs/MODELS.md) und die [Upstream-Setup-Anleitung](docs/AI_SETUP.md).
 
+<sub>Dateien: `Strata-0.2.15-windows-x64-setup.exe` · `Strata-0.2.15-linux-x86_64.AppImage` · `Strata-0.2.15-macos-arm64.dmg`</sub>
 - **Windows:** Lade dieses Repository herunter oder klone es, und starte `START-HERE.bat`.
 - **Linux:** Klone dieses Repository und starte `./setup.sh`.
 - Folge den Eingabeaufforderungen, um ein Modell und eine Kontextgröße zu wählen. Das Setup lädt Modelldaten herunter und startet den lokalen Dienst.

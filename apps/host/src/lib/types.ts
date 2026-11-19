@@ -241,6 +241,10 @@ export interface ServingState {
   stats: { running: number; waiting: number; completed: number; failed: number; tokensOut: number };
   requests: ServeRequest[];
   pauseServing: boolean;
+  /** #5661: models whose MCP tools an API client of this computer may use (opt-in, default none). */
+  mcpTools?: string[];
+  /** Origins of pages that may use /v1 without an API key besides the app's own (no UI; PATCH /api/serving). */
+  trustedOrigins?: string[];
 }
 
 export interface MonitorSample {
@@ -327,6 +331,8 @@ export interface ChatMessage {
   /** The person's message is written with Markdown (a task handover: bold headings and lists), so the bubble draws it as such. */
   markdown?: boolean;
   photos?:import('./chat-photos').ChatPhoto[];
+  /** #5993: where each numbered quote of this message came from ([1], [2] ...), so the transcript can label it and jump to it. */
+  quotes?: import('./quotes').QuoteSource[];
   /** Reply came from a saved API connection, rather than the local engine. */
   remoteModel?: boolean;
   timeSkipId?: string;
@@ -439,6 +445,8 @@ export interface SessionAgent {
   tokens: number;
   /** Time the latest duration measurement was received. */
   updatedAt?: number;
+  /** What the helper did, newest last (at most 20, short): a tool it used ({ verb, target }) or words it wrote ({ said }). Shown by View log (#5254). */
+  steps?: { verb?: string; target?: string; said?: string }[];
 }
 
 export type ChatMode = 'auto' | 'manual' | 'accept-edits' | 'plan' | 'bypass';

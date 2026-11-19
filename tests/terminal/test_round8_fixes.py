@@ -121,6 +121,7 @@ class SetupArguments(unittest.TestCase):
         path.write_text(json.dumps({"exe": "x", "args": [], **cfg}), encoding="utf-8")
         return path
 
+    @unittest.skipIf(sys.platform == "darwin", "a Mac's setup takes no --gpu / --gpu-roles")
     def test_a_context_change_forwards_the_installed_roles(self):
         # F3: 0=main,1=helper came back from a 32k to 16k change as 0=helper,1=main
         with Home() as h:
@@ -130,6 +131,7 @@ class SetupArguments(unittest.TestCase):
                 a = r.setup_args()
             self.assertEqual(a[a.index("--gpu-roles") + 1], "0=main,1=helper")
 
+    @unittest.skipIf(sys.platform == "darwin", "a Mac's setup takes no --gpu / --gpu-roles")
     def test_installed_cards_are_forwarded_and_the_automatic_pick_is_not(self):
         with Home() as h:
             path = self.installed(h, gpu=[1, 0], gpus_asked=True)
@@ -142,6 +144,7 @@ class SetupArguments(unittest.TestCase):
             self.assertNotIn("--gpus", a)
             self.assertNotIn("--gpu", a)
 
+    @unittest.skipIf(sys.platform == "darwin", "a Mac's setup takes no --gpu / --gpu-roles")
     def test_cards_named_on_the_command_line_win_over_the_installed_ones(self):
         with Home() as h:
             path = self.installed(h, gpu=[1, 0], gpus_asked=True, gpu_roles={"0": "main", "1": "helper"})
@@ -151,23 +154,23 @@ class SetupArguments(unittest.TestCase):
             self.assertNotIn("--gpu-roles", a)
 
     def test_a_remembered_single_card_is_said_when_the_pc_has_more(self):
-        # NVIDIA, DeepSeek: after `--gpu 0` the next launch with nothing named stayed on one card without a word (boston, 2x A6000)
-        base = {"exe": "x", "args": [], "gpu": 0, "gpus_asked": True, "arch": "deepseek41"}
+        # NVIDIA: after `--gpu 0` the next launch with nothing named stayed on one card without a word (boston, 2x A6000)
+        base = {"exe": "x", "args": [], "gpu": 0, "gpus_asked": True}
         with Home():
-            two = Runner(S.LaunchSettings(family="deepseek41", model="IST-DAS-2.25bpw"), catalog=catalog(HW_2X16))
+            two = Runner(S.LaunchSettings(family="qwen", model="IQ3_XXS"), catalog=catalog(HW_2X16))
             two.say_remembered_cards(base)
             self.assertEqual(len(two.notices), 1)
             self.assertIn("stays on card 0", two.notices[0])
             self.assertIn("strata launch --gpu 0,1", two.notices[0])
             self.assertIn("remembered", two.notices[0])
-            one = Runner(S.LaunchSettings(family="deepseek41", model="IST-DAS-2.25bpw"), catalog=catalog(HW_12))
+            one = Runner(S.LaunchSettings(family="qwen", model="IQ3_XXS"), catalog=catalog(HW_12))
             one.say_remembered_cards(base)                                                     # one card in the PC: nothing to say
             self.assertEqual(one.notices, [])
-            both = Runner(S.LaunchSettings(family="deepseek41", model="IST-DAS-2.25bpw"), catalog=catalog(HW_2X16))
+            both = Runner(S.LaunchSettings(family="qwen", model="IQ3_XXS"), catalog=catalog(HW_2X16))
             both.say_remembered_cards({**base, "gpu": [0, 1]})                                 # all cards are used: nothing to say
             both.say_remembered_cards({**base, "gpus_asked": False})                           # setup's own pick is not a choice
             self.assertEqual(both.notices, [])
-            named = Runner(S.LaunchSettings(family="deepseek41", model="IST-DAS-2.25bpw", gpus=[0]), catalog=catalog(HW_2X16))
+            named = Runner(S.LaunchSettings(family="qwen", model="IQ3_XXS", gpus=[0]), catalog=catalog(HW_2X16))
             named.say_remembered_cards(base)                                                   # named on this launch: the person knows
             self.assertEqual(named.notices, [])
 

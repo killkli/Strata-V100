@@ -955,8 +955,13 @@ int main() {
         pinned.checkpoints.back().pinned = true;
         pinned.checkpoints.back().gdn.resize(64, 1);
         cache.put(std::move(pinned));
+        const size_t pinned_bytes = cache.bytes();
         cache.put(image({9, 8, 7}));
+        // #2253: what the RAM gate may count on: everything parked but the pinned conversation
+        check(cache.evictable_bytes() == cache.bytes() - pinned_bytes && cache.evictable_bytes() == image({9, 8, 7}).bytes(),
+              "#2253: evictable_bytes leaves out the conversation that holds a pinned prefix");
         check(cache.evict_oldest() && cache.size() == 1, "the oldest unpinned conversation went (the pinned one is older)");
+        check(cache.evictable_bytes() == 0, "#2253: only a pinned one is left: nothing may go");
         check(!cache.evict_oldest() && cache.size() == 1, "only a pinned one is left: nothing more can go");
         // #879: after non-finite logits every parked conversation goes, the pinned one too
         cache.put(image({4, 5, 6}));
@@ -1207,6 +1212,119 @@ int main() {
               "an entry without checkpoints is never reported");
     }
     {
+        // borrowing: a NEW conversation that starts with a checkpoint inside a parked one (a sibling subagent with
+        // the same system prompt and tools) restores from it and leaves it parked; the same conversation going on
+        // (its live state, or its deepest checkpoint after the client re-rendered the last reply) is still taken
+        auto cp = [](std::vector<int32_t> ids) { ConversationCheckpoint c; c.ids = std::move(ids); return c; };
+        SavedConversation a = image({});
+        a.live.ids = {1, 2, 3, 4, 10, 11, 12, 13};
+        a.checkpoints = {cp({1, 2, 3, 4}), cp({1, 2, 3, 4, 10, 11})};
+        ConversationCache cache(1 << 20, 2);
+        check(cache.put(std::move(a)), "park subagent A");
+        const auto sib = cache.best(std::vector<int64_t>{1, 2, 3, 4, 20, 21}, {}, true);
+        check(sib.tokens == 4 && !sib.live && sib.serial != 0 && cache.borrows(sib), "a sibling on A's root borrows");
+        const auto again = cache.best(std::vector<int64_t>{1, 2, 3, 4, 10, 11, 30}, {}, true);
+        check(again.tokens == 6 && !again.live && !cache.borrows(again),
+              "A re-rendered at its deepest checkpoint is taken");
+        const auto cont = cache.best(std::vector<int64_t>{1, 2, 3, 4, 10, 11, 12, 13, 14}, {}, true);
+        check(cont.live && !cache.borrows(cont), "A going on is taken");
+        check(!cache.borrows(cache.best(std::vector<int64_t>{5, 6, 7}, {}, true)), "no match, nothing to borrow");
+        // while the outgoing conversations are parked, the guarded donor is neither evicted nor dropped
+        cache.guard(sib.serial);
+        check(cache.put(image({7, 7, 7})) && cache.put(image({8, 8, 8})), "two outgoing conversations park");
+        check(cache.find(sib.serial) != nullptr && cache.size() == 2 && cache.evictions() == 1 && !cache.guard_blocked(),
+              "the slot limit evicts the other entry, not the guarded donor");
+        check(cache.best(std::vector<int64_t>{7, 7, 7, 1}, {}, true).tokens == 0, "the other one went");
+        check(cache.evictable_bytes() == cache.bytes() - cache.find(sib.serial)->bytes(),
+              "#2253: evictable_bytes leaves out the guarded donor");
+        SavedConversation rewritten = image({1, 2, 3, 4, 10, 11, 40});   // holds A's deepest checkpoint: supersedes A
+        rewritten.checkpoints = {cp({1, 2, 3, 4}), cp({1, 2, 3, 4, 10, 11})};
+        check(cache.put(std::move(rewritten)) && cache.find(sib.serial) != nullptr && cache.superseded() == 0,
+              "a guarded donor is not dropped as superseded");
+        cache.unguard();
+        // identity survives index shifts: take an older entry, the donor's serial still finds it
+        const auto donor_index = cache.index_of(sib.serial);
+        check(donor_index != SIZE_MAX, "donor indexed by its serial");
+        check(cache.best(std::vector<int64_t>{1, 2, 3, 4, 10, 11, 12, 13, 14}, {}, true).serial == sib.serial,
+              "matches report the entry's serial");
+    }
+    {
+        // the outgoing conversation fits only in the guarded donor's room: make_room refuses before evicting anything
+        auto cp = [](std::vector<int32_t> ids) { ConversationCheckpoint c; c.ids = std::move(ids); return c; };
+        SavedConversation a = image({1, 2, 3, 4, 10, 11});
+        a.checkpoints = {cp({1, 2, 3, 4}), cp({1, 2, 3, 4, 10})};
+        const size_t a_bytes = a.bytes();
+        const size_t out_bytes = image({9, 9, 9}).bytes();
+        ConversationCache tight(a_bytes + out_bytes - 1, 4);
+        check(tight.put(std::move(a)), "park the donor");
+        const auto m = tight.best(std::vector<int64_t>{1, 2, 3, 4, 50}, {}, true);
+        check(tight.borrows(m), "a sibling would borrow");
+        tight.guard(m.serial);
+        check(!tight.put(image({9, 9, 9})) && tight.guard_blocked(), "no room beside the guarded donor: refused");
+        check(tight.size() == 1 && tight.evictions() == 0, "nothing evicted by the refusal");
+        tight.unguard();
+        auto taken = tight.take(tight.index_of(m.serial));   // what the caller does then: take it, as before
+        check(taken.live.ids.size() == 6 && taken.checkpoints.size() == 2 && tight.size() == 0,
+              "the taken donor is whole");
+        ConversationCache one_slot(1 << 20, 1);
+        SavedConversation b = image({1, 2, 3, 4, 10, 11});
+        b.checkpoints = {cp({1, 2, 3, 4}), cp({1, 2, 3, 4, 10})};
+        check(one_slot.put(std::move(b)), "park in a single slot");
+        const auto mb = one_slot.best(std::vector<int64_t>{1, 2, 3, 4, 50}, {}, true);
+        one_slot.guard(mb.serial);
+        check(!one_slot.put(image({9, 9, 9})) && one_slot.guard_blocked() && one_slot.size() == 1,
+              "one slot: the guarded donor blocks, nothing evicted");
+        one_slot.unguard();
+    }
+    {
+        // pin=N beside a borrow: the guarded donor and a conversation holding a pinned shared prefix both stay; the
+        // oldest other entry is the one evicted (the case midhatn tested on #1164)
+        auto cp = [](std::vector<int32_t> ids, bool pinned = false) {
+            ConversationCheckpoint c; c.ids = std::move(ids); c.pinned = pinned; return c;
+        };
+        SavedConversation doc = image({1, 2, 3, 4, 5, 6, 30, 31});
+        doc.checkpoints = {cp({1, 2, 3, 4, 5, 6}, true), cp({1, 2, 3, 4, 5, 6, 30})};
+        SavedConversation donor = image({1, 2, 10, 11, 12});
+        donor.checkpoints = {cp({1, 2}), cp({1, 2, 10, 11})};
+        ConversationCache cache(1 << 20, 3);
+        check(cache.put(std::move(doc)) && cache.put(std::move(donor)) && cache.put(image({7, 7, 7})),
+              "pinned document, donor and an ordinary conversation parked");
+        const auto m = cache.best(std::vector<int64_t>{1, 2, 40, 41}, {}, true);
+        check(cache.borrows(m), "a sibling on the donor's root borrows");
+        cache.guard(m.serial);
+        check(cache.put(image({8, 8, 8})) && !cache.guard_blocked() && cache.size() == 3 && cache.evictions() == 1,
+              "the outgoing conversation parks");
+        check(cache.find(m.serial) != nullptr &&
+              cache.best(std::vector<int64_t>{1, 2, 3, 4, 5, 6, 9}, {}, true).tokens == 6 &&
+              cache.best(std::vector<int64_t>{7, 7, 7, 1}, {}, true).tokens == 0,
+              "only the ordinary entry was evicted: the donor and the pinned document stay");
+        check(cache.put(image({9, 9, 9})) && cache.size() == 3 && cache.evictions() == 2 &&
+              cache.find(m.serial) != nullptr && cache.best(std::vector<int64_t>{8, 8, 8, 1}, {}, true).tokens == 0,
+              "the next outgoing one evicts the previous outgoing one, still not the donor or the document");
+        cache.unguard();
+        ConversationCache two(1 << 20, 2);
+        SavedConversation doc2 = image({1, 2, 3, 4, 5, 6, 30});
+        doc2.checkpoints = {cp({1, 2, 3, 4, 5, 6}, true)};
+        SavedConversation donor2 = image({1, 2, 10, 11, 12});
+        donor2.checkpoints = {cp({1, 2}), cp({1, 2, 10, 11})};
+        check(two.put(std::move(doc2)) && two.put(std::move(donor2)), "pinned document and donor fill two slots");
+        const auto m2 = two.best(std::vector<int64_t>{1, 2, 40}, {}, true);
+        two.guard(m2.serial);
+        check(!two.put(image({9, 9, 9})) && two.guard_blocked() && two.size() == 2 && two.evictions() == 0,
+              "no slot beside the donor and the pinned document: refused before evicting anything");
+        two.unguard();
+        // a match that reaches the pinned prefix is taken, not borrowed: one conversation keeps holding the pin
+        const auto on_pin = two.best(std::vector<int64_t>{1, 2, 3, 4, 5, 6, 77}, {}, true);
+        check(on_pin.tokens == 6 && !on_pin.live && !two.borrows(on_pin), "a pinned prefix is taken, not borrowed");
+        ConversationCache three(1 << 20, 3);
+        SavedConversation doc3 = image({1, 2, 3, 4, 5, 6, 30, 31, 32});
+        doc3.checkpoints = {cp({1, 2, 3, 4, 5, 6}, true), cp({1, 2, 3, 4, 5, 6, 30}), cp({1, 2, 3, 4, 5, 6, 30, 31})};
+        check(three.put(std::move(doc3)), "a conversation past its pinned prefix is parked");
+        const auto past_pin = three.best(std::vector<int64_t>{1, 2, 3, 4, 5, 6, 30, 99}, {}, true);
+        check(past_pin.tokens == 7 && !three.borrows(past_pin),
+              "a match past the pinned prefix (the copy would carry the pin) is taken, not borrowed");
+    }
+    {
         ConversationCache disabled(0,4), no_slots(1024,0);
         check(!disabled.enabled() && !no_slots.enabled(), "both disable switches");
         check(!disabled.put(image({1,2,3})) && !no_slots.put(image({1,2,3})), "disabled cache stores nothing");
@@ -1240,6 +1358,7 @@ int main() {
             for (size_t k = 0; k < parts; ++k) {
                 ConversationCheckpoint p;
                 p.gdn.assign(128, uint8_t(salt + 10 + k));
+                p.dev_tag = uint64_t(salt) * 100 + k + 1;
                 c.stage_parts.push_back(std::move(p));
             }
             return c;
@@ -1257,6 +1376,8 @@ int main() {
         check(split.stage0[0].stage_parts.empty() && split.parts[1][1].ids == original[2].ids &&
               split.parts[1][1].used == original[2].used && split.parts[0][0].gdn == original[0].stage_parts[0].gdn,
               "split: every stage part carries its checkpoint's ids and LRU stamp");
+        check(split.parts[0][0].dev_tag == 301 && split.parts[1][1].dev_tag == 702,
+              "split: each stage part keeps the tag of its device copy");
         check(split.stage0[0].gdn.data() == gdn0 && split.parts[1][1].gdn.data() == part1,
               "split moves the running state (same buffers, no copy)");
         std::vector<ConversationCheckpoint> back;
@@ -1267,7 +1388,8 @@ int main() {
                    back[j].tails == original[j].tails && back[j].used == original[j].used &&
                    back[j].stage_parts.size() == original[j].stage_parts.size();
             for (size_t k = 0; same && k < back[j].stage_parts.size(); ++k)
-                same = back[j].stage_parts[k].gdn == original[j].stage_parts[k].gdn;
+                same = back[j].stage_parts[k].gdn == original[j].stage_parts[k].gdn &&
+                       back[j].stage_parts[k].dev_tag == original[j].stage_parts[k].dev_tag;
         }
         check(same, "merge(split(x)) == x, in the original order");
         check(back[0].gdn.data() == gdn0 && back[2].stage_parts[1].gdn.data() == part1, "merge moves them back too");
@@ -1401,6 +1523,52 @@ int main() {
         p2.checkpoints.back().gdn.resize(64, 1);
         check(tiny.put(std::move(p2)), "a pinned one fits an empty cache");
         check(!tiny.put(image({7,8,9})) && tiny.size() == 1, "nothing else fits beside it: parking is refused, the pin stays");
+        // #5697: an image that cannot fit beside the pinned entry even with every other entry gone is refused BEFORE
+        // anything is evicted: the two ordinary conversations stay parked (before, both were evicted, then refused)
+        auto p3 = image({1,2,3});
+        p3.checkpoints.push_back(ConversationCheckpoint{});
+        p3.checkpoints.back().ids = {1,2};
+        p3.checkpoints.back().pinned = true;
+        p3.checkpoints.back().gdn.resize(64, 1);
+        ConversationCache keep(pinned_bytes + one * 2, 4);
+        check(keep.put(std::move(p3)) && keep.put(image({7,8,9})) && keep.put(image({4,5,6})) && keep.size() == 3,
+              "a pinned conversation and two ordinary ones are parked");
+        check(!keep.make_room(one * 2 + 1) && keep.size() == 3 && keep.evictions() == 0,
+              "a park too big for the room beside the pin is refused with nothing evicted");
+        check(keep.best(std::vector<int32_t>{7,8,9,1}, {}, true).tokens == 3 && keep.best(std::vector<int32_t>{4,5,6,1}, {}, true).tokens == 3,
+              "both ordinary conversations can still be restored");
+        check(keep.make_room(one * 2) && keep.size() == 1 && keep.evictions() == 2,
+              "a park that fits once both go evicts both (as before)");
+        ConversationCache slots(pinned_bytes * 4 + one * 4, 1);
+        auto p4 = image({1,2,3});
+        p4.checkpoints.push_back(ConversationCheckpoint{});
+        p4.checkpoints.back().ids = {1,2};
+        p4.checkpoints.back().pinned = true;
+        p4.checkpoints.back().gdn.resize(64, 1);
+        check(slots.put(std::move(p4)) && !slots.make_room(one) && slots.size() == 1 && slots.evictions() == 0,
+              "one slot, held by a pin: refused, nothing evicted");
+    }
+    {   // P2: an evicted conversation goes to the sink (the SSD tier), whole; superseded copies and clear() do not
+        const size_t one = image({1,2,3}).bytes();
+        ConversationCache c(one * 2, 4);
+        std::vector<SavedConversation> sunk;
+        c.set_evict_sink([&](SavedConversation&& s) { sunk.push_back(std::move(s)); });
+        check(c.put(image({1,2,3})) && c.put(image({4,5,6})), "two parked");
+        check(c.put(image({7,8,9})) && sunk.size() == 1 && sunk[0].live.ids == std::vector<int32_t>({1,2,3}) &&
+              sunk[0].live.gdn == std::vector<uint8_t>(64, 7), "the budget's eviction hands the oldest over whole");
+        check(c.evict_oldest() && sunk.size() == 2 && sunk[1].live.ids == std::vector<int32_t>({4,5,6}),
+              "the RAM gate's eviction too");
+        check(c.size() == 1 && c.evictions() == 2, "the cache keeps its own count as before");
+        auto chained = image({7,8,9,10});
+        chained.checkpoints.push_back(ConversationCheckpoint{});
+        chained.checkpoints.back().ids = {7,8,9};
+        check(c.drop_superseded(chained.live.ids, chained.live.imgs, chained.checkpoints, true) == 0 && sunk.size() == 2,
+              "(a parked entry with no checkpoint is never superseded)");
+        c.put(image({11,12,13}));
+        const size_t before = sunk.size();
+        check(c.clear() > 0 && sunk.size() == before, "#879's clear() hands nothing over");
+        ConversationCache plain(one, 4);
+        check(plain.put(image({1,2,3})) && plain.put(image({4,5,6})) && plain.size() == 1, "without a sink: evicted as before");
     }
     {
         // #4420: a batch slot's chain holds one checkpoint (its admission's): parking it must not drop (#342) the main session's copy of the
@@ -1427,6 +1595,73 @@ int main() {
         check(cache.drop_superseded(slot_ids, {}, slot_chain, true) == 0 && cache.size() == 1 &&
                   cache.best(std::vector<int64_t>{1, 2, 3, 4, 40}, {}, true).tokens == 4,
               "a short slot chain cannot discard the richer copy's root");
+    }
+    {
+        // STRATA_PARK_SEGPOOL_MIB: the segment pool's idle bytes count against the budget beside the images, are given back
+        // first, and never change what the cache evicts, refuses or parks
+        struct FakePool final : SegmentPoolBudget {
+            size_t idle = 0, shrinks = 0, shrunk = 0;
+            size_t idle_bytes() const override { return idle; }
+            size_t shrink(size_t want) override { ++shrinks; const size_t g = std::min(want, idle); idle -= g; shrunk += g; return g; }
+        };
+        auto sized = [](int32_t id, size_t bytes) { SavedConversation s = image({id}); s.live.gdn.resize(bytes, 7); return s; };
+        {
+            FakePool pool;
+            ConversationCache cache(10000, 8);
+            cache.set_pool(&pool);
+            check(cache.put(sized(1, 4000)) && cache.put(sized(2, 4000)), "two images of about 4000 bytes");
+            const size_t images = cache.bytes();
+            pool.idle = 1800;
+            check(cache.bytes() == images && cache.pool_idle_bytes() == 1800 && cache.resident_bytes() == images + 1800,
+                  "bytes() is the images'; resident_bytes() adds the pool's idle bytes");
+            check(images + 1800 <= 10000, "(the images and the idle bytes fit the budget)");
+            const size_t room = 10000 - images - 400;   // an incoming image that fits beside the images only if idle bytes go
+            check(cache.make_room(room) && cache.size() == 2 && cache.evictions() == 0, "an image that fits beside the images needs no eviction, the idle bytes are the ones that go");
+            check(pool.shrinks >= 1 && pool.shrunk == 1800 - 400 && pool.idle == 400, "the pool gave back exactly the excess");
+            check(cache.resident_bytes() + room <= 10000, "images + idle + the incoming image fit the budget");
+            pool.idle = 9000;   // far more idle than the budget leaves: all of it is shrinkable, nothing else is touched
+            check(cache.make_room(500) && cache.size() == 2 && cache.evictions() == 0 && cache.resident_bytes() + 500 <= 10000,
+                  "a pool holding more than the budget leaves is trimmed to fit, no image goes");
+            check(cache.make_room(5500) && cache.size() == 1 && cache.evictions() == 1,
+                  "an incoming image that does not fit beside the images evicts the oldest, as without a pool");
+        }
+        {
+            // the same random workload against a cache with no pool and one whose pool holds a different idle amount before every step:
+            // every answer, size, eviction count and byte count is the same, and the pool's bytes never push the total past the budget
+            struct Lcg { uint64_t s; uint64_t next() { s = s * 6364136223846793005ull + 1442695040888963407ull; return s >> 33; } };
+            Lcg rng{12345};
+            const size_t budget = 24000;
+            ConversationCache plain(budget, 5), pooled(budget, 5);
+            FakePool pool;
+            pooled.set_pool(&pool);
+            int32_t id = 100;
+            size_t refused = 0, evicted_any = 0;
+            for (int step = 0; step < 4000; ++step) {
+                pool.idle = size_t(rng.next() % (budget / 2));
+                const uint64_t op = rng.next() % 4;
+                if (op <= 1) {
+                    const size_t n = 300 + size_t(rng.next() % 9000);
+                    const bool a = plain.put(sized(id, n)), b = pooled.put(sized(id, n));
+                    ++id;
+                    check(a == b, "put answers the same with and without a pool");
+                    refused += !a;
+                } else if (op == 2) {
+                    const size_t incoming = size_t(rng.next() % (budget + 3000)), held = size_t(rng.next() % 3) == 0 ? size_t(rng.next() % 4000) : 0;
+                    const bool a = plain.make_room(incoming, held), b = pooled.make_room(incoming, held);
+                    check(a == b, "make_room answers the same with and without a pool");
+                    refused += !a;
+                    if (b) check(pooled.resident_bytes() + incoming + held <= budget, "a successful make_room leaves images + idle + incoming inside the budget");
+                } else if (plain.size() > 0) {
+                    const size_t at = size_t(rng.next() % plain.size());
+                    SavedConversation x = plain.take(at), y = pooled.take(at);
+                    check(x.live.ids == y.live.ids, "take returns the same entry");
+                }
+                check(plain.size() == pooled.size() && plain.evictions() == pooled.evictions() && plain.bytes() == pooled.bytes(),
+                      "entries, evictions and bytes are the same with and without a pool");
+                evicted_any += plain.evictions() > 0;
+            }
+            check(refused > 0 && evicted_any > 0 && pool.shrinks > 0, "the workload refused, evicted and trimmed the pool at least once");
+        }
     }
     std::printf("conversation_cache_test: %d checks passed\n", checks);
 }

@@ -150,21 +150,21 @@ STRATA_PROGRAMS = {
     "strata_control/tune_api.py": 1,   # tuning worker (wrapped)
     "strata_control/tune_engine.py": 2,  # tuning engine (wrapped) + ps
     "strata_control/tune_session.py": 1,  # tuning worker (quiet_crash_env)
-    "strata_control/tuning.py": 1,     # engine --help (engine_env)
+    "strata_control/tuning.py": 2,     # engine --help and the bare-flag probe of an undocumented flag (#4652), both engine_env
     "strata_control/shape_engine.py": 2,  # engine --version / --geometry (inherit)
-    "strata_control/dsv41_engine.py": 1,  # --version (inherits)
-    "strata_control/dsv41_flags.py": 1,   # --help (inherits)
-    "strata_control/dsv41_paths.py": 1,   # --version (inherits)
-    "strata_control/updater.py": 3,       # --version probes (inherit)
+    "strata_control/native_helpers.py": 1,  # an opted-in native helper (strata-<name>, no ggml; inherits)
+    "strata_control/local_engine.py": 1,  # the added build's --version check (#5114, quiet_crash_env)
+    "strata_control/updater.py": 4,       # --version probes and the AMD test start's strata-device probe (inherit)
     "strata_cli/bench_standard.py": 2,    # `strata.py serve` (inherits: cli.main sets it) + taskkill
     "strata_cli/launch/runner.py": 2,     # setup.py and the other children (_env)
     "strata_cli/launch/params.py": 2,     # engine --help (inherits)
     "strata_cli/cli.py": 2,               # setup.py, the revise command
-    "setup.py": 17,                       # builds, engine probes, the helpers it runs (main sets it)
+    "setup.py": 19,                       # builds, engine probes, the helpers it runs (main sets it); the update's git calls and the
+                                          # re-run of the pulled setup.py (it inherits main's environment, Q6)
 }
 OTHER_PROGRAMS = {
     "serve/mcp.py": 2,                 # the person's MCP servers and taskkill
-    "serve/telemetry.py": 2,           # sysctl, a Metal tool
+    "serve/telemetry.py": 3,           # sysctl, a Metal tool, PowerShell's Get-PnpDevice (the Windows AMD PCIe link, #4884)
     "strata_control/doctor.py": 1,
     "strata_control/engine_component.py": 4,   # nvidia-smi, powershell, lspci-style probes
     "strata_control/gpu_roles.py": 1,          # python -c

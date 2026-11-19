@@ -367,6 +367,7 @@ Datos en bruto: [`summary.json`](bench/results/2026-10-02-v100-single-cooled/sum
 
 Los pull requests recientes de V100 incluyen cambios medidos a nivel de kernel e informan de forma explícita cuando no se demuestran ganancias de extremo a extremo. Por ejemplo, el porte de atención de prompt del PR #600 de upstream informó un 27.9% menos de tiempo de kernel int8 en su forma medida. En las ejecuciones informadas, los cambios de prefill del modelo variaron de +1.3% a +3.0%. El porte no demostró una ganancia fiable de decode. Lee el [informe completo](benchmarks/v100-q2_0-pr600-2026-10-03.md) antes de comparar resultados.
 
+<a id="the-other-sizes"></a>
 ## Trabajo de rendimiento en V100
 
 El trabajo en V100 abarca la ruta de prompt, la ruta de decode, el uso de memoria, las lecturas de almacenamiento y la ejecución multi-GPU. Los cambios de abajo están en el historial fusionado del fork; cada enlace incluye su propio método de prueba, detalles de hardware y limitaciones. Las mejoras de tiempo de kernel no producen necesariamente el mismo porcentaje de ganancia en el rendimiento del modelo completo.
@@ -415,6 +416,7 @@ Este fork sigue la experiencia de instalación de upstream. Para ver los requisi
 - Sigue las indicaciones para seleccionar un modelo y un tamaño de contexto. El setup descarga los datos del modelo y arranca el servicio local.
 - Abre la dirección que imprime el setup (normalmente `http://127.0.0.1:8080`).
 
+<sub>Archivos: `Strata-0.2.15-windows-x64-setup.exe` · `Strata-0.2.15-linux-x86_64.AppImage` · `Strata-0.2.15-macos-arm64.dmg`</sub>
 Para una Tesla V100, usa el motor CUDA 12 con soporte de `sm_70`. El setup selecciona el motor para GPU más antiguas en Volta; en Linux lo compila localmente. El archivo CUDA 12 de Windows de upstream incluye código Volta, pero no se probó en esta máquina Linux. Consulta la [guía para GPU más antiguas](docs/OLDER_GPUS.md) para ver los requisitos de toolkit y controlador. Para Docker, sigue las [instrucciones de Docker](docs/INSTALL.md) y compila para la arquitectura de GPU objetivo.
 
 ## Uso de Strata

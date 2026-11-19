@@ -8,7 +8,7 @@ import unicodedata
 from typing import Any
 
 from strata_cli import nav
-from strata_cli.client import complete_slots
+from strata_cli.client import card_link, complete_slots
 
 
 VIEWS = ("overview", "serving", "requests", "engine", "hardware", "logs")
@@ -226,6 +226,17 @@ def activity_label(row: dict, width: int) -> str:
     return _line(f"#{number(row.get('seq')):<6} {clock}  {field(row.get('request_id'), 12)}  {label}", width)
 
 
+def short_gpu(name: str | None) -> str:
+    """The card's name without the maker prefixes that eat a tile's width ("NVIDIA GeForce RTX 5070" -> "RTX 5070"). Here, not in overview.py: this module
+    is the plain-text one that `strata status` runs on stdlib alone, and overview.py needs rich (it imports this name from here)."""
+    if not name:
+        return "graphics card"
+    for prefix in ("NVIDIA GeForce ", "NVIDIA ", "AMD Radeon ", "AMD ", "Intel(R) ", "Intel "):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    return name
+
+
 def _device(row: dict, width: int) -> str:
     idx = row.get("index")
     label = f"GPU {idx if idx is not None else '?'}"
@@ -233,9 +244,15 @@ def _device(row: dict, width: int) -> str:
     mem = f"{number(used / 2**30 if isinstance(used, (int, float)) else None, '', 1)}/{number(total / 2**30 if isinstance(total, (int, float)) else None, ' GiB', 1)}"
     if width < 80:
         return _line(f"{label:<7} {mem:<17} util {number(row.get('util'), '%')}", width)
-    from strata_cli.overview import short_gpu              # "NVIDIA GeForce RTX 3090" -> "RTX 3090": the maker's prefix used to cut the model off
     name = short_gpu(row.get("name")) if row.get("name") else None
-    return _line(f"{label:<7} {field(name, 20)} {mem:<17} {number(row.get('util'), '%'):>5}  {number(row.get('temp'), ' C'):>6}  {number(row.get('power'), ' W'):>7}", width)
+    link = card_link(row)      # each card trains its own PCIe link: show that card's, not one card's for the run
+    base = (f"{label:<7} {field(name, 20)} {mem:<17} {number(row.get('util'), '%'):>5}  {number(row.get('temp'), ' C'):>6}"
+            f"  {number(row.get('power'), ' W'):>7}")
+    # an 80-column terminal has no room for a capped card's second number: the width the card runs at is the one that
+    # matters there, and dropping "of x16" beats the line's own crop cutting it mid-word (the detail pane below keeps both)
+    if link and len(link) > width - len(base) - 2:
+        link = card_link(row, gap=False)
+    return _line(base + (f"  {link:>8}" if link else ""), width)
 
 
 def _device_stage(topology: dict, index: Any, width: int) -> str:
@@ -320,7 +337,11 @@ def _device_detail(row: dict, topology: dict, width: int) -> list[str]:
     return ["DEVICE DETAIL  (read only)",
             _line(f"GPU {number(row.get('index'))}   {safe(row.get('name'), 30)}", width),
             _line(f"VRAM {number(used_gib, ' GiB', 1)} / {number(total_gib, ' GiB', 1)}   Util {number(row.get('util'), '%')}", width),
-            _line(f"Temperature {number(row.get('temp'), ' C')}   Power {number(row.get('power'), ' W')}", width),
+            _line(f"Temperature {number(row.get('temp'), ' C')}   Power {number(row.get('power'), ' W')}" +
+                  # this card's own ceiling (NVML's enforced limit, sysfs power1_cap): the tile above shows the two
+                  # cards' limits added together, so the card you picked needs its own
+                  (f" of {number(row.get('power_limit'), ' W')}" if row.get("power_limit") is not None else "") +
+                  (f"   Link {card_link(row)}" if card_link(row) else ""), width),
             _line(f"Placement {safe(topology.get('mode'), 24)}; split {safe(topology.get('configured_split'), 24)}", width),
             _device_stage(topology, row.get("index"), width)]
 

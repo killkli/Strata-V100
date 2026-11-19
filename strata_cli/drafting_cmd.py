@@ -38,8 +38,8 @@ def add_parser(sp) -> None:
         one.add_argument("--output", choices=("human", "json", "jsonl"), default="human")
 
 
-def _hardware() -> tuple[str | None, list[str]]:
-    return drafting.detect_hardware()
+def _hardware(engine_backend: str | None = None) -> tuple[str | None, list[str]]:
+    return drafting.hardware_for(engine_backend)   # #5109: the config's card family on a mixed NVIDIA + AMD computer, else detect_hardware()
 
 
 def _split_expected(cfg: dict, args: list, unloading: bool = False) -> bool:
@@ -114,7 +114,7 @@ def _inputs(a) -> dict:
         if data is None:
             from strata_cli.launch.catalog import Catalog
             data = Catalog().data_dir()
-    backend, archs = _hardware()
+    backend, archs = _hardware(cfg.get("backend"))
     args = cfg.get("args") or []
     model_name = cfg.get("model_name") or _planned_model_name(a)
     mode = a.mode if a.mode else cfg.get("drafting")
@@ -123,9 +123,17 @@ def _inputs(a) -> dict:
     elif drafting.normalize(mode) in ("auto", "mtp") and not getattr(a, "no_split", False) and _split_expected({**cfg, "drafting": mode}, args, bool(getattr(a, "engines_unloading", False))):
         a._split = True                                      # the plan says so (the app's Models screen and its load read it); asked with the choice in hand, as the Terminal does
         mode = "mtp"                                         # the all-cards split engine runs the MTP draft layer: the app fetches that, not DFlash2's drafter
+    parallel = cfg.get("parallel") if isinstance(cfg.get("parallel"), int) else 0
+    slot_drafts = False
+    if str(backend or "").lower() == "cuda" and drafting.request_count(args, parallel) in drafting.SLOT_DRAFT_REQUESTS:     # (the card is only read for a start that could be in the class)
+        sig = _signals(a, {"backend": backend, "archs": archs})
+        slot_drafts = drafting.slot_drafts_by_default(mode, backend=backend, archs=archs, vram_mib=sig.get("vram_mib"), args=sig.get("args"), slots=parallel)   # the drafter is fetched before the start
     return {"mode": mode, "klass": drafting.card_class(archs), "model_name": model_name, "family": a.family, "data_dir": data,
             "backend": backend, "archs": archs, "mtp_here": drafting.mtp_ready(args) if cfg else None,
-            "blocked": drafting.blocked_by(args, slots=cfg.get("parallel") if isinstance(cfg.get("parallel"), int) else 0, named=drafting.normalize(mode) == "dflash2", backend=backend)}
+            "blocked": drafting.blocked_by(args, slots=parallel, named=drafting.normalize(mode) == "dflash2", backend=backend, slot_drafts=slot_drafts),
+            "slots_none": drafting.slots_draft_nothing(drafting.merged_args(cfg), parallel),      # (False when the request count is not in the config: today's line)
+            "mtp_dropped": drafting.batch_mtp_dropped(drafting.merged_args(cfg), parallel,
+                                                      len(cfg["gpu"]) if isinstance(cfg.get("gpu"), list) and "--peer-device" not in args else 1)}
 
 
 def _signals(a, want: dict) -> dict:
@@ -155,12 +163,13 @@ def run(a) -> int:
     sig = _signals(a, want)
     needed = drafting.needs_pack(**want, **sig) or drafting.needs_tuned(**want, **sig)       # (the tuned drafter is a download of its own, where the set and the card use it)
     tuned_needed = drafting.needs_tuned(**want, **sig)
-    mtp_needed = drafting.needs_mtp(**want, **sig)
+    mtp_needed = drafting.needs_mtp(**want, **sig) or (not needed and want["mtp_here"] is False and drafting.normalize(want["mode"]) != "off"
+                                                       and drafting.decide(**want, **sig).drafter == "off")   # the start's safety net (runner.fetch_missing_drafter): never no drafter unless Off was chosen
     if a.drafting_command == "plan":
         decision = drafting.decide(**want, **sig)
         support = drafting.hardware_support(want["backend"], want["archs"], want["model_name"])
         # serves: this computer's engine can run DFlash2 (the build has the code and the card is one it is made for); the app offers the choice only then
-        result = {**drafting_fetch.plan(folder, drafting.installed_engine_exe(), model_name=want["model_name"], backend=want["backend"], archs=want["archs"], **sig), "needed": needed, "tuned_needed": tuned_needed, "mtp_here": want["mtp_here"], "mtp_needed": mtp_needed, "mtp_gb": MTP_FETCH_GB if mtp_needed else 0.0,
+        result = {**drafting_fetch.plan(folder, drafting.installed_engine_exe(want["backend"]), model_name=want["model_name"], backend=want["backend"], archs=want["archs"], **sig), "needed": needed, "tuned_needed": tuned_needed, "mtp_here": want["mtp_here"], "mtp_needed": mtp_needed, "mtp_gb": MTP_FETCH_GB if mtp_needed else 0.0,
                   "serves": drafting.ENGINE_SERVES_DFLASH2 and support.can_run, "drafter": decision.drafter,
                   "choice": drafting.choice_of(want["mode"], model_name=want["model_name"], family=want["family"], backend=want["backend"], archs=want["archs"], **sig),
                   "split": bool(getattr(a, "_split", False)), "note": decision.note, "line": drafting.summary_line(decision), "support": support.level, "support_line": support.line}

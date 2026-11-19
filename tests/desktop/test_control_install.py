@@ -105,10 +105,6 @@ class ControlModeTests(unittest.TestCase):
 
     def test_the_engine_is_the_component_and_a_missing_one_does_not_stop_the_download(self):
         S = self.S
-        llama = self.home / "third_party" / "llama.cpp"
-        (llama / "ggml").mkdir(parents=True)
-        (llama / "ggml" / "CMakeLists.txt").write_text("", encoding="utf-8")
-        (llama / "gguf-py").mkdir()
         empty = Path(self.tmp.name) / "components"
         empty.mkdir()
         gpu = {"index": 0, "vram_gb": 12.0}
@@ -117,7 +113,8 @@ class ControlModeTests(unittest.TestCase):
                 mock.patch.object(S, "build_engine", side_effect=AssertionError("built")), \
                 mock.patch.object(S, "get_prebuilt", side_effect=AssertionError("fetched an engine")):
             found, eng, meta, libs, chosen, vision = S.engine_step(mock.Mock(build=False, prebuilt=None), gpu, False, [], 13, "gpu")
-        self.assertEqual(found.resolve(), llama.resolve())
+        self.assertIsNone(found, "no llama.cpp tree: the engine is the component, gguf-py is vendored")
+        self.assertFalse((self.home / "third_party" / "llama.cpp").exists(), "nothing is fetched into the install folder")
         self.assertEqual(libs, [])
         self.assertEqual(vision, "none")                                   # images are not in the first app release
         self.assertEqual(meta["source"], "local")
@@ -175,7 +172,8 @@ class ControlModeTests(unittest.TestCase):
         finally:
             sys.path.pop(0)
         tools = stage.local_imports(ROOT, stage.INSTALLER_TOOLS)
-        for need in ("strata_mcp", "iq_pack", "strata_pack", "canonical_xcheck", "pack_layer", "gguf_reader", "gguf_writer", "_paths"):
+        for need in ("strata_mcp", "iq_pack", "strata_pack", "canonical_xcheck", "pack_layer", "gguf_reader", "gguf_writer", "_paths",
+                     "strata_gguf", "strata_quants", "strata_quant_tables"):
             self.assertIn(need, tools)
         out = Path(self.tmp.name) / "control"
         out.mkdir()
@@ -471,6 +469,34 @@ class DeleteModelTests(unittest.TestCase):
         self.assertTrue(outside.is_file())
         described = self.s.describe_config(self.root / "strata-iq3_s.json")
         self.assertGreater(described["disk_bytes"], 10000)
+
+    def test_read_only_files_and_an_empty_read_only_folder_do_not_stop_the_delete(self):
+        # #4089: an empty read-only folder in the pack stopped the delete with WinError 5 and left gigabytes behind. A read-only mark
+        # inside the planned removal is cleared and the path removed; nothing outside the plan is touched or made writable.
+        import stat as st
+        pack = self.data / "packs" / "iq3_s"
+        ro_dir = pack / "cache" / "empty"
+        ro_dir.mkdir(parents=True)
+        ro_file = self.make(pack / "tokenizer" / "merges.txt", 50)
+        first = self.data / "models" / "iq3_s" / "shard-1.gguf"
+        outside = self.make(Path(self.tmp.name) / "elsewhere" / "keep.txt", 5)
+        for p in (ro_file, first, outside):
+            os.chmod(p, st.S_IREAD)
+        if os.name == "nt":
+            import ctypes
+            for p in (ro_dir, pack / "cache"):
+                self.assertTrue(ctypes.windll.kernel32.SetFileAttributesW(str(p), 0x1 | 0x10))   # FILE_ATTRIBUTE_READONLY | DIRECTORY
+        self.addCleanup(lambda: os.chmod(outside, st.S_IREAD | st.S_IWRITE))
+        result = self.tools.strata_remove(model="iq3_s", confirm=True)
+        self.assertEqual(result["failed"], [])
+        self.assertFalse(pack.exists())
+        self.assertFalse(first.exists())
+        self.assertFalse((self.data / "models" / "iq3_s").exists())
+        self.assertTrue(outside.is_file())
+        self.assertFalse(os.stat(outside).st_mode & st.S_IWRITE, "a file outside the plan keeps its read-only mark")
+        self.assertTrue((self.data / "packs" / "q2_0" / "tokenizer" / "vocab.json").is_file())
+        again = self.tools.strata_remove(model="q2_0", confirm=True)
+        self.assertEqual(again["failed"], [])
 
     def test_files_strata_downloaded_into_another_models_folder_are_deleted_too(self):
         # The app installs into its own Models folder while settings.json names another data folder (#3716).

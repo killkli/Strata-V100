@@ -84,9 +84,34 @@ class Monitor(unittest.TestCase):
                             {"messages": [{"role": "user", "content": "Say hello."}],
                              "max_tokens": 256, **think, **kwargs})
 
+    def settled(self, count=1, state="completed"):
+        """The handler writes a request's final state in its `finally`, after the reply has gone out, so a client that reads the history the
+        moment its reply arrives can see the request one step short of done. Wait (up to 5 s) until `count` records are in `state`."""
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            records = list(self.svc.api_requests)
+            if len(records) >= count and all(r["state"] == state for r in records[-count:]):
+                return
+            time.sleep(0.005)
+
     def latest(self):
         summary = self.request("/api/requests")[1]["requests"][0]
         return self.request("/api/requests?id=" + summary["id"])[1]
+
+    def test_a_request_is_completed_a_moment_after_its_reply(self):
+        """The state is written in the handler's `finally`, after the reply has gone out. With that step held for 0.3 s the history
+        read the moment the reply arrives still says the request is not done; `settled()` waits it out (the full suite's load did
+        this by chance: test_queue_wait_and_loading_are_attributed_separately failed once in 1532 runs)."""
+        real = self.svc.drop_embeddings
+
+        def slow_drop():
+            time.sleep(0.3)
+            real()
+        with mock.patch.object(self.svc, "drop_embeddings", side_effect=slow_drop):
+            self.assertEqual(self.chat()[0], 200)
+            self.assertNotEqual(self.latest()["state"], "completed")
+            self.settled()
+            self.assertEqual(self.latest()["state"], "completed")
 
     def test_output_and_reasoning_for_both_dialects_and_stream_modes(self):
         for api in ("openai", "anthropic"):
@@ -94,6 +119,7 @@ class Monitor(unittest.TestCase):
                 with self.subTest(api=api, stream=stream):
                     code, reply = self.chat(api, stream=stream)
                     self.assertEqual(code, 200)
+                    self.settled()
                     record = self.latest()
                     self.assertEqual(record["state"], "completed")
                     self.assertEqual(record["http_status"], 200)
@@ -114,11 +140,13 @@ class Monitor(unittest.TestCase):
         self.svc.fit_max_tokens = False
         self.assertEqual(self.chat(max_tokens=20000)[0], 400)
         self.svc.fit_max_tokens = True
+        self.settled(state="error")
         self.assertEqual(self.latest()["state"], "error")
         for api in ("openai", "anthropic"):
             for stream in (False, True):
                 with self.subTest(api=api, stream=stream), mock.patch.object(self.engine, "generate", side_effect=EngineDied("stopped")):
                     self.chat(api, stream=stream)
+                    self.settled(state="error")
                     record = self.latest()
                     self.assertEqual(record["state"], "error")
                     self.assertIn("stopped", record["error"]["message"])
@@ -181,6 +209,7 @@ class Monitor(unittest.TestCase):
             release.set()
             self.assertEqual(first.result()[0], 200)
             self.assertEqual(second.result()[0], 200)
+        self.settled(2)
         records = list(self.svc.api_requests)
         self.assertGreater(records[0]["load_s"], 0.02)
         self.assertGreater(records[1]["queue_s"], 0.02)
@@ -243,6 +272,61 @@ class ConversationCacheCard(unittest.TestCase):
                 st = ConvCacheLog().poll(str(log), 0)
                 self.assertEqual((st["parked"], st["bytes"], st["evictions"], st["parks"], st["last_event"],
                                   st["last_tokens"]), want)
+    SKIPS = [
+        "strata serve: conversation cache: skip parking (12 tokens, below the 512 minimum ...)\n",
+        "strata serve: conversation cache: skip parking (snapshot 9000 MiB exceeds available budget)\n",
+        "strata serve: conversation cache: skip parking (physical RAM admission; need 4000 MiB plus 2560 MiB floor, "
+        "MemAvailable 5000 MiB; evicted 4, 0 still parked)\n",
+        "strata serve: conversation cache: skip parking (physical RAM admission; need 4000 MiB plus 2560 MiB floor, "
+        "MemAvailable 5000 MiB; evicted 1, 3 still parked; the last eviction gave no memory back, so the rest stay parked)\n",
+        "strata serve: conversation cache: skip parking (RAM floor after capture: 2560 MiB needed, MemAvailable 2000 MiB)\n",
+        "strata serve: conversation cache: allocation failed; skip parking\n",
+        "strata serve: conversation cache: allocation failed; skip parking slot 2\n",
+        "strata serve: conversation cache: skip parking (stage CUDA1: invalid session running-state targets)\n",
+        "strata serve: conversation cache: skip parking (conversation snapshot: invalid live token/image metadata)\n",
+        "strata serve: conversation cache: skipped 5000 tokens in 3.0 ms; parked=0 bytes=0 evictions=2 snapshot_bytes=1 "
+        "reused_kv_bytes=0\n",
+    ]
+
+    def test_refused_parks_by_reason(self):
+        """#6081: every refusal the engine logs is counted once, under a stable reason; a poll that reads nothing new
+        counts nothing; another start of the engine starts at zero."""
+        from serve.server import ConvCacheLog
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "strata.log"
+            log.write_text("", encoding="utf-8")
+            c = ConvCacheLog()
+            self.assertEqual((c.poll(str(log), 0)["refused"], c.poll(str(log), 0)["refused_total"]), ({}, 0))
+            with open(log, "a", encoding="utf-8") as f:
+                f.write("".join(self.SKIPS) + self.PARK)
+            st = c.poll(str(log), 0)
+            self.assertEqual(st["refused"], {"short": 1, "budget": 1, "ram_floor": 1, "ram_no_progress": 1,
+                                             "ram_after_capture": 1, "alloc": 2, "estimate": 2, "put": 1})
+            self.assertEqual((st["refused_total"], st["parks"], st["last_refused"]), (10, 1, "put"))
+            st["refused"]["budget"] = 99                    # the caller's copy
+            again = c.poll(str(log), 0)
+            self.assertEqual((again["refused"]["budget"], again["refused_total"]), (1, 10))   # nothing new: nothing counted
+            start = log.stat().st_size
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(self.SKIPS[1])
+            self.assertEqual(c.poll(str(log), start)["refused"], {"budget": 1})   # the engine started again
+
+    def test_prometheus_counts_the_cache(self):
+        tok = ByteTokenizer()
+        engine = MockEngine(tok, "Hello.", max_context=4096)
+        svc = Service(engine, tok, ChatTemplate(Path(__file__).parent / "chat_template.jinja"))
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "strata.log"
+            log.write_text(self.PARK + "".join(self.SKIPS[1:3]), encoding="utf-8")
+            engine.log_path, engine.log_start = str(log), 0
+            text = svc.prometheus()
+        self.assertIn('strata:conversation_cache_refused_total{reason="budget"} 1\n', text)
+        self.assertIn('strata:conversation_cache_refused_total{reason="ram_floor"} 1\n', text)
+        self.assertIn("strata:conversation_cache_parks_total 1\n", text)
+        self.assertIn("# TYPE strata:conversation_cache_refused_total counter\n", text)
+        self.assertEqual(text.count("# TYPE strata:conversation_cache_refused_total"), 1)
 
     def test_metrics(self):
         tok = ByteTokenizer()

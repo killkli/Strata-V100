@@ -1,15 +1,15 @@
 # Installing Strata
 
-Everything about installing, starting, updating and configuring Strata, on Windows, Linux and Mac, with an NVIDIA
-or an AMD graphics card or an Apple Silicon Mac. The short version is in the [README](../README.md#install-and-start). An AI
-coding assistant can do all of this for you with [AI_SETUP.md](AI_SETUP.md).
+This page is for anyone installing or updating Strata (version 0.2.15). Use the **desktop app** for a graphical
+interface, or the **Terminal** for `strata launch` and coding tools. Both use released engine packages. A normal
+install does not need a source checkout or a startup `.bat` file.
 
 There are three ways to install it. Take the first one unless you have a reason not to:
 
-1. **[The app](#the-app):** a desktop program with the engine inside. Install it, pick a model, chat.
-2. **[The Terminal](#the-terminal):** one line in a terminal, then `strata launch`. For scripts, servers and AI agents.
-3. **[From source](#from-source-windows):** `START-HERE.bat` on Windows, `./setup.sh` on Linux and Mac. It builds or
-   fetches the engine itself.
+| I want | Do this |
+| --- | --- |
+| A window with chat | Download the installer from the [latest release](https://github.com/Niko1221/Strata/releases/latest) ([steps](#the-app)) |
+| The terminal, or my coding tool | Run the one-line install, then `strata launch` ([steps](#the-terminal)) |
 
 > **On this page:** [What you need](#what-you-need) · [The app](#the-app) · [The Terminal](#the-terminal) ·
 > [From source: Windows](#from-source-windows) · [Linux](#from-source-linux) · [Mac](#from-source-mac) ·
@@ -21,12 +21,12 @@ There are three ways to install it. Take the first one unless you have a reason 
 
 | | |
 | --- | --- |
-| **GPU** | **NVIDIA** RTX 20, 30, 40 or 50 series, **12 GB VRAM or more** (8 GB runs, slowly). Measured on an RTX 5070 and an RTX 3090; RTX 20 (Turing, since 0.1.27) was tested by a contributor on an RTX 2070. **AMD** Radeon RX 7900 XT / XTX, RX 9070 / 9070 XT and Radeon AI PRO R9700 (validated), RX 7800 XT / 7700 XT and RX 9060 XT (validated by their owners), RX 6800 / 6900 series (community-reported), with 12 GB of VRAM or more. See [AMD cards](#amd-cards). |
-| **RAM** | Enough for the size you pick ([which model](MODELS.md#pick-by-memory)); **64 GB** runs every size. A big GPU makes up for less RAM - the [low-RAM mode](MODELS.md#a-big-graphics-card-and-little-ram). |
-| **CPU** | x86-64 with AVX2 (any Intel/AMD desktop CPU from the last ~8 years). AVX-512 (Ryzen 7000/9000) is a bit faster. Older CPUs without AVX2 are experimental and slow: [Older CPUs](#older-cpus-experimental). |
-| **Disk** | The app and its engine take about 1-3 GB. ~70-80 GB free for the model, ~6 GB for the MTP layer (+1 GB with images). Q2_0 on an AVX-512 CPU also writes a one-time ~40 GB copy of its experts for the fast CPU kernel. On Linux with an AMD card, ROCm takes ~10 GB more when setup installs it. An NVMe SSD is strongly recommended: it makes the first start much faster. |
-| **OS** | Windows 10/11, Linux (Ubuntu 22.04/24.04 and Debian 12/13 get everything installed automatically; the app also runs on Fedora 44), or a Mac with Apple Silicon (M1 or newer) and macOS 15 or newer ([the upstream Mac guide](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md)). |
-| **Driver** | **NVIDIA:** a current driver, version 580 or newer ([nvidia.com/drivers](https://www.nvidia.com/drivers) or the NVIDIA App). **AMD:** on Linux the kernel's amdgpu driver (no ROCm install needed); on Windows a current AMD Software: Adrenalin Edition driver ([amd.com/support](https://www.amd.com/en/support)). |
+| Windows 10/11 or Linux x86-64 with an NVIDIA RTX GPU | Use the app or the Terminal. The engine for your card is downloaded for you. [Older NVIDIA cards](OLDER_GPUS.md) use the CUDA 12 engine. |
+| Windows or Linux x86-64 with a supported AMD Radeon | [AMD guide](AMD_HIP.md), including the card-to-package table. |
+| Linux x86-64 with Intel Arc | [Intel Arc guide](INTEL_ARC.md); install the driver/compute runtime and check model preparation requirements |
+| Apple Silicon Mac, macOS 15 or newer | [Mac guide](MAC.md). Intel Macs are not supported by the Mac package. |
+| AMD Ryzen AI Max / Strix Halo | [Strix Halo guide](STRIX_HALO.md) |
+| NVIDIA DGX Spark (Linux ARM64) | [DGX Spark guide](DGX_SPARK_LINUX.md). Use the Terminal; there is no desktop app for ARM64 Linux. |
 
 The driver is the only thing you install yourself. With the app, the engine is inside the installer. With the
 Terminal, `strata launch` fetches the engine for your card from the signed update feed, and nothing is compiled.
@@ -44,7 +44,17 @@ packages during an update.
 
 ## The app
 
-The app is the easiest way. It has the engine inside, so there is nothing to build and no setup window.
+1. Open the [latest release](https://github.com/Niko1221/Strata/releases/latest).
+2. Download the one installer for your system. There is one per system, not one per graphics card:
+   - **Windows:** run `Strata-0.2.15-windows-x64-setup.exe`. It installs for your user and needs no administrator rights.
+   - **Linux:** make `Strata-0.2.15-linux-x86_64.AppImage` executable, then open it. If FUSE is unavailable, run the
+     downloaded file with `--appimage-extract-and-run`. [Linux help](TROUBLESHOOTING.md).
+   - **Mac:** open `Strata-0.2.15-macos-arm64.dmg`, drag Strata into Applications, then open it. [Mac help](MAC.md).
+3. On Windows and Linux the installer has no engine inside. On first start the app shows the engine for your
+   graphics card with its size and one **Download** button, with progress and resume. If you already downloaded the
+   engine file, choose **I already have the file** and it installs without internet. The Mac file keeps its small
+   Metal engine inside.
+4. Choose a model and its storage folder, let it download, then chat.
 
 1. Download the installer for your system from the [releases page](https://github.com/Niko1221/Strata/releases/latest).
    The page says which installer is for which graphics card (NVIDIA or AMD). Take the one that matches yours.

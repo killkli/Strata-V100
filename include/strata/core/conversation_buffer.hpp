@@ -1,5 +1,6 @@
 #pragma once
 
+#include "strata/core/conversation_segment_pool.hpp"
 #include "strata/core/progress.hpp"
 
 #include <algorithm>
@@ -10,10 +11,27 @@
 #include <memory>
 #include <type_traits>
 #include <unordered_map>
+#include <new>
 #include <utility>
 #include <vector>
 
 namespace strata::core {
+
+namespace conversation_buffer_detail {
+// Where a segment's bytes come from: the process-wide segment pool (STRATA_PARK_SEGPOOL_MIB, conversation_segment_pool.hpp)
+// when one is installed and has a free run for it, else ::operator new as always.  The pool decides by pointer on the way
+// back, so allocate and deallocate always agree.
+inline void* segment_alloc(size_t bytes) {
+    if (SegmentPool* pool = segment_pool())
+        if (void* p = pool->allocate(bytes)) return p;
+    return ::operator new(bytes);
+}
+inline void segment_free(void* p, size_t bytes) noexcept {
+    if (SegmentPool* pool = segment_pool())
+        if (pool->deallocate(p, bytes)) return;
+    ::operator delete(p);
+}
+}   // namespace conversation_buffer_detail
 
 // Snapshot-owned host storage.  The payload is a list of pieces, each a shared
 // 16 MiB allocation plus the number of bytes of it this buffer uses.  A copy, a
@@ -200,7 +218,17 @@ public:
     bool operator!=(const ConversationBuffer& other) const { return !(*this == other); }
 
 private:
-    using Segment = std::vector<uint8_t>;
+    // value-initializes only when asked (resize's explicit fill value): resize_for_overwrite leaves the bytes alone
+    template<class T> struct DefaultInit : std::allocator<T> {
+        template<class U> struct rebind { using other = DefaultInit<U>; };
+        DefaultInit() = default;
+        template<class U> DefaultInit(const DefaultInit<U>&) noexcept {}
+        T* allocate(size_t n) { return static_cast<T*>(conversation_buffer_detail::segment_alloc(n * sizeof(T))); }
+        void deallocate(T* p, size_t n) noexcept { conversation_buffer_detail::segment_free(p, n * sizeof(T)); }
+        template<class U> void construct(U* p) { ::new ((void*) p) U; }
+        template<class U, class... A> void construct(U* p, A&&... a) { ::new ((void*) p) U(std::forward<A>(a)...); }
+    };
+    using Segment = std::vector<uint8_t, DefaultInit<uint8_t>>;
     // A byte range within one physical allocation.
     struct Piece {
         std::shared_ptr<Segment> seg;

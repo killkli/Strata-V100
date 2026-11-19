@@ -34,11 +34,12 @@ strata launch --family unsloth --model UD-Q4_K_XL
   SHA-256 against the table below once and remembers it in the file's finish mark. A file with the wrong hash is
   deleted, so the next run downloads it again.
 - **Packing.** `--compat-bf16`, and never an `experts.bin` (`--low-ram` does not apply).
-- **Defaults it writes** into the run config's `env`: `STRATA_HC_Q8=1` on CUDA (the GGUF's own Q8_0 hyper-connection
-  projections, closer to the file and faster), and `STRATA_ROUTE_TAIL_SKIP=0` where every expert is in RAM, except on
+- **Defaults it writes** into the run config's `env`: `STRATA_ROUTE_TAIL_SKIP=0` where every expert is in RAM, except on
   Linux AMD gfx12 (R9700, RX 9000), where the engine's own default (the skip on, rank 7) stays: UD-Q4_K_XL decodes 6-16%
   faster there at an unchanged 61-task suite (`STRATA_ROUTE_TAIL_SKIP=0` turns it off). UD-Q4_K_XL keeps `STRATA_MMQ_KQ`
-  opt-in in the config (the Linux gfx12 engine takes it by itself since 0.2.10.1).
+  opt-in in the config (the Linux gfx12 engine takes it by itself since 0.2.10.1). Setup no longer writes `STRATA_HC_Q8`:
+  on NVIDIA the engine itself reads the file's own Q8_0 hyper-connection projections (closer to the file and faster) for
+  files that carry them as Q8_0, and `STRATA_HC_Q8=0` restores the BF16 read.
 - **Context.** It recommends 8K on a GPU under 14 GB, because every GB of KV cache is a GB less of cached experts.
 - **GPUs.** NVIDIA or AMD. One GPU is the default in the budget mode. With several GPUs, each card caches the experts of
   its own layers and the budget holds the hottest of the rest by the whole expert profile. Setup asks; `--gpus 0,1`
@@ -199,7 +200,6 @@ same top 20 per position.
 | Variable | Effect |
 | --- | --- |
 | `STRATA_LOOKAHEAD=0` | Turns off the routing-aware prefetch (on by default in this mode). While the CPU works on a layer, a thread applies the next layer's router to this layer's input and asks the OS to read the predicted experts' pages. Pages only; the answers are the same. `STRATA_LOOKAHEAD_K` sets the experts per token (default 10). |
-| `STRATA_MMQ_KQ=1` | Multiplies the Q4_K / Q5_K / Q5_1 experts of a prompt with llama.cpp's MMQ kernels instead of dequantizing them to FP16. It rounds differently from the FP16 path, so it is opt-in for this file. On CUDA the kernels are a library next to the engine (`libstrata_kq.so` / `strata_kq.dll`), opened only then, so they take no VRAM from other models ([QUANTS.md](QUANTS.md)). |
 | `STRATA_KQ256=1` | Multi-token AVX2 kernels for the Q4_K / Q5_1 / Q8_0 experts. Bit-exact with ggml's, but measured no faster, so off. |
 | `STRATA_PARTIAL_PIN=1` | Registers the hottest part of the RAM budget (up to `STRATA_PARTIAL_PIN_GIB`, default 24) with the GPU driver, so the GPU computes a share of the misses over PCIe (`--pcie-frac`). Measured no faster, and it changes the numerics of those experts, so off. |
 | `STRATA_FETCH_THREADS=N` | Threads that read the experts from the GGUF while it answers (default 8). The prompt path has its own: `STRATA_STAGER_THREADS` (default 32 here) and `STRATA_STAGER_RING` (128). |
@@ -233,8 +233,7 @@ what you see.
 
 One fidelity note applies to every `--compat-bf16` pack, UD-Q4_K_XL included. The pack rounds the file's Q8_0
 hyper-connection projections to BF16, and on the Strix Halo that put perplexity 6 to 9% above llama.cpp's on the same
-file (teacher-forced, short context). `STRATA_HC_Q8=1`, which setup writes on CUDA for the UD files, reads the file's Q8_0
-values instead of the rounded BF16. The 6 to 9% gap was measured on AMD, where setup does not write it.
+file (teacher-forced, short context). On NVIDIA the engine reads the file's Q8_0 values instead of the rounded BF16 by default. The 6 to 9% gap was measured on AMD.
 
 ## Q4_0 files
 
@@ -274,8 +273,7 @@ bartowski's Swift-1.5 Q4_0, whose header shows the same formats.
 - Tests: the packer's synthetic 4-shard and conversion tests
   (`.venv/bin/python -m unittest discover -s tools -p test_iq_pack.py`) and the CTests `gguf_split_test`,
   `expert_layout_test`, `native_expert_parity_*` (the three real expert format pairs against ggml-cpu, the Q5_1 min term,
-  Q8_0 rows, Q4_0/Q4_0 and Q4_0/Q4_1). With `-DSTRATA_MMQ_KQUANTS=ON`, `prefill_mmq_kquant_test` checks the prompt path's
-  MMQ products for Q4_K / Q5_K / Q5_1 / Q8_0 against ggml's dequantized weights.
+  Q8_0 rows, Q4_0/Q4_0 and Q4_0/Q4_1).
 - Not validated: sampled decoding and long conversations. Please report what you see.
 
 ## Credits

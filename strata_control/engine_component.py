@@ -133,6 +133,7 @@ class EngineComponent:
     signature: dict | None = None                         # S6: {"alg", "key_id", "value"} over signing_payload()
     raw: dict = field(default_factory=dict, repr=False)   # the manifest as read, for the signature check
     shape: str = ""                                       # the engine of one model shape (strata_control/shape_engine.py): its compiled geometry's name; "" for the Strata engine
+    local: bool = False                                   # (#5114) built on this computer and added with `strata components add-build`: unsigned, used only when chosen
 
     @property
     def exe(self) -> Path:
@@ -150,7 +151,7 @@ class EngineComponent:
         return {"id": self.id, "version": self.version, "platform": self.platform, "backend": self.backend,
                 "entrypoint": self.entrypoint, "exe": str(self.exe), "root": str(self.root),
                 "min_runtime": self.min_runtime, "archs": list(self.archs), "min_driver": dict(self.min_driver),
-                "build_id": self.build_id, "variant": self.variant, "signed": bool(self.signature), "file_count": len(self.files), "bytes": sum(item[2] for item in self.files),
+                "build_id": self.build_id, "variant": self.variant, "signed": bool(self.signature), "local": self.local, "file_count": len(self.files), "bytes": sum(item[2] for item in self.files),
                 **({"shape": self.shape} if self.shape else {})}
 
 
@@ -208,29 +209,16 @@ def cached_notice(root: Path | None = None) -> str | None:
     The notice belongs to the versions the check was made for: it is dropped when Control or the installed engine is not the one
     recorded then (an app install, an update, a rollback), and an engine that is not newer than the installed one is never offered."""
     offers = cached_offers(root)
-    parts = ([f"engine {offers['engine']}"] if offers.get("engine") else []) + ([f"DeepSeek engine {offers['dsv41']}"] if offers.get("dsv41") else []) \
-        + ([f"app {offers['app']}"] if offers.get("app") else [])
+    parts = ([f"engine {offers['engine']}"] if offers.get("engine") else []) + ([f"app {offers['app']}"] if offers.get("app") else [])
     return f"update available ({', '.join(parts)}): run `strata update`" if parts else None
 
 
-def _installed_dsv41_version(profile_configs=None) -> str | None:
-    """The newest DeepSeek engine package the saved profiles name (a local read), or None."""
-    from strata_control import dsv41_paths
-    newest = None
-    for r in dsv41_paths.roots_of(profile_configs if profile_configs is not None else dsv41_paths.saved_configs()):
-        for exe in dsv41_paths.installed(r):
-            v = exe.parent.name.split("-")[0]
-            if newest is None or _version_key(v) > _version_key(newest):
-                newest = v
-    return newest
-
-
 def cached_offers(root: Path | None = None) -> dict:
-    """What the last explicit check found newer, as {"engine": version|None, "dsv41": version|None, "app": version|None}; local reads only (the cached
+    """What the last explicit check found newer, as {"engine": version|None, "app": version|None}; local reads only (the cached
     check, the installed packages), never the network.  The same rules as `cached_notice`: it belongs to the Control and the packages it was made for,
     and a package that is not newer than the installed one is never offered."""
     base = root or components_dir()
-    none = {"engine": None, "dsv41": None, "app": None}
+    none = {"engine": None, "app": None}
     try:
         last = (json.loads((base / UPDATE_STATE).read_text(encoding="utf-8-sig")).get("last_check") or {})
     except (OSError, ValueError, AttributeError):
@@ -240,17 +228,13 @@ def cached_offers(root: Path | None = None) -> dict:
     control = runtime_version()
     if "control" in last and last["control"] != control:
         return none
-    engine, app, dsv41 = last.get("engine"), last.get("app"), last.get("dsv41")
+    engine, app = last.get("engine"), last.get("app")
     installed = newest_installed_version(base)
     if "engine_installed" in last and last["engine_installed"] != installed:
         engine = None
     if engine and installed and _version_key(str(engine)) <= _version_key(installed):
         engine = None
-    if dsv41:
-        have = _installed_dsv41_version()
-        if have is None or "dsv41_installed" in last and last["dsv41_installed"] != have or _version_key(str(dsv41)) <= _version_key(have):
-            dsv41 = None
-    return {"engine": engine or None, "dsv41": dsv41 or None, "app": app or None}
+    return {"engine": engine or None, "app": app or None}
 
 
 def previous_folder(root: Path | None = None) -> str | None:
@@ -361,7 +345,7 @@ def read_manifest(folder: Path, component_id: str = COMPONENT_ID) -> EngineCompo
         entrypoint=entry, files=tuple(parsed), root=folder, min_runtime=data.get("min_runtime"),
         archs=tuple(archs), notes=str(data.get("notes") or ""), min_driver=dict(driver),
         build_id=str(data.get("build_id") or ""), variant=str(data.get("variant") or ""), signature=signature,
-        raw=data, shape=shape)
+        raw=data, shape=shape, local=data.get("local") is True and not signature)
 
 
 def read_manifest_any(folder: Path) -> EngineComponent:
@@ -492,10 +476,13 @@ def runtime_version() -> str | None:
 
 def split_backend(value) -> tuple[str, str]:
     """(backend, variant) for a name the person typed: "hip-rdna2" is the hip family and its rdna2 package (the way the feed labels an AMD
-    package, #4013), "hip" is the family alone, any other name is returned as it is with no variant."""
+    package, #4013), "hip" is the family alone, a make's own name is its family ("amd" -> hip, "nvidia" -> cuda, "intel" -> sycl: the words
+    `strata launch --backend` takes, so `strata update --backend amd` means the same), any other name is returned as it is with no variant."""
     name = str(value or "").strip().lower()
     if name not in BACKEND_MATRIX and name.startswith("hip-") and len(name) > 4:
         return "hip", name[4:]
+    if name not in BACKEND_MATRIX and name in BACKEND_ALIASES:
+        return BACKEND_ALIASES[name], ""
     return name, ""
 
 
@@ -695,7 +682,8 @@ def _drm_vendor_backend(root: str = "/sys/class/drm") -> str | None:
 #: Strix Halo, 0x1586, is in WIN_AMD_UMA_IDS), so an integrated Radeon beside a card never counts as "the GPU".
 WIN_AMD_DEVICE_ARCH = {0x744C: "gfx1100", 0x7448: "gfx1100", 0x745E: "gfx1100", 0x747E: "gfx1101", 0x7480: "gfx1102",
                        0x7590: "gfx1200", 0x7550: "gfx1201", 0x7551: "gfx1201",
-                       0x73BF: "gfx1030", 0x73AF: "gfx1030", 0x73A5: "gfx1030", 0x73DF: "gfx1031"}
+                       0x73BF: "gfx1030", 0x73AF: "gfx1030", 0x73A5: "gfx1030", 0x73DF: "gfx1031",
+                       0x73FF: "gfx1032", 0x73EF: "gfx1032", 0x73E3: "gfx1032"}
 WIN_AMD_UMA_IDS = {0x1586: "gfx1151"}                                   # Strix Halo: unified memory, supported
 WIN_AMD_IGPU_IDS = {0x150E, 0x1114, 0x1902, 0x15BF, 0x15C8, 0x164F, 0x1900, 0x1901, 0x1681, 0x1638, 0x1636, 0x15D8, 0x15E7}
 _WIN_DISPLAY_CLASS = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
@@ -1039,7 +1027,7 @@ def driver_notice(have: str | None, need: str) -> str:
 
 
 #: The AMD card families a person knows by the box they bought, for the one plain line when a build is for another family.
-HIP_FAMILIES = (("RX 9000", ("gfx1200", "gfx1201")), ("RX 7000", ("gfx1100", "gfx1101", "gfx1102")), ("RX 6000", ("gfx1030", "gfx1031")),
+HIP_FAMILIES = (("RX 9000", ("gfx1200", "gfx1201")), ("RX 7000", ("gfx1100", "gfx1101", "gfx1102")), ("RX 6000", ("gfx1030", "gfx1031", "gfx1032")),
                 ("Ryzen AI Max", ("gfx1151",)))
 
 
@@ -1047,7 +1035,7 @@ def hip_family(arch: str) -> str:
     return next((name for name, archs in HIP_FAMILIES if arch in archs), arch)
 
 
-#: AMD architectures no ready-made engine package of this release covers. Empty since 0.2.2: the RX 6000 series (gfx1030 / gfx1031) has
+#: AMD architectures no ready-made engine package of this release covers. Empty since 0.2.2: the RX 6000 series (gfx1030 / gfx1031; gfx1032 from 0.2.16) has
 #: its own package (Linux `rx6000`, Windows `rdna2`; built, not tested on a real RX 6000 card). The mechanism stays for the next card family
 #: that has none: a family in this table gets the plain "no ready-made engine" line instead of "Ask for the X build".
 NO_PACKAGE_HIP: dict[str, str] = {}
@@ -1101,7 +1089,7 @@ def resolve(root: Path | None = None, *, backend: str | None = None, target: str
     found, problems = scan(base, component_id)
     if not found and not problems:
         raise EngineMissing("the component folder holds no engine package", base)
-    wanted = backend
+    wanted = split_backend(backend)[0] or None if backend else backend     # "amd" / "hip-rx6000" name the hip family
     how = "requested"
     if wanted is None:
         wanted, how = detect_backend()
@@ -1175,6 +1163,13 @@ def resolve(root: Path | None = None, *, backend: str | None = None, target: str
         for item in usable:
             if item.root.name == pin:
                 return item
+    # (#5114) a local build is only ever the chosen engine (the pin above), never picked by itself
+    chosen_only = [item for item in usable if item.local]
+    usable = [item for item in usable if not item.local]
+    if not usable:
+        names = ", ".join(item.root.name for item in chosen_only)
+        raise EngineMissing(f"the only engine for this PC is a local build you haven't chosen ({names}): `strata components use {chosen_only[0].root.name}` uses it",
+                            base, problems=problems)
     # newest version first; with equal versions the build for the newer driver (the CUDA 13 build beside the CUDA 12 one)
     return max(usable, key=lambda item: (_version_key(item.version), _version_key(item.min_driver.get("nvidia", "0")),
                                          hip_preference(item.hip_archs), arch_native(item.cuda_archs, archs_here)))
@@ -1215,6 +1210,7 @@ def status(root: Path | None = None, *, backend: str | None = None, full: bool =
     """What `strata components engine` and the app's host report. Always answers; never raises for a missing engine."""
     base = root or components_dir()
     found, problems = scan(base)
+    backend = split_backend(backend)[0] or None if backend else backend    # `components engine --backend amd` = the hip family
     try:
         detected, how = detect_backend()
     except ComponentProblem as exc:

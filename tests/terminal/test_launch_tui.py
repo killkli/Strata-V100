@@ -179,6 +179,19 @@ class StartScreenTests(Base):
             self.assertIn("No saved presets yet", text_of(app))
         self.run_app(case)
 
+    def test_the_delete_key_asks_like_d(self):
+        """#5819: Del on the preset list did nothing (only "d" was bound); it opens the same question, and Esc leaves the preset alone."""
+        store.save(S.LaunchSettings(name="Old", family="qwen", model="Q2_0", context=32768))
+
+        async def case(app, pilot, ctx):
+            await press(pilot, "delete")
+            self.assertIn("Delete the preset 'Old'?", text_of(app))
+            await press(pilot, "escape")
+            self.assertEqual([p.name for p in store.list_presets()], ["Old"])
+            await press(pilot, "delete", "enter")                    # first option: Delete it
+            self.assertEqual(store.list_presets(), [])
+        self.run_app(case)
+
     def test_delete_can_be_cancelled(self):
         store.save(S.LaunchSettings(name="Keep", family="qwen", model="Q2_0", context=32768))
 
@@ -267,9 +280,11 @@ class ModelStep(Base):
 
     def test_a_model_that_does_not_fit_can_still_be_chosen(self):
         async def case(app, pilot, ctx):
-            await press(pilot, "enter", "end", "enter")
-            last = ctx.rows[-1]
-            self.assertIn(last.verdict, ("slower", "tight"))           # the last row (DeepSeek UD-Q8_K_XL) does not fit 64 GB + a 12 GB card: said, not refused
+            await press(pilot, "enter")
+            last = [r for r in ctx.rows if r.verdict in ("slower", "tight")][-1]     # a row that does not fit 64 GB + a 12 GB card: said, not refused
+            app.screen.menu().select((last.family, last.model))
+            app.screen.paint()
+            await press(pilot, "enter")
             self.assertEqual((ctx.settings.family, ctx.settings.model), (last.family, last.model))
             self.assertIn("Where should the model files be stored?", text_of(app))
         self.run_app(case)
@@ -505,23 +520,6 @@ class PicturesParallelTuning(Base):
             self.assertEqual(ctx.settings.parallel, 3)
             self.assertIn("Tune for the best speed", text_of(app))
         self.run_app(case)
-
-    def test_parallel_step_for_deepseek_is_one_at_a_time_unless_asked(self):
-        """DeepSeek answers one request at a time unless more are asked for: no "fit to my card" (Qwen's rule); 2 to 4 are the choices."""
-        from strata_cli.launch.screens import ParallelScreen
-
-        async def case(app, pilot, ctx):
-            await app.push_screen(ParallelScreen())
-            await pilot.pause(0.2)
-            t = flat(app)
-            self.assertIn("One at a time", t)
-            self.assertIn("2 requests at the same time", t)
-            self.assertNotIn("Fit to my graphics card", t)
-            self.assertIn("73 tokens a second", t)
-            await press(pilot, "down", "down", "enter")
-            self.assertEqual(ctx.settings.parallel, 3)
-
-        self.run_app(case, ctx=make_ctx(HW_12, S.LaunchSettings(family="deepseek41", model="IST-DAS-2.00bpw", context=8192)))
 
     def test_parallel_default_is_fit_to_card(self):
         async def case(app, pilot, ctx):

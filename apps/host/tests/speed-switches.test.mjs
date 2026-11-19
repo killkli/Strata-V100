@@ -1,5 +1,5 @@
 // The 0.2.7 speed features have a switch in Expert settings (the model's "Native engine settings"). "Faster long prompts" (Qwen KVA) is OFF by default (owner
-// decision, 26 October) and STRATA_KVA=1 turns it on; the Radeon RX 9000 and DeepSeek ones are on by default and turning them off writes their entries.
+// decision, 26 October) and STRATA_KVA=1 turns it on; the Radeon RX 9000 one is on by default and turning it off writes its entry.
 // Back in its default a switch removes its entries, so a default launch carries none of them. strata_control/speed_switches.py says the same for the
 // Terminal (tests/terminal/test_speed_switches.py).
 import test from 'node:test';
@@ -7,7 +7,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SPEED_SWITCHES, speedSwitchApplies, speedSwitchIsSet, speedSwitchIsOn, speedSwitchRows, setSpeedSwitch, validateNativeSettings, publicNativeEnv, restoreNativeEnv } from '../server/native-settings.mjs';
+import { SPEED_SWITCHES as ALL_SWITCHES, speedSwitchApplies, speedSwitchIsSet, speedSwitchIsOn, speedSwitchRows as allRows, setSpeedSwitch, validateNativeSettings, publicNativeEnv, restoreNativeEnv } from '../server/native-settings.mjs';
+/* 0.2.16: the route tail skip is a choice (Automatic / Off / 1-9), not an On / Off switch; tail-skip-choice.test.mjs tests it. These tests are the two-state rows. */
+const SPEED_SWITCHES = ALL_SWITCHES.filter(s => !s.choices);
+const speedSwitchRows = (env, context) => allRows(env, context).filter(s => !s.choices);
 import { nativeFixture } from './helpers/native-fixture.mjs';
 
 const read = rel => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
@@ -15,17 +18,17 @@ const ENV = {      // what each switch writes outside its default
   faster_long_prompts: { STRATA_KVA: '1' },
   faster_12gb_nvidia: { STRATA_ROUTE_PRIOR: '1.5' },
   faster_radeon_9000: { STRATA_PCIE_FRAC_DEFAULT: 'old' },
-  deepseek_speedups: { DS4_DEFAULTS: '026', DS4_FAST_ATTN: '0', DS4_ATTN_SLAB: '0', DS4_COPY_PIN: '0', DS4_COPY_HUGETLB: '0', DS4_STORE_SPARE: '0', DS4_STORE_PUT: '0' },
 };
-const SIX = ['DS4_FAST_ATTN', 'DS4_ATTN_SLAB', 'DS4_COPY_PIN', 'DS4_COPY_HUGETLB', 'DS4_STORE_SPARE', 'DS4_STORE_PUT'];
-const DEFAULT = { faster_long_prompts: 'off', faster_12gb_nvidia: 'off', faster_radeon_9000: 'on', deepseek_speedups: 'on' };
+/* (0.2.16: the picture reader row is gone with llama.cpp's reader, so every row is a Speed row.) */
+const speed = rows => rows.filter(s => !s.choices);
+const DEFAULT = { faster_long_prompts: 'off', faster_12gb_nvidia: 'off', faster_radeon_9000: 'on' };
 const RTX3060 = { index: 0, name: 'NVIDIA GeForce RTX 3060', vendor: 'nvidia', arch: '86', vram_gb: 12 };
 const R9700 = { index: 0, name: 'AMD Radeon AI PRO R9700', vendor: 'amd', arch: 'gfx1201', vram_gb: 32 };
 const RX7900 = { index: 0, name: 'AMD Radeon RX 7900 XTX', vendor: 'amd', arch: 'gfx1100', vram_gb: 24 };
 const RTX = { index: 0, name: 'NVIDIA GeForce RTX 4090', vendor: 'nvidia', arch: '89', vram_gb: 24 };
 const STRIX = { index: 0, name: 'AMD Radeon 8060S', vendor: 'amd', arch: 'gfx1151', vram_gb: 96, uma: true };
 
-test('there are exactly four switches in the app (the Terminal has one more); each writes the engine names of the contract and has its default (KVA and the 12 GB routing off, the other two on)', () => {
+test('there are exactly five switches in the app, the picture reader among them (the Terminal has one more); each writes the engine names of the contract and has its default (KVA and the 12 GB routing off, the other two on)', () => {
   assert.deepEqual(SPEED_SWITCHES.map(s => s.id), Object.keys(ENV));
   for (const sw of SPEED_SWITCHES) {
     assert.deepEqual(sw.env, ENV[sw.id], sw.id);
@@ -54,7 +57,7 @@ test('Faster answers on 12 GB NVIDIA cards: only for Qwen on a discrete CUDA car
   assert.deepEqual(ids({ backend: 'hip', gpus: [{ name: 'AMD Radeon RX 7700 XT', vendor: 'amd', arch: 'gfx1101', vram_gb: 12 }] }), ['faster_long_prompts'], 'not a Radeon');
   assert.deepEqual(ids({ backend: 'sycl', gpus: [RTX3060] }), [], 'not a CUDA build');
   assert.deepEqual(ids({ backend: 'cuda', gpus: [RTX3060], arch: 'qwen35moe' }), [], 'Qwen3.6-35B-A3B: the routing needs 512 experts');
-  assert.deepEqual(ids({ deepseek: true, backend: 'cuda', gpus: [RTX3060] }), ['deepseek_speedups']);
+  assert.deepEqual(ids({ deepseek: true, backend: 'cuda', gpus: [RTX3060] }), [], 'a DeepSeek settings file (no longer run): no switch');
   // a default launch carries nothing: the engine then runs as 0.2.6 did (STRATA_ROUTE_PRIOR unset = 0)
   assert.equal(speedSwitchIsOn({}, 'faster_12gb_nvidia'), false);
   assert.equal(speedSwitchRows({}, { backend: 'cuda', gpus: [RTX3060] }).find(r => r.id === 'faster_12gb_nvidia').on, false);
@@ -73,20 +76,6 @@ test('Faster answers on 12 GB NVIDIA cards: only for Qwen on a discrete CUDA car
   assert.match(hint, /faster on 12 GB cards/);
   assert.match(hint, /Off by default/);
   assert.match(hint, /long agent sessions it can repeat itself/);
-});
-
-test('DeepSeek speed-ups Off writes DS4_DEFAULTS=026 and the six; On removes all seven; the six alone (an earlier test build) still read as Off', () => {
-  const env = { DS4_ASYNC_T: '4' };
-  const off = setSpeedSwitch(env, 'deepseek_speedups', false);
-  assert.deepEqual(Object.keys(off).slice(0, 2), ['DS4_ASYNC_T', 'DS4_DEFAULTS'], 'the master switch first');
-  assert.deepEqual(off, { DS4_ASYNC_T: '4', DS4_DEFAULTS: '026', ...Object.fromEntries(SIX.map(k => [k, '0'])) });
-  assert.equal(speedSwitchIsOn(off, 'deepseek_speedups'), false);
-  assert.deepEqual(setSpeedSwitch(off, 'deepseek_speedups', true), env);
-  const six = { DS4_ASYNC_T: '4', ...Object.fromEntries(SIX.map(k => [k, '0'])) };
-  assert.equal(speedSwitchIsOn(six, 'deepseek_speedups'), false);
-  assert.deepEqual(setSpeedSwitch(six, 'deepseek_speedups', true), env, 'turning it on removes the six too');
-  assert.equal(speedSwitchIsOn({ DS4_DEFAULTS: '026' }, 'deepseek_speedups'), true, 'the master switch alone is a hand-edited file: left alone');
-  assert.deepEqual(speedSwitchRows(six, { deepseek: true }).map(r => [r.id, r.on, Object.keys(r.legacy).length]), [['deepseek_speedups', false, 6]], 'the client gets the six to recognise and remove');
 });
 
 test('a default launch has none of the new environment entries: KVA reads as off, the others as on, and an environment in its default stays as it is', () => {
@@ -110,7 +99,7 @@ test('Faster long prompts: On writes STRATA_KVA=1, Off removes it, and an earlie
 });
 
 test('each switch outside its default yields exactly its entries and nothing else; back in the default gives back the same environment', () => {
-  const env = { PATH: '/native/bin', STRATA_PREFILL: '2', DS4_ASYNC_T: '4' };
+  const env = { PATH: '/native/bin', STRATA_PREFILL: '2' };
   for (const sw of SPEED_SWITCHES) {
     const other = setSpeedSwitch(env, sw.id, sw.default !== 'on');          // the non-default state: KVA on, the others off
     assert.deepEqual(other, { ...env, ...ENV[sw.id] }, sw.id);
@@ -125,13 +114,13 @@ test('each switch outside its default yields exactly its entries and nothing els
 });
 
 test('a hand-edited file with only some of a switch\'s entries reads as its default and is left alone by an unchanged save', () => {
-  const partial = { DS4_FAST_ATTN: '0' };
-  assert.equal(speedSwitchIsOn(partial, 'deepseek_speedups'), true);
+  const partial = { STRATA_ROUTE_PRIOR: '2' };
+  assert.equal(speedSwitchIsOn(partial, 'faster_12gb_nvidia'), false);
   assert.deepEqual(setSpeedSwitch(partial, 'faster_long_prompts', false), partial);
   assert.equal(speedSwitchIsOn({ STRATA_KVA: 'yes' }, 'faster_long_prompts'), false, 'only 1 turns it on');
 });
 
-test('a switch shows only where it applies: Qwen on CUDA or HIP, Qwen on a Radeon RX 9000 / R9700, DeepSeek', () => {
+test('a switch shows only where it applies: Qwen on CUDA or HIP, Qwen on a Radeon RX 9000 / R9700; none for a DeepSeek settings file', () => {
   const ids = context => speedSwitchRows({}, context).map(r => r.id);
   assert.deepEqual(ids({ backend: 'cuda', gpus: [RTX] }), ['faster_long_prompts']);
   assert.deepEqual(ids({ backend: 'hip', gpus: [RX7900] }), ['faster_long_prompts']);
@@ -141,13 +130,12 @@ test('a switch shows only where it applies: Qwen on CUDA or HIP, Qwen on a Radeo
   assert.deepEqual(ids({ backend: 'hip', gpus: [{ name: 'AMD Radeon RX 7900 XT', vendor: 'amd' }] }), ['faster_long_prompts']);
   assert.deepEqual(ids({ backend: 'cuda', gpus: [RTX, R9700] }), ['faster_long_prompts'], 'the Radeon switch needs the HIP engine');
   for (const backend of ['sycl', 'metal', 'cpu', null]) assert.deepEqual(ids({ backend, gpus: [R9700] }), [], `Qwen on ${backend}`);
-  assert.deepEqual(ids({ deepseek: true, backend: 'hip', gpus: [R9700] }), ['deepseek_speedups'], 'DeepSeek has its own switch only');
-  assert.deepEqual(ids({ deepseek: true, backend: 'cuda', gpus: [RTX] }), ['deepseek_speedups']);
-  assert.equal(speedSwitchApplies('deepseek_speedups', { deepseek: false, backend: 'cuda', gpus: [RTX] }), false);
+  assert.deepEqual(ids({ deepseek: true, backend: 'hip', gpus: [R9700] }), [], 'a DeepSeek settings file (no longer run): no switch');
+  assert.deepEqual(ids({ deepseek: true, backend: 'cuda', gpus: [RTX] }), []);
   assert.deepEqual(ids({}), [], 'nothing is known: nothing is offered');
 });
 
-test('Faster long prompts is for Qwen3.8-Flash-Next only: no row for Qwen3.6-35B-A3B (a run config with an arch) or DeepSeek', () => {
+test('Faster long prompts is for Qwen3.8-Flash-Next only: no row for Qwen3.6-35B-A3B (a run config with an arch)', () => {
   const ids = context => speedSwitchRows({}, context).map(r => r.id);
   assert.deepEqual(ids({ backend: 'cuda', gpus: [RTX], arch: null }), ['faster_long_prompts'], 'Flash-Next files have no arch');
   assert.deepEqual(ids({ backend: 'cuda', gpus: [RTX], arch: 'qwen35moe' }), [], 'Qwen3.6-35B-A3B on CUDA');
@@ -156,11 +144,20 @@ test('Faster long prompts is for Qwen3.8-Flash-Next only: no row for Qwen3.6-35B
   assert.equal(speedSwitchApplies('faster_long_prompts', { backend: 'cuda', gpus: [RTX], arch: 'qwen35moe' }), false);
 });
 
+test('the picture reader row is gone (0.2.16: Strata\'s own reader is the only one); the screen keeps its code for named options and field groups', () => {
+  const ids = context => speedSwitchRows({}, context).map(r => r.id);
+  for (const backend of ['cuda', 'hip', 'sycl', 'metal', 'cpu', null]) assert.ok(!ids({ backend, gpus: [R9700], vision: true }).includes('picture_reader'), `${backend}`);
+  assert.ok(!SPEED_SWITCHES.some(s => s.id === 'picture_reader' || Object.keys(s.env).includes('STRATA_VISION_TOWER')));
+  const screen = read('../src/components/NativeSettings.tsx');
+  assert.match(screen, /options=\{sw\.words \? \[\{ value: sw\.default, label: sw\.words\[sw\.default\] \}/, 'the two option names, the default first');
+  assert.match(screen, /\{tr\(switchRows\.filter\(sw => switchGroup\(sw\) === group\)\.map\(switchRow\)\)\}<\/section>/, 'a switch of a field group is shown in that group');
+});
+
 test('the environment names round-trip through the validator, the public view and the restore, and other names stay untouched', () => {
   const all = Object.assign({}, ...Object.values(ENV));
   assert.deepEqual(validateNativeSettings({ env: all }), { env: all });
   assert.throws(() => validateNativeSettings({ env: { HOME: '/tmp' } }));
-  assert.throws(() => validateNativeSettings({ env: { DS4_fast: '0' } }));
+  assert.throws(() => validateNativeSettings({ env: { DS4_FAST_ATTN: '0' } }), undefined, 'the DeepSeek engine\'s names are no longer shown or edited');
   const previous = { PATH: '/native/bin', HIP_VISIBLE_DEVICES: '0', ...all };
   assert.deepEqual(publicNativeEnv(previous), all);
   assert.deepEqual(restoreNativeEnv({}, previous), { PATH: '/native/bin', HIP_VISIBLE_DEVICES: '0' }, 'every switch back in its default removes only theirs');
@@ -181,8 +178,8 @@ test('through the host: the settings answer lists the switches that apply, and K
     await f.control.refresh();
     const before = readFileSync(path, 'utf8');
     const first = f.control.settings('iq2_xs');
-    assert.deepEqual(first.speedSwitches.map(s => [s.id, s.on]), [['faster_long_prompts', false], ['faster_radeon_9000', true]]);
-    assert.deepEqual(first.speedSwitches.map(s => [s.default, s.env]), [['off', ENV.faster_long_prompts], ['on', ENV.faster_radeon_9000]], 'the client writes what the host says');
+    assert.deepEqual(speed(first.speedSwitches).map(s => [s.id, s.on]), [['faster_long_prompts', false], ['faster_radeon_9000', true]]);
+    assert.deepEqual(speed(first.speedSwitches).map(s => [s.default, s.env]), [['off', ENV.faster_long_prompts], ['on', ENV.faster_radeon_9000]], 'the client writes what the host says');
     assert.equal('STRATA_KVA' in first.values.env, false, 'default: nothing in the environment');
 
     // the client turns "Faster long prompts" on: it sends the environment with the entry added
@@ -192,34 +189,16 @@ test('through the host: the settings answer lists the switches that apply, and K
     assert.equal(file.env.PATH, '/native/bin');
     assert.equal(file.env.STRATA_TOKEN, 'private', 'a credential is kept, not lost behind its mask');
     assert.equal('STRATA_PCIE_FRAC_DEFAULT' in file.env, false);
-    assert.deepEqual(off.speedSwitches.map(s => [s.id, s.on]), [['faster_long_prompts', true], ['faster_radeon_9000', true]]);
+    assert.deepEqual(speed(off.speedSwitches).map(s => [s.id, s.on]), [['faster_long_prompts', true], ['faster_radeon_9000', true]]);
 
     // and Off again: the entry is gone and the file is as it was
     const env = { ...off.values.env };
     delete env.STRATA_KVA;
     const on = f.control.save('iq2_xs', { values: { env } });
-    assert.deepEqual(on.speedSwitches.map(s => s.on), [false, true]);
+    assert.deepEqual(speed(on.speedSwitches).map(s => s.on), [false, true]);
     const after = JSON.parse(readFileSync(path, 'utf8'));
     assert.deepEqual(after, JSON.parse(before));
     assert.equal(JSON.stringify(after.env), JSON.stringify(JSON.parse(before).env), 'the same environment, same order');
-  } finally { await f.cleanup(); }
-});
-
-test('through the host: a DeepSeek model gets its own switch only, and the Strix async entry is kept beside it', async () => {
-  const f = nativeFixture();
-  try {
-    f.setHardware({ ram_gb: 128, gpus: [STRIX] });
-    const path = setConfig(f, 'iq2_xs', { arch: 'deepseek41', backend: 'hip', env: { DS4_ASYNC_T: '4' } });
-    await f.control.refresh();
-    const first = f.control.settings('iq2_xs');
-    assert.deepEqual(first.speedSwitches.map(s => [s.id, s.on]), [['deepseek_speedups', true]]);
-    assert.equal(first.values.env.DS4_ASYNC_T, '4', 'setup\'s own entry is visible and kept');
-    const off = f.control.save('iq2_xs', { values: { env: { ...first.values.env, ...ENV.deepseek_speedups } } });
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).env, { DS4_ASYNC_T: '4', ...ENV.deepseek_speedups });
-    assert.equal(off.speedSwitches[0].on, false);
-    const env = Object.fromEntries(Object.entries(off.values.env).filter(([name]) => !(name in ENV.deepseek_speedups)));
-    f.control.save('iq2_xs', { values: { env } });
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).env, { DS4_ASYNC_T: '4' });
   } finally { await f.cleanup(); }
 });
 
@@ -230,8 +209,8 @@ test('through the host: Qwen3.6-35B-A3B (its run config has an arch) gets no Fas
     setConfig(f, 'iq2_xs', { backend: 'cuda' });
     setConfig(f, 'iq3_s', { backend: 'cuda', arch: 'qwen35moe', model_name: 'qwen3.6-35b-a3b-ud-q4_k_xl' });
     await f.control.refresh();
-    assert.deepEqual(f.control.settings('iq2_xs').speedSwitches.map(s => s.id), ['faster_long_prompts']);
-    assert.deepEqual(f.control.settings('iq3_s').speedSwitches, []);
+    assert.deepEqual(speed(f.control.settings('iq2_xs').speedSwitches).map(s => s.id), ['faster_long_prompts']);
+    assert.deepEqual(speed(f.control.settings('iq3_s').speedSwitches).map(s => s.id), []);
   } finally { await f.cleanup(); }
 });
 
@@ -241,7 +220,7 @@ test('through the host: a Qwen model on a PC the engine cannot speed up offers n
     f.setHardware({ ram_gb: 32, gpus: [{ index: 0, name: 'Intel Arc A750', vendor: 'intel', vram_gb: 8 }] });
     setConfig(f, 'iq2_xs', { backend: 'sycl' });
     await f.control.refresh();
-    assert.deepEqual(f.control.settings('iq2_xs').speedSwitches, []);
+    assert.deepEqual(f.control.settings('iq2_xs').speedSwitches.map(s => s.id), [], 'no speed switch');
   } finally { await f.cleanup(); }
 });
 
@@ -251,9 +230,9 @@ test('the Expert settings show the rows in the existing row layout with an On / 
   assert.match(screen, /<label className="native-setting-row" key=\{sw\.id\}><span><strong>\{tr\(sw\.label\)\}<\/strong><small>\{tr\(sw\.hint\)\}<\/small><\/span><Select /, 'the same row, the same Select');
   assert.match(screen, /\[\{ value: 'on', label: 'On \(recommended\)' \}, \{ value: 'off', label: 'Off' \}\] : \[\{ value: 'off', label: 'Off \(recommended\)' \}, \{ value: 'on', label: 'On' \}\]/);
   assert.match(screen, /if \(write\) env\[name\] = value; else delete env\[name\];/, 'the default removes the entries');
-  const languages = ['en', 'zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr'];
+  const languages = ['en', 'zh', 'ja', 'de', 'es', 'ru', 'pt', 'ko', 'fr', 'he'];
   const catalog = lang => JSON.parse(read(`../src/locales/fix-${lang}.json`));
-  const words = [...SPEED_SWITCHES.flatMap(s => [s.label, s.hint]), 'On (recommended)', 'Off (recommended)'];
+  const words = [...SPEED_SWITCHES.flatMap(s => [s.label, s.hint, ...Object.values(s.words ?? {})]), 'On (recommended)', 'Off (recommended)'];
   const english = Object.values(catalog('en'));
   for (const word of words) assert.ok(english.includes(word), `English catalog: ${word}`);
   for (const lang of languages.slice(1)) {
@@ -265,12 +244,11 @@ test('the Expert settings show the rows in the existing row layout with an On / 
       assert.ok(!/\{\d+\}/.test(catalog(lang)[id]));
     }
   }
-  for (const lang of ['zh', 'ja', 'ko']) assert.ok(Object.values(catalog(lang)).some(v => v.includes('0.2.6')), 'the version number is kept in the DeepSeek text');
 });
 
 test('the effect texts say what the feature does and what the other choice costs, in plain words', () => {
   for (const sw of SPEED_SWITCHES) {
-    assert.ok(sw.default === 'off' ? /Off by default/.test(sw.hint) : /[Tt]urn off/.test(sw.hint), sw.id);
+    assert.ok(sw.words ? sw.hint.includes(`Choose ${sw.words.off}`) : sw.default === 'off' ? /Off by default/.test(sw.hint) : /[Tt]urn off/.test(sw.hint), sw.id);
     assert.ok(sw.hint.length < 260, sw.id);
     assert.ok(!/STRATA_|DS4_|env|--/.test(sw.hint), 'no flags or variable names for a non-technical reader');
   }

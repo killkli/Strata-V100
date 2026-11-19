@@ -129,6 +129,7 @@ class InstallPlan(unittest.TestCase):
             self.plan([NVIDIA], backend="sycl")
         self.assertIn("no Intel Arc card", str(raised.exception))
 
+    @unittest.skipIf(sys.platform == "darwin", "the test's temporary folder is under /var/folders, a macOS system folder the data-folder check refuses; and setup hands a Mac to metal/setup_mac.py")
     def test_without_the_files_there_is_no_download_and_the_words_say_so(self):
         with tempfile.TemporaryDirectory() as t:
             data = Path(t) / "Strata-data"
@@ -141,11 +142,6 @@ class InstallPlan(unittest.TestCase):
         self.assertEqual(args[-2:], ["--backend", "sycl"])
         self.assertNotIn("--gguf-dir", args)
         self.assertTrue(plan["partly_downloaded"])
-
-    def test_a_model_the_run_config_cannot_be_written_for_is_refused(self):
-        with self.assertRaises(M.ToolError) as raised:
-            self.plan([A750], family="deepseek41", model="IST-DAS-2.00bpw", gguf_dir=None)
-        self.assertIn("Intel Arc", str(raised.exception))
 
     def test_nvidia_and_amd_requests_are_byte_identical_to_before(self):
         with tempfile.TemporaryDirectory() as t:
@@ -246,6 +242,7 @@ class SetupControlMode(unittest.TestCase):
             self.assertIsNone(self.packed)
             self.assertEqual(list(home.glob("strata-*.json")), [])
 
+    @unittest.skipIf(sys.platform == "darwin", "the test's temporary folder is under /var/folders, a macOS system folder the data-folder check refuses; and setup hands a Mac to metal/setup_mac.py")
     def test_the_dispatch_in_main_is_by_mode(self):
         """CONTROL mode (the app, the Terminal's installer mode) prepares and adopts; a checkout keeps the from-source Intel setup."""
         for control, expect in ((True, "intel_control_setup"), (False, "sycl_setup")):

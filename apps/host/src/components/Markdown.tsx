@@ -9,6 +9,7 @@ import { SyntaxCode } from './SyntaxCode';
 import { MathView } from './MathView';
 import { displayBlock, hasMath, splitMath } from '../lib/math';
 import { imagePlan } from '../lib/markdown-images';
+import { splitLinks } from '../lib/autolink';
 function inlineMarks(text: string, onOpenLink?: (url: string) => void, imageSession?: string | null): ReactNode {
     return text.split(/(!\[[^\]]*\]\([^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[[^\]]+\]\([^\s)]+\))/g).map((part, i) => {
         const image = part.match(/^!\[([^\]]*)\]\(([^\s)]+)\)$/);
@@ -35,7 +36,13 @@ function inlineMarks(text: string, onOpenLink?: (url: string) => void, imageSess
                 e.preventDefault();
                 onOpenLink(link[2]);
             } }}>{link[1]}</a>;
-        return <Fragment key={i}>{part}</Fragment>;
+        // #6000: a web address written as plain text is a link too (lib/autolink.ts), opened the same way
+        return <Fragment key={i}>{splitLinks(part).map((piece, j) => piece.href
+            ? <a key={j} href={piece.href} target="_blank" rel="noreferrer" onClick={e => { if (onOpenLink) {
+                e.preventDefault();
+                onOpenLink(piece.href!);
+            } }}>{piece.text}</a>
+            : <Fragment key={j}>{piece.text}</Fragment>)}</Fragment>;
     });
 }
 /** Text with its inline marks and, outside code spans, its math (#3268). Math is cut out first: a * or _ inside a formula is not emphasis. */
@@ -50,10 +57,37 @@ function inline(text: string, onOpenLink?: (url: string) => void, imageSession?:
             : <Fragment key={p}>{inlineMarks(part.text, onOpenLink, imageSession)}</Fragment>)}</Fragment>;
     });
 }
+/**
+ * A tool call the model wrote as plain text that nothing ran (the server could not read it, or named a tool that is not there): a block that starts a
+ * line with <tool_call> and holds a <function= or <parameter= tag. It reaches the answer as raw markup, which is never what a person wants to read, so it
+ * is shown as one collapsed line that opens to the raw text. Only a block that starts its line counts: the same tag inside a code block (a fence takes
+ * its lines first) or in the middle of a sentence stays as written, so a reply that talks about the format still shows it. A block that is not closed
+ * yet (the reply is still streaming) runs to the end of the text. `rest` is what follows the closing tag on its line.
+ */
+export function failedCall(lines: string[], at: number): { raw: string; end: number; rest: string } | null {
+    const start = lines[at].match(/^\s*<tool_call>/);
+    if (!start)
+        return null;
+    const out: string[] = [];
+    let end = lines.length - 1, rest = '';
+    for (let j = at; j < lines.length; j++) {
+        const from = j === at ? start[0].length : 0;
+        const close = lines[j].indexOf('</tool_call>', from);
+        if (close >= 0) {
+            out.push(lines[j].slice(0, close + '</tool_call>'.length));
+            rest = lines[j].slice(close + '</tool_call>'.length).trim();
+            end = j;
+            break;
+        }
+        out.push(lines[j]);
+    }
+    const raw = out.join('\n');
+    return /<function=|<parameter=/.test(raw) ? { raw: raw.trim(), end, rest } : null;
+}
 /** Does this line continue the paragraph above it, or does it start a block of its own? */
 export function continuesParagraph(lines: string[], at: number): boolean {
     const line = lines[at];
-    if (!line.trim() || /^\s*```/.test(line) || /^(#{1,6})\s+(.+)$/.test(line) || /^\s*[-*+]\s+\S/.test(line) || /^\s*\d+[.)]\s+\S/.test(line) || /^>\s?/.test(line))
+    if (!line.trim() || /^\s*```/.test(line) || failedCall(lines, at) || /^(#{1,6})\s+(.+)$/.test(line) || /^\s*[-*+]\s+\S/.test(line) || /^\s*\d+[.)]\s+\S/.test(line) || /^>\s?/.test(line))
         return false;
     if (line.includes('|') && at + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[at + 1]))
         return false;
@@ -89,6 +123,17 @@ export function Markdown({ text, onOpenLink, previewId, onPreview, onClosePrevie
             const code = body.join('\n');
             const preview = previewId && onPreview ? codePreview(previewId, language, code) : null;
             nodes.push(<div className="st-code" key={key}><div className="st-code__head"><span>{language || tr('code')}</span><span className="st-code__actions">{tr(preview && onPreview ? <CodePreviewBtn artifact={preview} onPreview={onPreview} onClose={onClosePreview}/> : null)}<CopyBtn text={code} label="Code" title="Copy code"/></span></div><SyntaxCode text={code} language={language}/></div>);
+            continue;
+        }
+        const call = failedCall(lines, i);
+        if (call) {
+            nodes.push(<details className="md-failedcall" key={i}><summary>{tr('A tool call that could not run')}</summary><pre className="md-failedcall__raw">{call.raw}</pre></details>);
+            if (call.rest) {
+                lines[call.end] = call.rest;
+                i = call.end;
+            }
+            else
+                i = call.end + 1;
             continue;
         }
         const block = displayBlock(lines, i);

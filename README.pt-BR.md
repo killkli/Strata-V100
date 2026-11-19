@@ -370,6 +370,7 @@ Dados brutos: [`summary.json`](bench/results/2026-10-02-v100-single-cooled/summa
 
 Pull requests recentes para V100 incluem mudanças medidas em nível de kernel e relatam explicitamente quando ganhos de ponta a ponta não são estabelecidos. Por exemplo, o porte de atenção de prompt do PR #600 do upstream relatou 27.9% menos tempo de kernel de atenção int8 na forma medida dele. As mudanças de prefill do modelo ficaram entre +1.3% e +3.0% nas execuções relatadas; ele não estabeleceu um ganho confiável de decode. Leia o [relatório completo](benchmarks/v100-q2_0-pr600-2026-10-03.md) antes de comparar resultados.
 
+<a id="the-other-sizes"></a>
 ## Trabalho de desempenho na V100
 
 O trabalho na V100 abrange o caminho de prompt, o caminho de decode, o uso de memória, as leituras de armazenamento e a execução multi-GPU. As mudanças abaixo estão no histórico integrado do fork; cada link inclui o próprio método de teste, detalhes de hardware e limitações. Melhorias de tempo de kernel não produzem necessariamente o mesmo ganho percentual no throughput do modelo completo.
@@ -418,6 +419,7 @@ Este fork acompanha a experiência de instalação do upstream. Para requisitos 
 - Siga as instruções para selecionar um modelo e um tamanho de contexto. O setup baixa os dados do modelo e inicia o serviço local.
 - Abra o endereço impresso pelo setup (normalmente `http://127.0.0.1:8080`).
 
+<sub>Arquivos: `Strata-0.2.15-windows-x64-setup.exe` · `Strata-0.2.15-linux-x86_64.AppImage` · `Strata-0.2.15-macos-arm64.dmg`</sub>
 Para uma Tesla V100, use o engine CUDA 12 com suporte a `sm_70`. O setup seleciona o engine para placas mais antigas no caso do Volta; no Linux, ele compila localmente. O arquivo CUDA 12 do Windows do upstream inclui código Volta, mas não foi testado nesta máquina Linux. Veja o [guia para placas mais antigas](docs/OLDER_GPUS.md) para os requisitos de toolkit e driver. Para Docker, siga as [instruções de Docker](docs/INSTALL.md) e compile para a arquitetura de GPU de destino.
 
 ## Usar o Strata

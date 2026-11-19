@@ -7,6 +7,10 @@ import { useDownloadEta } from '../lib/download-eta';
 import type { NativeJob } from '../lib/native';
 import { megabytes } from '../lib/format';
 import { FirstRunLanguage } from './FirstRunLanguage';
+import { firstRunCard } from '../lib/first-run-card';
+import { connectOnly } from '../lib/connect-only';
+import { completeSetupStep, openSetup, setSettingsSection } from '../lib/store';
+import { navigate } from '../lib/router';
 
 /** What the host says about this PC's engine (GET /api/engine/first-run). */
 export interface FirstRunInfo {
@@ -47,8 +51,8 @@ export function useEngineNeeded(): boolean | null {
 }
 
 function gpuLine(info: FirstRunInfo) {
-    // a processor's own tiny graphics (no memory of its own) is not "a card"
-    const first = info.gpus.find(g => (g.vramGb ?? 0) >= 1) ?? info.gpus[0];
+    // the card with the most memory of its own: a processor's graphics listed first is not the card the engine is for (#6015)
+    const first = firstRunCard(info.gpus);
     if (!first) return '';
     const vram = first.vramGb ? `, ${Math.round(first.vramGb)} GB` : '';
     const driver = info.driver ? `, driver ${info.driver}` : '';
@@ -123,6 +127,20 @@ export function EngineFirstRun({ onDone }: { onDone: () => void }) {
         }
     }
 
+    // #5529: no engine here, on purpose: setup ends dismissed and Settings > Models opens with a Custom model API connection started
+    async function connectOnlyClick() {
+        setBusy(true);
+        setProblem('');
+        try {
+            await connectOnly({ completeSetupStep, openSetup, setSettingsSection, openSettings: () => navigate('chat', undefined, { settings: '1' }) });
+        }
+        catch (e) {
+            setProblem(e instanceof Error ? e.message : String(e));
+        }
+        finally {
+            setBusy(false);
+        }
+    }
     const running = job?.state === 'running';
     const failed = !!job && (job.state === 'error' || job.state === 'cancelled');
     const percent = Number(job?.result?.install?.download?.percent ?? 0);
@@ -174,7 +192,7 @@ export function EngineFirstRun({ onDone }: { onDone: () => void }) {
                 {job?.details ? <details className="error-detail"><summary className="small">{tr('Details')}</summary><pre className="small muted">{job.details}</pre></details> : null}
                 <p className="small muted">{percent >= 100 ? tr("The file was downloaded. Continue tries the install again.") : tr("The download stopped. Continue picks it up where it stopped.")}</p></div> : null}
             {problem ? <div className="onboard-error" style={{ maxWidth: 560, margin: '0 auto' }}><p role="alert" className="small inline-error">{problem}</p></div> : null}
-            <footer className="onboard-footer onboard-footer--welcome">{actions}</footer></>;
+            <footer className="onboard-footer onboard-footer--welcome">{actions}<button type="button" className="onboard-continue-anyway" disabled={busy || running} onClick={() => void connectOnlyClick()}>{tr("Only connect to Strata on another computer")}</button><small>{tr("Nothing is downloaded. You can add the engine later from the Models page.")}</small></footer></>;
     }
     return <div className="setup guided-onboarding" data-step="engine">{hidden}<header className="onboard-header"><Brand variant="lockup" height={22}/><FirstRunLanguage/></header>{body}</div>;
 }

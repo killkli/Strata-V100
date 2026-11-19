@@ -362,6 +362,7 @@ Données brutes : [`summary.json`](bench/results/2026-10-02-v100-single-cooled/s
 
 Les pull requests V100 récentes incluent des changements mesurés au niveau du noyau et indiquent explicitement quand les gains de bout en bout ne sont pas établis. Par exemple, le port de l'attention de prompt depuis la PR upstream #600 a rapporté 27.9% de temps de noyau d'attention int8 en moins à sa forme mesurée. Les changements de prefill du modèle allaient de +1.3% à +3.0% dans les passes rapportées ; il n'a pas établi de gain de decode fiable. Lisez le [rapport complet](benchmarks/v100-q2_0-pr600-2026-10-03.md) avant de comparer des résultats.
 
+<a id="the-other-sizes"></a>
 ## Travaux de performance V100
 
 Le travail V100 couvre le chemin de prompt, le chemin de decode, l'usage de la mémoire, les lectures de stockage et l'exécution multi-GPU. Les changements ci-dessous sont dans l'historique fusionné du fork ; chaque lien inclut sa propre méthode de test, les détails matériels et les limites. Les améliorations de temps de noyau ne produisent pas nécessairement le même gain en pourcentage sur le débit du modèle complet.
@@ -410,6 +411,7 @@ Ce fork suit l'expérience d'installation upstream. Pour les exigences de platef
 - Suivez les invites pour choisir un modèle et une taille de contexte. L'installateur télécharge les données du modèle et démarre le service local.
 - Ouvrez l'adresse affichée par l'installateur (normalement `http://127.0.0.1:8080`).
 
+<sub>Fichiers: `Strata-0.2.15-windows-x64-setup.exe` · `Strata-0.2.15-linux-x86_64.AppImage` · `Strata-0.2.15-macos-arm64.dmg`</sub>
 Pour une Tesla V100, utilisez le moteur CUDA 12 avec le support `sm_70`. L'installateur choisit le moteur pour GPU plus anciens pour Volta ; sous Linux, il le compile localement. L'archive Windows CUDA 12 upstream inclut le code Volta, mais elle n'a pas été testée sur cette machine Linux. Voir le [guide des GPU plus anciens](docs/OLDER_GPUS.md) pour les exigences de boîte à outils et de pilote. Pour Docker, suivez les [instructions Docker](docs/INSTALL.md) et compilez pour l'architecture GPU cible.
 
 ## Utiliser Strata

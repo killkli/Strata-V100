@@ -36,6 +36,7 @@ too and cannot hold any of the model.
 | --- | --- | --- |
 | RX 6800 / 6900 series | gfx1030 | setup (`--backend hip`), unvalidated. The #540 attention kernel is the default there (`STRATA_ATTN_PRE75=0` runs the standard kernel). See [AMD_HIP.md](AMD_HIP.md#rdna2-gfx1030) |
 | RX 6700 XT | gfx1031 | setup (`--backend hip`), unvalidated; used daily by its reporter on one card |
+| RX 6600 / 6600 XT / 6650 XT | gfx1032 | the ready-made RX 6000 engine (from 0.2.16), unvalidated: built, not tested on a real RX 6600. One RX 6650 XT 8 GB ran a model on a self-built engine (#1375). See [AMD_HIP.md](AMD_HIP.md#rdna2-gfx1030) |
 | RX 5500 XT (RDNA1) | gfx1012 | built by hand: `-DCMAKE_HIP_ARCHITECTURES=gfx1012` (HIP 5.7 or 7) |
 | RX 5700 XT (RDNA1) | gfx1010 | built by hand: `-DCMAKE_HIP_ARCHITECTURES=gfx1010` on ROCm 7.14's `gfx101X-dgpu` wheels; needs `ROCR_VISIBLE_DEVICES=0` on a PC that also has an AMD iGPU |
 | RX 5700, 6 GB RX 5600 (RDNA1) | gfx1010 | as above; a 6 GB card leaves about 50 expert slots |
@@ -188,17 +189,6 @@ GP100 (P100, PH402) is the one Pascal chip without `__dp4a`. Its dense projectio
   the threshold. `STRATA_TOPK_MULTI=0` and `STRATA_SCORES_DX=0` turn one half off. The author measured, on four GP100 dies with
   every expert resident and `--pipeline-windows 3`, 51.0 -> 52.5 tok/s (+2.9%) decoding 400 tokens at 115K context, and no change
   below 64K; we have not measured it. A build without the sm_6x kernels ignores the switch with a warning.
-- **`STRATA_MMQ_WS=1`** (prompt reading, CUDA build with `STRATA_EXPERIMENTAL_SM60`, every visible card compute capability 6.0): a
-  layer whose routed experts are all resident in VRAM, on this GPU alone (no peer, CPU or streamed share), runs its gate/up as one
-  weight-stationary launch over all its experts, one `swiglu_quant` over all its rows and its down as one launch, in place of a
-  gate/up, swiglu and down MMQ launch per 16-expert group. A CTA holds 128 or 256 weight rows of one expert and runs them against
-  up to 64 of that expert's rows, so each weight block is decoded once per pass. Gate/up for IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS and
-  IQ3_S, down for Q2_0 and IQ4_NL; the products keep MMQ's int8 values, scales and per-32-value epilogue order, so the results are
-  MMQ's bits. Every other layer keeps its path. `STRATA_WS_FAST=1` adds a down kernel for the IQ4_NL 32-token tier with fewer
-  instructions per pass (the same bits). The author measured, on four GP100 dies with every expert resident, prompt reads 31-37%
-  shorter (240 tokens 2,156 -> 1,364 ms; a fresh 26K read 41,231 -> 28,555 ms; one run per arm) and decode unchanged; we have not
-  measured it. A single 16 GB card that keeps experts in RAM takes the per-group path. `prefill_ws_parity_test` compares the
-  products with MMQ on random experts; its verdict needs a GP100.
 
 None of these changes is measured on compute capability 6.1, which has `__dp4a`. Two practical notes for GP100 cards: the default
 application clock is 759 MHz and a layer split leaves each die idle most of a window, so lock the clocks

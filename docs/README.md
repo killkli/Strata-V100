@@ -1,11 +1,18 @@
 # Strata documentation
 
-This directory holds all Strata documentation. The pages describe engine version
-0.1.45.7 and the server in `serve/`.
+**New here? Start with [Install Strata](INSTALL.md).** Download the one installer for your system (Windows, Linux or Mac), or install the Terminal with one line. Both use released engine packages. This documentation is for version 0.2.15.
 
 ## Start here
 
-Read these pages in this order:
+| I want to… | Guide |
+| --- | --- |
+| Install or update | [Desktop app and Terminal](INSTALL.md) |
+| Choose a model and check memory | [Models and quantizations](MODELS.md) |
+| See which model runs on which hardware | [Model and hardware table](CAPABILITIES.md) |
+| Start from the command line | [Terminal launch](TERMINAL_LAUNCH.md) |
+| Connect a coding tool | [Tool connections](TERMINAL_LAUNCH.md#connect-your-apps-strata-connect) |
+| Fix an install or startup problem | [Troubleshooting](TROUBLESHOOTING.md) |
+| Check privacy, downloads and network access | [Safety and privacy](SAFETY.md) |
 
 1. [README](../README.md) - what Strata is, and what it does on this hardware.
 2. [INSTALL.md](INSTALL.md) - install, start, update and configure.
