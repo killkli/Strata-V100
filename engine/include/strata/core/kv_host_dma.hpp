@@ -7,7 +7,7 @@
 // exactly as it was after the kernel. Same bytes for every cell a reader can see.
 //
 // (a) costs about 50 us per prompt token on an RTX 5090 (the stores run at about 0.24 GB/s, a fifth to a third of
-// the prompt time at 8K-128K); (b) moves the same bytes at the link's DMA rate. CUDA takes (b) by default; HIP keeps
+// the prompt time at 8K-128K); (b) moves the same bytes at the link's DMA rate. CUDA takes (b) by default except on Volta. HIP and Volta keep
 // (a) unless asked (it was added there as an opt-in for the gfx1201 prompt stalls). STRATA_KV_HOST_DMA=1 / 0 forces it
 // on / off. (b) needs the staging pool, which every streamed layer of the prompt path has (one layer's whole context,
 // allocated before any prompt is read): where there is no pool the append writes the host copy itself, as before.
@@ -16,7 +16,7 @@
 namespace strata::core {
 
 /// The switch: `env` is STRATA_KV_HOST_DMA (null when unset). "1..." on, "0..." off, anything else the backend's
-/// default (`backend_default`: true for CUDA, false for HIP).
+/// default (`backend_default`: false for HIP and CUDA sm_70).
 inline bool kv_host_dma_on(const char* env, bool backend_default) {
     if (env != nullptr && env[0] == '1') return true;
     if (env != nullptr && env[0] == '0') return false;

@@ -1525,6 +1525,7 @@ struct Prefill::Impl {
     float *qkv = nullptr, *z = nullptr, *ab = nullptr, *gate = nullptr, *beta = nullptr, *hbuf = nullptr, *y = nullptr;
     uint16_t* y_h = nullptr;
     // QSA
+    bool kv_host_dma = false;
     float *Kc = nullptr, *Vc = nullptr, *Qf = nullptr, *q = nullptr, *idx_raw = nullptr, *q_idx = nullptr, *attn = nullptr;
     uint16_t* attn_h = nullptr;
     int32_t* steps_dev = nullptr;
@@ -2624,6 +2625,16 @@ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, co
         // image its GEMMs read, and set_act_f16 writes that device's symbol
         const core::OnDevice on_stage(m.device);
         m.f16_io = prompt_f16();
+#if !defined(STRATA_GPU_METAL)
+        bool kv_host_dma_default = false;
+#if !defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
+        int major = 0, minor = 0;
+        kv_host_dma_default = cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, m.device) == cudaSuccess &&
+                              cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, m.device) == cudaSuccess &&
+                              !(major == 7 && minor == 0);
+#endif
+        m.kv_host_dma = core::kv_host_dma_on(std::getenv("STRATA_KV_HOST_DMA"), kv_host_dma_default);
+#endif
         m.gemm.set_f16_io(m.f16_io);
         set_act_f16(m.f16_io);
         static const bool f16_range = std::getenv("STRATA_F16_RANGE") != nullptr;   // what reaches FP16's range
@@ -5031,15 +5042,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         pt.mark(kPfQsa, cs);
                         pf_step("reading the prompt (batched, step sync): the K/V staged from RAM at layer", l);
                     }
-                    // STRATA_KV_HOST_DMA=1 (opt-in): append to the staging pool and resident slots, then DMA the
-                    // chunk's blocks into the host copy instead of writing host memory from the GPU kernel.
-                    // The staged first block is complete; cells beyond the chunk are not read until appended.
-#if defined(STRATA_GPU_METAL)
-                    constexpr bool kv_host_dma = false;
-#else
-                    static const bool kv_host_dma = core::kv_host_dma_on(std::getenv("STRATA_KV_HOST_DMA"), false);
-#endif
-                    const bool host_by_dma = core::kv_host_dma_use(kv_host_dma, staged, m.stage.present());
+                    const bool host_by_dma = core::kv_host_dma_use(m.kv_host_dma, staged, m.stage.present());
                     const strata::kernels::KvHostPools* host_w = host_by_dma ? nullptr : &st.host;
                     if (st.kv_hybrid) {   // K8V4: K INT8 unrotated, V rotated Q4_0 (only V and the output rotate)
                         // streamed: each half writes its part of the host copy and of the staging pool
@@ -8745,12 +8748,7 @@ bool Prefill::lm_run(const std::vector<Seg>& segs, int depth, const std::vector<
                                                                 (p0 + s.page_size - 1) / s.page_size, s, cs);
                             pt.mark(kPfQsa, cs);
                         }
-#if defined(STRATA_USE_HIP)
-                        static const bool kv_host_dma = [] { const char* e = std::getenv("STRATA_KV_HOST_DMA"); return e && e[0] == '1'; }();
-#else
-                        static const bool kv_host_dma = core::kv_host_dma_on(std::getenv("STRATA_KV_HOST_DMA"), true);
-#endif
-                        const bool host_by_dma = core::kv_host_dma_use(kv_host_dma, staged, m.stage.present());
+                        const bool host_by_dma = core::kv_host_dma_use(m.kv_host_dma, staged, m.stage.present());
                         const strata::kernels::KvHostPools* host_w = host_by_dma ? nullptr : &st.host;
                         if (st.kv_hybrid) {
                             // streamed: each half writes its part of the host copy and of the staging pool
