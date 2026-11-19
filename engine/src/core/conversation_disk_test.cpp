@@ -8,6 +8,7 @@
 #include "strata/core/conversation_disk.hpp"
 #include <unistd.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -501,6 +502,10 @@ void test_eviction_order() {
     std::string c1, c2;
     chat_seed(12, "-a", c1, 80);
     chat_seed(12, "-b", c2, 81);
+    // Reopen reconstructs age from file timestamps. Files written in one clock tick can tie.
+    const auto first_chat = dir / (c1 + ConversationDiskStore::file_suffix);
+    const auto second_chat = dir / (c2 + ConversationDiskStore::file_suffix);
+    std::filesystem::last_write_time(first_chat, std::filesystem::last_write_time(second_chat) - std::chrono::minutes(1));
     const uint64_t chat_bytes = stored_bytes(dir, c1);
     check(store.records() == 3, "root + two chats fit");
 
