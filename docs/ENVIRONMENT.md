@@ -171,7 +171,7 @@ absent variable as enabled. `engine default` means a value the code computes.
 | `STRATA_STAGER_THREADS` | 2..4, or 32 for a file set | host copy threads of unpinned blobs, 1..32 |
 | `STRATA_AUX_STAGER` | on | copy threads follow `--aux-cpus`; `0` leaves them where they were |
 | `STRATA_COLD_TRACE` | off | print where the first prompt's cold reads go |
-| `STRATA_KV_HOST_DMA` | off | append to the staging pool and resident slots, then DMA the block |
+| `STRATA_KV_HOST_DMA` | on for CUDA except Volta | append to the staging pool and resident slots, then copy the new blocks to RAM by DMA. Set `1` to opt in on Volta or HIP. |
 | `STRATA_F16_RANGE` | off unless set | clamp the values that reach FP16's range |
 | `STRATA_XN_F16` | on | keep a pure FP16 image; `0` keeps the BF16 one |
 | `STRATA_PROMPT_DIRECT` | off | unbuffered batched prompt reads while the read exceeds the page cache |
