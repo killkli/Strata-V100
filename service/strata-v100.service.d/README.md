@@ -26,7 +26,7 @@ table (`src/core/nv_defaults.cpp`); the line stays here so the profile is explic
 turns the table off.
 
 The measurements behind these switches, and the ones that did **not** help on this rig, are in
-[the Volta report](../bench/results/2026-10-20-v100-sm70-speed-stack/README.md).
+[the Volta report](../../docs/bench-results/2026-10-20-v100-sm70-speed-stack/README.md).
 
 The checkpoint settings were measured with the deferred input-anchor engine.
 The engine copies the input anchor to host memory after the first output window.

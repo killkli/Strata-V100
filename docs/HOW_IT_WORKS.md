@@ -385,9 +385,7 @@ with the bottleneck analysis and the measurements:
 
 ## License
 
-Strata is open source under the [MIT License](../LICENSE). A few parts carry their own
-licenses. They are `third_party/ggml` (MIT, llama.cpp / ggml), the web app's font (SIL Open
-Font License 1.1) and the experimental speed projection's vector in
-`data/experimental-speed-projection` (Qwen Community License 1.0, from the model's
-activations). The models are not part of this repository. Each model's own license applies
-to its files.
+Strata is open source under the [MIT License](../LICENSE). A few parts carry their own licenses: `engine/third_party/ggml`
+(MIT, llama.cpp / ggml), the web app's font (SIL Open Font License 1.1) and the experimental speed projection's
+vector in `terminal/data/experimental-speed-projection` (Qwen Community License 1.0, from the model's activations). The
+models are not part of this repository; each model's own license applies to its files.

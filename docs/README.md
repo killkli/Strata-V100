@@ -1,6 +1,6 @@
 # Strata documentation
 
-**New here? Start with [Install Strata](INSTALL.md).** Download the one installer for your system (Windows, Linux or Mac), or install the Terminal with one line. Both use released engine packages. This documentation is for version 0.2.15.
+**New here? Start with [Install Strata](INSTALL.md).** Download the one installer for your system (Windows, Linux or Mac), or install the Terminal with one line. Both use released engine packages. This documentation is for version 0.2.16.
 
 ## Start here
 
@@ -36,7 +36,13 @@ effect.
 | [STYLE.md](STYLE.md) | The writing rules for these pages. |
 | [DETAILS.md](DETAILS.md) | All measured numbers, the request formats, and the settings history. |
 
-## By task
+- [Build or run from a source checkout](SOURCE_INSTALL.md)
+- [Docker](DOCKER.md)
+- [Contribution rules](../.github/CONTRIBUTING.md)
+- [Community benchmarks](COMMUNITY_BENCHMARKS.md) and the [standard benchmark protocol](BENCHMARK_PROTOCOL.md)
+- [How the engine works](HOW_IT_WORKS.md), [technical reference](DETAILS.md) and [Terminal reference](TERMINAL.md)
+- [KVA: approximate prompt processing for the late layers (experimental, opt-in)](KVA.md)
+- [App development](../app/host/README.md) and [packaging](../tools/packaging/README.md)
 
 | Task | Page |
 |---|---|
@@ -92,7 +98,10 @@ Read the switch first, then the measurement.
 | [ORCA.md](ORCA.md), [ORCA_Q4_K_S.md](ORCA_Q4_K_S.md) | OrcaRouter checkpoints. |
 | [A770_SPEED_SPEC.md](A770_SPEED_SPEC.md) | The Arc A770 decode objective and its criteria. |
 
-## Measurement logs
+- Installation steps live in [INSTALL.md](INSTALL.md), source steps in [SOURCE_INSTALL.md](SOURCE_INSTALL.md). The public READMEs stay short.
+- Check command examples against the parser and filenames against the release assets.
+- A guide describes the current release. Version history, fixed bugs and superseded settings go in a closing
+  **History / older measurements** section, in `docs/bench-results`, or in the release notes. Do not mix them into instructions.
 
 These pages record measurements as they were taken. They keep their original text and
 their original numbers. A log is evidence, not current advice: read the build and the

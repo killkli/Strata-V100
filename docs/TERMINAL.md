@@ -3,10 +3,7 @@
 This page documents the Terminal: `strata.py` and the `strata_cli/` package. The page covers
 engine version 0.1.45.7. Every command below exists in `strata_cli/cli.py` in this tree.
 
-The Terminal starts the server, edits saved settings, manages an owned server instance, reads
-telemetry, and runs the tuner. It does not contain engine code. The engine is the `strata` binary in
-`engine/`, and the server is `serve/server.py`. Read [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for the
-engine, and [SERVER.md](SERVER.md) for the server.
+For the shortest path, use the [terminal quick start](TERMINAL_QUICKSTART.md). The Terminal installs with one line (see [TERMINAL_LAUNCH.md](TERMINAL_LAUNCH.md#install-one-line)) and gives you the `strata` command; every command below is typed as `strata ...`. In a source checkout, run `python terminal/strata.py ...` from the repository root instead (use `python3` where there is no `python`).
 
 ## Run the terminal
 
@@ -693,19 +690,21 @@ strata timeskip apply 4f2a1c8e9b3d --dry-run
 Bounded engine-configuration search with retained evidence. The search returns a recommendation; it
 never changes a profile by itself.
 
-```
-strata tune {plan,run,apply,rollback,status,list,auto} ...
+`doctor` and `components verify` inspect local engine, tokenizer, pack, model-shard and optional vision paths without starting the engine. Missing required files return exit 5. Their optional `--live` flag queries `nvidia-smi` once, with a five-second timeout, and compares selected NVIDIA device indices with the visible card inventory. The JSON report lists each card's name, UUID, memory and driver version. A live check requires `--profile`. Missing selected cards, an unavailable probe for an explicitly selected NVIDIA profile, or a HIP/other backend without a qualified live probe return exit 5. With no selected device, a successful card inventory is labelled `selection_unverified`; an unavailable probe is a warning when the backend is also unknown. The default command does not run external tools. This read-only inventory does not launch the engine or establish CUDA/HIP compatibility, PCIe topology, four-card throughput or model-file integrity. Artifact integrity still needs trusted signed manifests. `doctor` makes no repairs or downloads.
+
+`engine calibrate --plan` is a read-only preflight that names the source config digest, selected model/devices, measured settings, expected duration and component results. `--measure` runs the existing **decode-speed** sweep and writes a report with raw trials, selected settings, source/engine/tool digests and a local hardware key; it does not change the run config. `--review-result` shows the candidate and refuses a changed profile, config, engine, required model file metadata, hardware key or report contents. `--apply-result` starts a short candidate smoke generation first, saves the previous run config and setup settings with an owner-only application record, then writes calibrated args and setup's remembered calibration. A failed smoke test or settings write leaves or restores the previous config. `--review-rollback` checks that the applied config and setup settings still match that record; `--rollback-result` smoke-tests the previous config and restores both stores only when they are unchanged since application. An application made before this record existed needs manual recovery from its backup. Each action that starts the engine requires `--exclusive`; this remains the owner's assertion that other processes using those devices have stopped. On POSIX, the managed runtime host and foreground `strata serve` hold a shared local activity lease, while calibration measure, apply and rollback take its exclusive lease for the full engine action. Calibration also refuses stale or uncertain managed owner records. This blocks Strata instances launched through these paths even on a different port. The configured port is checked too, including for rollback. Direct legacy server launches, unrelated GPU processes and Windows control are not covered by this lease and still need operator verification. Report integrity is a checksum and local identity binding, not a publisher signature; full model-file hash verification is still pending. This suite does not measure multi-request throughput, TTFT or four-GPU tail latency.
+
+The basic CLI and status command use Python's standard library. The interactive monitor is an optional component:
+
+```sh
+python -m pip install -r terminal/requirements-monitor.txt
+strata monitor --url http://127.0.0.1:8095
 ```
 
-| Subcommand | Usage and options |
-|---|---|
-| `plan` | `strata tune plan --engine PATH --backend FAMILY --model ID [--objective generation\|prefill\|latency] [--trials N] [--time S] [--repeats N] [--hold DIM]`. Shows every dimension the sweep would search and why the rest were excluded. It measures nothing. |
-| `run` | `strata tune run --engine PATH --backend FAMILY --model ID [options]`. Measures the baseline and the candidates, and writes a job record. |
-| `apply` | `strata tune apply JOB_ID [--config RUN_CONFIG.json] [--model-path PATH] [--context N]`. Applies a reviewed recommendation, after the identity checks and a diff. |
-| `rollback` | `strata tune rollback APPLICATION_ID`. Restores the configuration bytes from before an apply. |
-| `status` | `strata tune status JOB_ID`. Reads a job's durable state and report. |
-| `list` | `strata tune list`. |
-| `auto` | `strata tune auto TARGET [options]`. The real tuner: measures your configuration, tries one-knob changes, and saves a gain as a preset. |
+Use the same Python environment that runs Strata. Strata's runtime dependencies are listed separately in `terminal/requirements.txt`; the monitor dependency is not needed for `serve` or `status`.
+`strata doctor --output json` reports the optional monitor as missing, present at the pinned Textual version, or
+unverified when its version differs or package metadata is absent. This is a package-version check, not a terminal
+rendering test; an unverified monitor never blocks serving.
 
 `--engine` is a path, or `component:strata-engine` for the engine package installed for this PC.
 `--backend` is one of `metal`, `cuda`, `hip`, `sycl`, `cpu`.
@@ -734,35 +733,12 @@ identity and state options below. Both commands require `--engine`, `--backend` 
 | `--full-digests` | off (default). Hashes the model and the engine completely instead of sampling. |
 | `--state-dir DIR` | none. The state folder; see [Evidence](#evidence-of-a-sweep). |
 
-`tune auto` takes its own options:
-
-| Option | Default and effect |
-|---|---|
-| `TARGET` | required. A saved profile name or a run config path. |
-| `--mode quick\|thorough` | `quick` (default). The help text says quick takes about 20 minutes and thorough up to 2 hours with a 5-pair confirmation. |
-| `--goal speed\|room\|room:MiB` | `speed` (default). `room` leaves memory free; `room:MiB` leaves that many MiB free. |
-| `--leave-ram PERCENT` | `0` (default). Range 0..50. A nonzero value switches the goal to `room`. |
-| `--use chat\|coding` | `chat` (default). `coding` also judges long-prompt speed. |
-| `--allow-small-differences` | off (default). Also tries arms of the `placement` class. |
-| `--allow-not-repeatable` | off (default). Also tries arms of the `nonrepeatable` class. |
-| `--name NAME` | none. The preset name; the default is model, context and goal. |
-| `--time MINUTES` | none. The time to spend, in minutes. |
-| `--no-save` | off (default). Measures and reports, and saves no preset. |
-| `--gpu-lock PATH` | `$STRATA_TUNE_GPU_LOCK`. A lock file held around every engine run. |
-| `--no-quiet-check` | off (default). Skips the wait for other engines and a busy CPU. |
-| `--serve-dir DIR` | the Terminal's own folder. The folder that holds `serve/`. |
-| `--work-dir DIR` | a temporary folder. Where the run's configs and logs go. |
-| `--status-file PATH` | none. Progress as JSON, rewritten at every step. |
-| `--boot-timeout S` | `900.0` (default). |
-
-What it changes: `plan` writes nothing. `run` writes a job record. `apply` writes the run config and
-keeps the previous bytes. `rollback` restores them and marks the application rolled back. `auto`
-writes a preset when it finds a gain, unless `--no-save` is given.
-
-```
-strata tune plan --engine engine/strata --backend cuda --model qwen3.8-flash-next --trials 16
-strata tune run --engine engine/strata --backend cuda --model qwen3.8-flash-next --model-path /data/q2_0.gguf
-strata tune apply 8f14e45fceea167a --config strata-qwen.json
+```sh
+python tools/packaging/monitor_bundle.py build dist/strata-monitor.pyz
+python tools/packaging/monitor_bundle.py verify dist/strata-monitor.pyz
+python dist/strata-monitor.pyz status --url https://HOST --json
+python dist/strata-monitor.pyz monitor --url https://HOST --once --json
+python dist/strata-monitor.pyz logs --url https://HOST --output json
 ```
 
 | Exit code | Meaning |
@@ -776,123 +752,8 @@ strata tune apply 8f14e45fceea167a --config strata-qwen.json
 
 Read [TUNING.md](TUNING.md) for the measured knobs and their gains on named hardware.
 
-### The arm model
-
-A candidate is one knob changed from your own configuration (Rule 1, from the code,
-`strata_control/tune_knobs.py`). The sweep never replaces your settings with the first value of every
-dimension. A boolean flag is present or absent; `--kv-grow 0` is not a value (Rule 3). A value
-outside the bounds, or on the never list, is not tried (Rule 2).
-
-The per-request settings are tried before any restart, because they need none. A per-request win
-needs at least 3% in every round (from the code, `strata_control/tune_knobs.py:PER_REQUEST`).
-
-The machine class decides the order and the list. The classes are A to G: A is RAM-bound resident
-mode, B is a card with at least 24 GB, C is a card below 24 GB, D and E are the Qwen3.6 hybrid cases,
-F is a CPU with performance and efficiency cores, and G is Intel Arc under SYCL. `quick` keeps the
-first arms the time budget allows. `thorough` keeps all arms, and the flat knobs come last.
-
-### Answer classes
-
-Each arm declares one answer class. The class says what the setting does to the answers.
-
-| Class | Meaning for you | Notice text (from the code) |
-|---|---|---|
-| `exact` | The answers are byte-identical to the standard setup. The tuner may pick it alone. | `Answers are identical to the standard setup.` |
-| `placement` | The math is the same, but the CPU/GPU split changes, so near-ties can flip. The tuner needs your tick. | `Answers may differ slightly from the standard setup.` |
-| `nonrepeatable` | The answers are not bit-exact from run to run. The tuner needs your tick. | `Answers are not repeatable run to run.` |
-| `quality` | The setting changes the numbers on purpose. The tuner never picks it. | `Includes a quality setting that changes the numbers.` |
-
-`strata tune auto --allow-small-differences` permits the `placement` class.
-`--allow-not-repeatable` permits the `nonrepeatable` class. Nothing selects `quality`
-(from the code, `tune_knobs.allowed`).
-
-On some machines the standard setup is not repeatable. The code records that the RTX 3060 in
-resident-RAM mode and the Arc A750 gave 2 and 3 identical gate prompts out of 10 between two runs of
-the default. There the `exact` notice changes to: `Answers can differ from run to run on this PC
-even with the standard setup; this setting does not add to that.` (from the code,
-`strata_control/tune_knobs.py`).
-
-### Bounds
-
-A value outside these bounds is not tried, and a preset that carries one is refused.
-
-| Flag | Safe values |
-|---|---|
-| `--spec` | 3 or 4 |
-| `--spec-min-p` | 0.3 to 0.7 |
-| `--mtp` | 1, 2 or 3 (Qwen3.6 only; the Flash-Next `--mtp` is a path) |
-| `--pcie-frac` | 0.0 to 0.55 |
-| `--adapt-every` | 1 to 4 |
-| `--adapt-swaps` | 80 to 160 |
-| `--adapt-decay` | 0.7 to 0.97 |
-| `--hybrid-rows` | 64 to 256 |
-| `--host-core` | `first` or `last` |
-| `--kv-resident` | 32768, 49152 or 65536 |
-| `--prefill` | `auto`, `auto:16384`, `auto:32768`, 2048 or 4096 |
-
-### The never-pick list
-
-These settings are refused with a reason. The table is the rule set from
-`strata_control/tune_knobs.py:NEVER`.
-
-| Setting | Condition | Reason (from the code) |
-|---|---|---|
-| `STRATA_SH_STREAM` | gfx12 cards | it halves decode speed on this graphics card |
-| `STRATA_RDNA2_SGEMM=all` | gfx12 cards | it makes long prompts five times slower |
-| `STRATA_SELECT_SIMT` | always | its gain is below the 3% margin |
-| `STRATA_HIP_WMMA` | always | it changes the numbers (a quality setting) |
-| `--pool-affinity auto\|p-cores` | a CPU with performance and efficiency cores | it made answers 47% slower |
-| `--pool-workers` above the engine default | always | more helper threads than the engine chose made it 36% slower |
-| `--ple-io ram\|mmap` | RAM-bound machine | it needs the table in memory, which this PC does not have to spare (-61% speed) |
-| `--adapt-every` at or above 100000 | always | turning the expert re-balancing off cost 3% to 44% |
-| `--kv-resident` below the context | unless at 128k or more, where 49152 and 65536 were flat or better | it made answers 22% to 34% slower and changed them |
-| `--pcie-frac` at or above 0.75 | a card below 24 GB | a high PCIe share made answers 14% to 37% slower |
-| `--prefill` fixed below `auto` | Flash-Next, or a Qwen3.6 chunk of 512 or less | smaller prompt chunks made long prompts 11% to 75% slower |
-| `--expert-vram` without `--prefill` | Qwen3.6 | without a matching prompt chunk it made prompts 44% slower |
-| `--spec` at or above 6 | always | wider speculative windows were 4% to 16% slower |
-| `--spec` at or below 2 | Flash-Next | a 2-token window was 4% to 11% slower |
-| `--lookup-chain` | always | it was 3% to 8.5% slower |
-| `--vram-reserve-mib` | a card of 8400 MiB or less | this card cannot start with a reserve |
-| `--expert-cache` zero or very small | always | turning the GPU expert cache off or very small costs speed |
-| `--mtp` at 0 or at 4 and above | Qwen3.6 | that draft window was 10% to 28% slower |
-
-Each reason follows the code's own wording in `NEVER`. The measurement behind each row is in
-[DETAILS.md](DETAILS.md); the gains that the tuner may pick are in [TUNING.md](TUNING.md).
-
-### Evidence of a sweep
-
-`strata tune run` writes durable evidence in the state folder:
-
-| Item | Detail |
-|---|---|
-| Job record | `<state>/<job id>/job.json`. It holds the plan, every candidate, the events, and the report. |
-| Exclusive lease | `<state>/<job id>/tuning.lease`, an `O_EXCL` marker. A crashed sweep leaves a stale marker that the next run reports. |
-| History | `<state>/history`. A previous sweep there is labelled comparable or not, with the reason. |
-| Application | `<state>/applications/<application id>/application.json` and `before.json`. |
-
-The state folder is `--state-dir`, else `$STRATA_TUNE_DIR`, else `$XDG_STATE_HOME/strata/tuning`
-(`%LOCALAPPDATA%\Strata\tuning` on Windows).
-
-A record is comparable only when the engine digest, the model digest, the backend, the workload, the
-context and the machine all match (from the code, `strata_control/tune_history.py`). A model is
-identified by a content digest, not by its name. The default digest samples the head, the middle and
-the tail plus the exact size; `--full-digests` hashes the whole file.
-
-`strata tune auto` keeps its evidence in the preset folder: one JSON file per preset, `active.json`
-for the active choice, and `history.jsonl` with one row per trial (from the code,
-`strata_control/presets.py`). `strata presets recheck` adds a recheck block to the preset.
-
-`apply` refuses a recommendation when the sweep did not complete, when it recommended no change,
-when the machine drifted during the sweep, when the configuration already carries the flags, or when
-the recorded identity cannot be matched to the installed bytes. The CLI also refuses a sweep that
-recorded no model digest (from the code, `strata_cli/cli.py:_tune_apply`).
-
-## presets
-
-List and manage the presets that `strata tune auto` saves.
-
-```
-strata presets {list,status,show,apply,rename,delete,undo,export,import,effective,off,recheck} ...
+```sh
+python terminal/tools/portable_monitor_smoke.py --bundle /absolute/path/to/strata-monitor.pyz --report /absolute/path/to/new-smoke-report.json
 ```
 
 | Subcommand | Usage |
@@ -910,16 +771,24 @@ strata presets {list,status,show,apply,rename,delete,undo,export,import,effectiv
 | `off` | `strata presets off TARGET`. Switches the saved tuning off for these choices. The preset is kept. |
 | `recheck` | `strata presets recheck PRESET TARGET [--gpu-lock PATH] [--serve-dir DIR] [--work-dir DIR] [--status-file PATH] [--boot-timeout S] [--no-quiet-check]`. A short check that the preset is still as fast. `--boot-timeout` is `900.0` (default). |
 
-`TARGET` is a saved profile name or a run config path. `presets.find` accepts a full preset ID, a
-prefix of at least 4 characters, or the exact name (case-insensitive). An ambiguous value is
-refused.
+For the source CLI, run `python terminal/tools/minimal_cli_smoke.py --report /absolute/path/to/new-report.json`. Its `-S` child processes check that help, one-shot status and monitor, missing-config serve and the missing-harness error work without Rich or Textual. It uses only a loopback telemetry fixture and does not establish that an installed inference server or engine runs without its own required dependencies.
 
-What it changes: `apply`, `rename`, `delete`, `undo`, `import`, `off` and `recheck` write the preset
-store. `list`, `status`, `show`, `export` and `effective` write nothing.
+To check source serving without the optional terminal framework, create a fresh virtual environment, install only `terminal/requirements.txt`, then run `python terminal/tools/minimal_server_smoke.py --report /absolute/path/to/new-report.json` with that environment's Python. This exercises foreground and POSIX managed serving against a fake engine. It does not install model weights or prove hardware or release-package behavior.
 
-```
-strata presets list --model qwen
-strata presets effective four-gpu
+To place that client in a separate local directory without changing the server, first create its parent directory, then preview and run the offline copy:
+
+```sh
+python tools/packaging/monitor_bundle.py install dist/strata-monitor.pyz --target /absolute/path/to/new-monitor --plan
+python tools/packaging/monitor_bundle.py install dist/strata-monitor.pyz --target /absolute/path/to/new-monitor --if-candidate-sha256 CANDIDATE_SHA256
+python /absolute/path/to/new-monitor/strata-monitor.pyz status --url https://HOST --json
+python tools/packaging/monitor_bundle.py update dist/next-monitor.pyz --target /absolute/path/to/new-monitor --plan
+python tools/packaging/monitor_bundle.py update dist/next-monitor.pyz --target /absolute/path/to/new-monitor --if-current-sha256 CURRENT_SHA256 --if-candidate-sha256 CANDIDATE_SHA256
+python tools/packaging/monitor_bundle.py rollback --target /absolute/path/to/new-monitor --plan
+python tools/packaging/monitor_bundle.py rollback --target /absolute/path/to/new-monitor --if-active-sha256 ACTIVE_SHA256 --if-rollback-sha256 PREVIOUS_SHA256
+python tools/packaging/monitor_bundle.py commit --target /absolute/path/to/new-monitor --plan
+python tools/packaging/monitor_bundle.py commit --target /absolute/path/to/new-monitor --if-active-sha256 ACTIVE_SHA256 --if-previous-sha256 PREVIOUS_SHA256
+python tools/packaging/monitor_bundle.py uninstall --target /absolute/path/to/new-monitor --plan
+python tools/packaging/monitor_bundle.py uninstall --target /absolute/path/to/new-monitor --if-active-sha256 ACTIVE_SHA256
 ```
 
 | Exit code | Meaning |
@@ -930,8 +799,7 @@ strata presets effective four-gpu
 
 ## connect
 
-Print the settings file and the environment that an app needs to reach the running server. With no
-app name it lists the apps.
+`serve --output jsonl` writes one schema-versioned lifecycle event per stdout line: `starting`, `ready`, `stopping`, `draining` and `stopped`, or `failed` if startup does not reach readiness. The ready event reports the actual bound address/port, instance ID, process ID and model state, without keys or prompt content. Human server diagnostics go to stderr in this mode. `SIGTERM` with a completed drain exits 0; Ctrl-C exits 130; a drain deadline exits 8. `serve --plan --output json` remains a single read-only preview; `--plan --output jsonl` is rejected. The direct `python terminal/serve/server.py` entry point retains its legacy human output.
 
 ```
 strata connect [APP] [options]
@@ -997,15 +865,11 @@ no file content.
 strata repair-access
 ```
 
-| Exit code | Meaning |
-|---|---|
-| 0 | Every entry was checked and repaired where needed. |
-| 5 | At least one entry could not be repaired. |
+For a repeatable client stability check, run `terminal/tools/monitor_soak.py` with an absolute new report path. `--exercise-ui` resizes the live Textual monitor across 110 x 30, 80 x 24, 60 x 16 and 40 x 12 while a synthetic server rotates an unrelated host GPU row and intermittently omits or duplicates a selected card sensor. It checks selected-card history bounds alongside reconnect, restart and read-only detach. Use `--seconds 1800 --interval 0.5 --exercise-ui` for the long soak. Its JSON is synthetic client evidence; it does not measure engine, model or GPU performance.
 
-## update
+For a portable client installation check, run `python3 terminal/tools/portable_monitor_smoke.py --bundle /absolute/path/to/strata-monitor.pyz --report /absolute/path/to/new-report.json`. It verifies the bundle and digest-pinned local install/removal, then reads only loopback fake telemetry with isolated `-I -S` Python. Add `--interactive` when Textual and Rich are installed in that Python environment to load the packaged one-screen Overview in a headless 110 x 30 terminal, check all six panels and detach. The interactive check uses isolated `-I` Python with site packages enabled for Textual. Both modes require a new absolute report path. Run them on each release OS; a passing fake-server check does not qualify real hardware or a physical terminal.
 
-Download and install the engine for this PC, and Control, from the signed feed. It switches only
-after a test start, and it keeps the previous version.
+On POSIX with Textual installed, run `python3 terminal/tools/portable_monitor_pty_smoke.py --bundle /absolute/path/to/strata-monitor.pyz --report /absolute/path/to/new-pty-report.json` to check live terminal cleanup. It opens a 110 x 30 pseudo-terminal, waits for the packaged dashboard and telemetry, detaches once with `q` and once with Ctrl-C, and compares terminal settings before, during and after each session. It also checks that the fake server remains readable. The Mac result is in the transfer packet; repeat it on Linux and still check a physical terminal/SSH session separately.
 
 ```
 strata update [options]

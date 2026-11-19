@@ -62,3 +62,36 @@ All rows below are proposals. Use the same model, INT8 KV, two request slots, an
 First collect three fresh prompt sizes and agent continuations. Warm the adaptive expert cache before steady-state measurements, but also report cold startup separately. Interleave repeated arms where possible. Record prompt reuse and answer hashes. Include 256-token fixed-length comparisons and longer natural completions. A small decode difference on three synthetic prompts is not enough to select a default.
 
 Keep model replacement, tensor parallelism, and per-socket replicas as separate experiments. The earlier audit already identifies alternative V100 engines and newer checkpoints. Their memory use, links, API behavior, and task quality need separate controls.
+
+## Follow-up on 19 November 2026
+
+The local branch merged the fork's `origin/main` and `origin/local/working`, then integrated Strata upstream through `58ee32277`. The upstream 0.2.16 source layout places CUDA code under `engine/` and the server under `terminal/serve/`. It builds Strata's own prompt kernels.
+
+| Source | Decision |
+| --- | --- |
+| [jmnargi/Strata-V100 #116](https://github.com/jmnargi/Strata-V100/pull/116) and [Basalt's suffix reset](https://github.com/jesdga95/basalt/commit/d7558e4e9) | Ported the generation-stamped suffix index from jmnargi. It clears the table before a stamp is reused and preserves the hash and proposal order. Basalt's register prefetch showed a kernel gain with no repeatable model-level gain in jmnargi's tests. |
+| [jmnargi's prefix matcher](https://github.com/jmnargi/Strata-V100/commit/383ad10fe) | Ported exact block-wise comparison for 32-bit token buffers in the RAM and disk cache. Mixed-width token comparisons still use the existing scalar path. |
+| [jmnargi/Strata-V100 #104](https://github.com/jmnargi/Strata-V100/pull/104) and [1Cat-vLLM #1176](https://github.com/1CatAI/1Cat-vLLM/pull/1176) | Merged the opt-in tiled CUDA scorer through `origin/main`. The scorer keeps FP32 scores and the same output hashes. |
+| [jmnargi/Strata-V100 #105](https://github.com/jmnargi/Strata-V100/pull/105) | Merged opt-in CUDA host KV mirroring by DMA and verified it with the CUDA parity test. The source fork measured a component gain. Its full-model runs showed mixed results. |
+| [chenjxdev/Strata-v100x2](https://github.com/chenjxdev/Strata-v100x2/commit/4a9a8ee5f) | The fork reverted its Q5_0 Split<6> and MTP-chain changes. Its V100 A/B found the first slower and the second within noise. |
+| [GLCdz four-card results](https://github.com/GLCdz/Strata-V100/blob/dfdd99f0e/community/v100/BENCHMARKS.md) | Its long-context tuning uses the ISTA-DAS IQ3_S pack and 251.55 GiB of RAM. It changes several parameters at once. Those settings were left out of the 94 GiB Unsloth profile. |
+| [mavyric/Strata-v100](https://github.com/mavyric/Strata-v100/commit/3e046005d) and [RustingStrata-V100](https://github.com/gansui/RustingStrata-V100/commit/2beaf78b5) | The first patch addresses non-finite quantization values. The second enables Volta in a separate Rust backend. Neither supplies a portable measured speed gain for this engine. |
+
+CPU A/B used one Xeon E5-2680 v4 core, GCC 11.4 at `-O3`, seeded token IDs, and the same inputs from both builds. There were three runs per arm in swapped order with seven samples per length in each run. The suffix test resets and appends the prompt into a table sized for 524,288 tokens plus 4,096 headroom. The prefix test mismatches one of the last 16 compared positions and checks identical returned prefix lengths.
+
+| Tokens | Suffix reset and rebuild, ms before / after | Exact prefix match, µs before / after |
+| ---: | ---: | ---: |
+| 2,048 | 10.895 / 0.036 | 0.871 / 0.257 |
+| 32,768 | 11.868 / 0.653 | 14.642 / 4.874 |
+| 131,072 | 15.236 / 2.704 | 73.575 / 28.003 |
+| 524,288 | 31.481 / 21.549 | 252.053 / 111.938 |
+
+On one Tesla V100-SXM2-16GB with CUDA 12.9.86 and a 200 W limit, the merged scorer gave the following GPU-event times. Each median comes from three interleaved runs per arm, 20 iterations per run at 256 queries. Scores hashed identically at each context size. The switch stays opt-in. The benchmark deliberately selects the warp-scoring route.
+
+| Context cells | Warp scorer, ms | Tiled scorer, ms | Time reduction |
+| ---: | ---: | ---: | ---: |
+| 32,768 | 0.861 | 0.680 | 21.0% |
+| 131,072 | 3.469 | 2.524 | 27.2% |
+| 200,000 | 5.420 | 3.667 | 32.3% |
+
+Run `qsa_select_bench <context> 256 20` with `STRATA_QSA_WARP=1 STRATA_SELECT_SIMT=0 STRATA_SCORES_THREAD=0 QSA_BENCH_HASH=1`. Alternate `STRATA_SCORES_PROMPT_HALVE=0` and `1`. The figures above cover individual operations. They do not establish a change in model throughput.

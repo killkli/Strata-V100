@@ -8,6 +8,9 @@ the Q8_0 reference. Setup and the per-file details: [UD-Q4_K_XL](UNSLOTH_Q4.md),
 
 ## What each file stores
 
+Read from the GGUF headers alone with `terminal/tools/quant_formats.py --hf unsloth/Qwen3.8-Flash-Next-GGUF 38bb39ee... <dir>`
+(HTTP range requests, nothing else is downloaded; on local shards: `terminal/tools/quant_formats.py <shard glob>`).
+
 The routed experts (gate, up, down; 512 per layer, 10 used per token) are where the files differ:
 
 | File | Download | Routed gate / up | Routed down | Routed experts | Per token (10 experts x 48 layers) |
@@ -74,9 +77,44 @@ Before that build the layers with Q5_0 downs answer, but 2-3% less accurately pe
   and 1,980 on an R9700). Q4_K, Q5_K, Q5_1 and Q6_K experts take Strata's fused prompt kernels where they cover
   a layer, and the FP16 path elsewhere. The separate K-quant library (`libstrata_kq.so` / `strata_kq.dll`) left in 0.2.16.
 - `STRATA_MMQ_KQ=1` is opt-in because MMQ rounds the prompt's products differently from the FP16 path (the output
-  differs at the rounding level); its speed and KL are measured before it becomes a default. One exception: setup
-  writes it for `UD-Q4_K_XL` on the CUDA 12 engine (V100, sm_70), because the FP16 prompt path returns non-finite
-  logits (#879) from layer 0 for this file ([NVIDIA_V100.md](NVIDIA_V100.md)).
+  differs at the rounding level); its speed and KL are measured before it becomes a default.
+
+## Quality: the yardstick
+
+`terminal/tools/quant_quality.py` scores a quant against Q8_0 on one fixed text set (`terminal/data/quant_quality/v1`: code, docs,
+English prose, German/French/Japanese/Chinese, an agent transcript; 5 x 1,000 tokens in `set.ids.json`). Every token
+is read through the decode windows (teacher-forced) with the experts on the CPU (one VRAM slot), no expert
+adaptation, no PCIe share, no route tail skip, FP16 K/V; per position the engine writes the log-probability of the
+text's next token and its 64 most likely tokens (`STRATA_LOGPOS`, `STRATA_LOGPOS_TOPK=64`). Top-1 agreement: the
+same most likely token as Q8_0. KL: KL(Q8_0 || quant) over Q8_0's 64 most likely tokens.
+
+```sh
+python terminal/tools/quant_quality.py run --config strata-<quant>.json --out <quant>.tsv
+python terminal/tools/quant_quality.py compare q8_0.tsv <quant>.tsv --segments
+```
+
+Measured on the AMD box (EPYC 7452, R9700, HIP, engine at 0601072d; 4,995 positions; Q8_0 against itself in a second
+run: byte-identical rows):
+
+| Quant | Same top token as Q8_0 | Mean KL | KL p99 | Perplexity (Q8_0: 4.052) |
+|---|---:|---:|---:|---:|
+| UD-Q6_K_XL | 94.61% | 0.033 | 0.494 | 4.020 |
+| UD-Q5_K_XL | 94.55% | 0.038 | 0.636 | 4.024 |
+| UD-Q4_K_XL | 93.09% | 0.056 | 0.829 | 4.068 |
+| UD-IQ4_XS | 88.91% | 0.101 | 1.596 | 4.120 |
+| IQ3_S | 87.69% | 0.144 | 1.975 | 4.097 |
+| IQ3_XXS | 84.46% | 0.202 | 2.433 | 4.119 |
+| Q2_0 | 80.60% | 0.315 | 3.643 | 4.475 |
+
+The same file on another backend is not the same answers: UD-Q4_K_XL on an RTX A4000 (CUDA, the RAM
+budget mode of a 62 GB PC) against UD-Q4_K_XL on the R9700 is 94.5% the same top token (KL 0.038), mostly near-ties.
+
+**The prompt path:** `terminal/tools/quant_quality.py prompt` / `pcompare` score the batched prompt path the same way (20 prompts
+of 256-1,000 tokens of the set, the full vocabulary's KL of the next token's distribution against Q8_0's): every
+quant above picks Q8_0's top token after all 20 prompts. The K-quants' MMQ kernels (`STRATA_MMQ_KQ=1`) against the FP16
+path on the R9700: UD-Q4_K_XL mean KL 0.095 / median 0.0027 (FP16: 0.081 / 0.0047), UD-Q5_K_XL 0.038 / 0.00055 (FP16:
+0.025 / 0.0016), UD-Q6_K_XL 0.028 / 0.00029 (FP16: 0.029 / 0.00069) - a better median everywhere, a worse mean on Q4/Q5
+(a few prompts), so it stays opt-in.
 
 ## Speed, and the bound
 

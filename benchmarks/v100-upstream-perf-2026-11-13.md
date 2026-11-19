@@ -2,7 +2,7 @@
 
 The selected four-GPU profile improves fresh-prompt processing on the earlier Unsloth UD-IQ4_XS Flash-Next model. It combines the current upstream engine with the fork's Volta kernels, stage-scoped dense weights, and explicit host-memory placement. The model, INT8 KV, 262144 context limit, and two-client configuration stay the same.
 
-The [external research review](v100-external-optimization-research-2026-11-13.md) covers independent V100 engines, current papers, and the next experiments. The [initial audit](v100-four-gpu-research-2026-11-13.md) records the deployment before this integration. Raw measurements are in [the result directory](../bench/results/2026-11-13-four-v100-upstream/).
+The [external research review](v100-external-optimization-research-2026-11-13.md) covers independent V100 engines, current papers, and the next experiments. The [initial audit](v100-four-gpu-research-2026-11-13.md) records the deployment before this integration. Raw measurements are in [the result directory](../docs/bench-results/2026-11-13-four-v100-upstream).
 
 ## Hardware and source revisions
 
@@ -40,7 +40,7 @@ Each size has three deterministic prompt variants. The engine generates 256 toke
 
 The final installed run improves median prompt rate by **11.6%** and **6.1%** against the original engine. Median wall time falls by **6.7%** and **5.3%**. These are the final deployment measurements.
 
-The three intermediate profiles use source `1c387fe0e`. In that comparison, GPU-stage placement improves prompt rate by 5.7% and 4.3% against CPU-row placement. The earlier installed repeat is faster than the final run. The later run includes compatibility changes and took place in another session. This experiment does not isolate the cause of that difference. All runs remain in [the paired summary](../bench/results/2026-11-13-four-v100-upstream/summary.json).
+The three intermediate profiles use source `1c387fe0e`. In that comparison, GPU-stage placement improves prompt rate by 5.7% and 4.3% against CPU-row placement. The earlier installed repeat is faster than the final run. The later run includes compatibility changes and took place in another session. This experiment does not isolate the cause of that difference. All runs remain in [the paired summary](../docs/bench-results/2026-11-13-four-v100-upstream/summary.json).
 
 The original median decode rates are 107.4 and 106.5 tok/s. The final installed run gives 107.6 and 108.0 tok/s. These small samples and differing answers do not establish a general decode gain.
 
@@ -63,7 +63,7 @@ The selected environment is opt-in:
 
 The first setting gives future host allocations a preference for the roomier node 0. It leaves CPU affinity unchanged. Expert helper threads then restore local memory policy and touch each stage's pages near its GPU. The page plan includes only whole, disjoint pages. The caller handles boundary pages.
 
-The selected startup places about 10.41 GiB of expert pages on node 0 and 11.96 GiB on node 1. The final installed startup again reports 100% on the intended node for both groups. Its free VRAM after loading is 684, 778, 778, and 558 MiB. An earlier process page-map sample places almost all of the 24.34 GiB resident PLE mapping on node 0. The expert complement is split across the two nodes. The [final startup extract](../bench/results/2026-11-13-four-v100-upstream/installed-final-startup-placement.txt) preserves the observed placement and capacity.
+The selected startup places about 10.41 GiB of expert pages on node 0 and 11.96 GiB on node 1. The final installed startup again reports 100% on the intended node for both groups. Its free VRAM after loading is 684, 778, 778, and 558 MiB. An earlier process page-map sample places almost all of the 24.34 GiB resident PLE mapping on node 0. The expert complement is split across the two nodes. The [final startup extract](../docs/bench-results/2026-11-13-four-v100-upstream/installed-final-startup-placement.txt) preserves the observed placement and capacity.
 
 The policy applies to new allocations. Existing file-cache pages retain their physical placement. For the controlled host-preference comparisons, all temporary model processes stopped before a file-specific `POSIX_FADV_DONTNEED` hint on the selected model shards. This did not change file bytes. It did not change global kernel cache settings. [Linux NUMA policy](https://www.kernel.org/doc/html/latest/admin-guide/mm/numa_memory_policy.html), [set_mempolicy](https://man7.org/linux/man-pages/man2/set_mempolicy.2.html).
 
@@ -87,7 +87,7 @@ Eviction also retains the newer upstream heap trim. In the RAM-return test, evic
 
 ## Validation scope
 
-The final installed profile passed all 11 API checks. It passed a 66444-token needle, a CPU-encoded red-image query, six initial workload requests, six fresh warmed requests, and three rounds of two-client streaming, continuation, and historical-branch isolation. The cache checks observed reuse. Both clients kept distinct output. The [validation record](../bench/results/2026-11-13-four-v100-upstream/installed-final-validation.json) links each phase's results.
+The final installed profile passed all 11 API checks. It passed a 66444-token needle, a CPU-encoded red-image query, six initial workload requests, six fresh warmed requests, and three rounds of two-client streaming, continuation, and historical-branch isolation. The cache checks observed reuse. Both clients kept distinct output. The [validation record](../docs/bench-results/2026-11-13-four-v100-upstream/installed-final-validation.json) links each phase's results.
 
 The context setting remains 262144. The longest completed retrieval probe here has 66444 prompt tokens. It does not validate a filled 262K conversation.
 
@@ -101,8 +101,8 @@ Server tests ran 135 cases, with one skipped. Terminal testing covered large por
 
 Use private copies of the service configuration and expert profile for each arm. Keep the same model, GPU order, split, context, and generation length. Run the API and long-context checks before timing. Run initial and warmed workloads separately. Stop other compilers and test runners before timing.
 
-The tools are [the HTTP verifier](../tools/verify_v100_api.py), [the long-context and image verifier](../tools/verify_v100_long_and_vision.py), [the streaming cache verifier](../tools/verify_v100_cache_isolation.py), and [the result analyzer](../bench/analyze_v100_upgrade.py). Use `--repeat-start 0 --repeats 3` for the first workload pass and `--repeat-start 3 --repeats 3` for fresh warmed cases. The result analyzer rejects changed prompt counts, reused prompt tokens, incomplete outputs, and unpaired case numbers.
+The tools are [the HTTP verifier](../tools/verify_v100_api.py), [the long-context and image verifier](../tools/verify_v100_long_and_vision.py), [the streaming cache verifier](../tools/verify_v100_cache_isolation.py), and [the result analyzer](../terminal/bench/analyze_v100_upgrade.py). Use `--repeat-start 0 --repeats 3` for the first workload pass and `--repeat-start 3 --repeats 3` for fresh warmed cases. The result analyzer rejects changed prompt counts, reused prompt tokens, incomplete outputs, and unpaired case numbers.
 
 The [deployment patch](../deploy/v100-x99-upstream-20261113.patch.json) adds only the two selected environment values after checking the expected profile. The [rollback helper](../rollback-strata-upgrade.sh) verifies the saved component checksums before replacing files. It preserves authentication, network settings, context, and unrelated user settings. `--check` validates the backup without changes. `--no-start` restores it while leaving the service stopped.
 
-An install, rollback, and reinstall round trip restored all four original components and the original configuration, then reapplied the selected profile. The final installed component hashes match the packaged build. Temporary validation servers used localhost and stopped after the checks. The service was idle at inspection and remains stopped. Authentication, network settings, model paths, two slots, and the 262144 context limit are preserved. The [completion audit](../bench/results/2026-11-13-four-v100-upstream/completion-audit.json) records the final hash, configuration, and artifact checks.
+An install, rollback, and reinstall round trip restored all four original components and the original configuration, then reapplied the selected profile. The final installed component hashes match the packaged build. Temporary validation servers used localhost and stopped after the checks. The service was idle at inspection and remains stopped. Authentication, network settings, model paths, two slots, and the 262144 context limit are preserved. The [completion audit](../docs/bench-results/2026-11-13-four-v100-upstream/completion-audit.json) records the final hash, configuration, and artifact checks.
